@@ -1,14 +1,10 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:printing/printing.dart';
 import '../../state/admin_state.dart';
-
-const _brown = Color(0xFF3E2723);
-const _brownLight = Color(0xFF8D6E63);
-const _bg = Color(0xFFFCFAF5);
-const _border = Color(0xFFE5DDD0);
-const _green = Color(0xFF2E7D32);
-const _errorColor = Color(0xFFB71C1C);
+import '../../utils/boutique_theme.dart';
+import '../../utils/pdf_invoice_api.dart';
 
 class BillHistoryScreen extends StatefulWidget {
   final AdminState state;
@@ -25,7 +21,6 @@ class _BillHistoryScreenState extends State<BillHistoryScreen> {
   late DateTime _dateTo;
 
   final _searchCtrl = TextEditingController();
-
   String _paymentModeFilter = 'All';
   bool _loading = false;
 
@@ -90,11 +85,7 @@ class _BillHistoryScreenState extends State<BillHistoryScreen> {
       });
     } catch (e) {
       setState(() => _loading = false);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e'), backgroundColor: _errorColor),
-        );
-      }
+      if (mounted) BoutiqueToast.showError(context, 'Error loading bills: $e');
     }
   }
 
@@ -102,14 +93,12 @@ class _BillHistoryScreenState extends State<BillHistoryScreen> {
     final q = _searchCtrl.text.toLowerCase();
     setState(() {
       _filtered = _bills.where((e) {
-        // Bill No / Customer search
         if (q.isNotEmpty) {
           final billNo = (e['billNo'] ?? '').toString().toLowerCase();
           final customer = (e['customerName'] ?? '').toString().toLowerCase();
           final mobile = (e['customerMobile'] ?? '').toString();
           if (!billNo.contains(q) && !customer.contains(q) && !mobile.contains(q)) return false;
         }
-        // Payment mode filter
         if (_paymentModeFilter != 'All' && e['paymentMode'] != _paymentModeFilter) return false;
         return true;
       }).toList();
@@ -122,10 +111,6 @@ class _BillHistoryScreenState extends State<BillHistoryScreen> {
       initialDate: isFrom ? _dateFrom : _dateTo,
       firstDate: DateTime(2020),
       lastDate: DateTime(2100),
-      builder: (ctx, child) => Theme(
-        data: Theme.of(ctx).copyWith(colorScheme: const ColorScheme.light(primary: _brown)),
-        child: child!,
-      ),
     );
     if (picked != null) {
       setState(() => isFrom ? _dateFrom = picked : _dateTo = picked);
@@ -137,15 +122,20 @@ class _BillHistoryScreenState extends State<BillHistoryScreen> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: Colors.white,
-        title: const Text('Delete Bill?'),
-        content: Text('Delete bill ${bill['billNo'] ?? ''}? This cannot be undone.'),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        backgroundColor: BoutiqueColors.bgCard,
+        title: const Text('Delete Bill?', style: TextStyle(fontFamily: 'serif', color: BoutiqueColors.textPrimary)),
+        content: Text('Delete bill ${bill['billNo'] ?? ''}? This action cannot be undone.'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          OutlinedButton(
+            style: OutlinedButton.styleFrom(side: const BorderSide(color: BoutiqueColors.border)),
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel', style: TextStyle(color: BoutiqueColors.textSecondary)),
+          ),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: _errorColor, foregroundColor: Colors.white),
+            style: ElevatedButton.styleFrom(backgroundColor: BoutiqueColors.destructive),
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Delete'),
+            child: const Text('Delete', style: TextStyle(color: Colors.white)),
           ),
         ],
       ),
@@ -154,8 +144,9 @@ class _BillHistoryScreenState extends State<BillHistoryScreen> {
     try {
       await FirebaseFirestore.instance.collection('bills').doc(bill['_docId']).delete();
       _loadBills();
+      if (mounted) BoutiqueToast.showSuccess(context, 'Bill deleted successfully');
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+      if (mounted) BoutiqueToast.showError(context, 'Error: $e');
     }
   }
 
@@ -166,302 +157,203 @@ class _BillHistoryScreenState extends State<BillHistoryScreen> {
     );
   }
 
-  // ── Summary totals ────────────────────────────────────────────────────────────
-
-  double get _totalSales =>
-      _filtered.fold(0.0, (s, e) => s + ((e['totalPayable'] as num?)?.toDouble() ?? 0));
-
-  double get _totalDiscount =>
-      _filtered.fold(0.0, (s, e) {
-        final ed = (e['extraDiscountAmount'] as num?)?.toDouble() ?? 0;
-        final items = (e['items'] as List?)?.fold<double>(
-          0, (si, i) => si + ((i['itemDiscountAmount'] as num?)?.toDouble() ?? 0)) ?? 0;
-        return s + ed + items;
-      });
-
-  int get _totalItems =>
-      _filtered.fold(0, (s, e) => s + ((e['items'] as List?)?.length ?? 0));
+  double get _totalSales => _filtered.fold(0.0, (s, e) => s + ((e['totalPayable'] as num?)?.toDouble() ?? 0));
 
   @override
   Widget build(BuildContext context) {
-    return Column(children: [
-      // Header
-      Container(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-        decoration: const BoxDecoration(color: _brown),
-        child: Row(children: [
-          const Icon(Icons.history_rounded, color: Colors.white, size: 20),
-          const SizedBox(width: 8),
-          const Text('Bill History',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white)),
-          const Spacer(),
-          IconButton(
-            icon: const Icon(Icons.refresh, color: Colors.white70),
-            tooltip: 'Refresh',
-            onPressed: _loadBills,
-          ),
-        ]),
-      ),
-
-      // Filter bar
-      Container(
-        padding: const EdgeInsets.all(16),
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          border: Border(bottom: BorderSide(color: _border)),
-        ),
-        child: Wrap(
-          spacing: 12,
-          runSpacing: 10,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          children: [
-            // Search
-            SizedBox(
-              width: 240,
-              height: 40,
-              child: TextField(
-                controller: _searchCtrl,
-                style: const TextStyle(fontSize: 13, color: _brown),
-                decoration: InputDecoration(
-                  hintText: 'Bill No, Customer, Mobile…',
-                  hintStyle: const TextStyle(fontSize: 12, color: Color(0xFFBCAAA4)),
-                  prefixIcon: const Icon(Icons.search, size: 16, color: _brownLight),
-                  filled: true, fillColor: _bg,
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 10),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: _border)),
-                  enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: _border)),
-                ),
-              ),
+    return Container(
+      color: BoutiqueColors.bgMain,
+      child: Column(
+        children: [
+          // Filter Bar
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 20),
+            decoration: const BoxDecoration(
+              color: BoutiqueColors.bgCard,
+              border: Border(bottom: BorderSide(color: BoutiqueColors.border)),
             ),
-            // Date from
-            _datePill('From', _dateFrom, () => _pickDate(isFrom: true)),
-            const Text('→', style: TextStyle(color: _brownLight)),
-            _datePill('To', _dateTo, () => _pickDate(isFrom: false)),
-            // Payment mode
-            SizedBox(
-              width: 160,
-              height: 40,
-              child: DropdownButtonFormField<String>(
-                value: _paymentModeFilter,
-                decoration: InputDecoration(
-                  filled: true, fillColor: _bg,
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 10),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: _border)),
-                  enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: _border)),
-                ),
-                items: _paymentModes.map((m) => DropdownMenuItem(value: m, child: Text(m, style: const TextStyle(fontSize: 13)))).toList(),
-                onChanged: (v) { setState(() => _paymentModeFilter = v!); _applyFilters(); },
-                style: const TextStyle(color: _brown, fontSize: 13),
-              ),
-            ),
-          ],
-        ),
-      ),
-
-      // Table
-      Expanded(child: _loading
-          ? const Center(child: CircularProgressIndicator(color: _brown))
-          : _filtered.isEmpty
-              ? Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
-                  Icon(Icons.receipt_long_outlined, size: 56, color: _border),
-                  const SizedBox(height: 12),
-                  const Text('No bills found', style: TextStyle(color: _brownLight)),
-                ]))
-              : Column(children: [
-                  // Column headers
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                    color: const Color(0xFFF9F6F0),
-                    child: Row(children: [
-                      _th('Bill No', flex: 2),
-                      _th('Date', flex: 2),
-                      _th('Customer', flex: 3),
-                      _th('Items', flex: 1),
-                      _th('Subtotal', flex: 2),
-                      _th('Discount', flex: 2),
-                      _th('Total', flex: 2),
-                      _th('Mode', flex: 2),
-                      _th('', flex: 2),
-                    ]),
+            child: Row(
+              children: [
+                Expanded(
+                  flex: 3,
+                  child: TextField(
+                    controller: _searchCtrl,
+                    style: const TextStyle(fontSize: 13),
+                    decoration: BoutiqueInputDecoration.field(
+                      hintText: 'Search bill #, customer, mobile...',
+                      prefixIcon: const Icon(Icons.search_rounded, size: 18, color: BoutiqueColors.textSecondary),
+                    ),
                   ),
-                  Expanded(child: ListView.builder(
-                    itemCount: _filtered.length,
-                    itemBuilder: (ctx, i) {
-                      final bill = _filtered[i];
-                      final isEven = i % 2 == 0;
-                      return _BillRow(
-                        bill: bill,
-                        isEven: isEven,
-                        fmt: _fmt,
-                        onView: () => _viewBill(bill),
-                        onDelete: () => _deleteBill(bill),
-                      );
+                ),
+                const SizedBox(width: 16),
+                _datePill('From', _dateFrom, () => _pickDate(isFrom: true)),
+                const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 8),
+                  child: Text('→', style: TextStyle(color: BoutiqueColors.textSecondary)),
+                ),
+                _datePill('To', _dateTo, () => _pickDate(isFrom: false)),
+                const SizedBox(width: 16),
+                Expanded(
+                  flex: 2,
+                  child: DropdownButtonFormField<String>(
+                    initialValue: _paymentModeFilter,
+                    style: const TextStyle(fontSize: 13, color: BoutiqueColors.textPrimary),
+                    decoration: BoutiqueInputDecoration.field(hintText: 'Payment Mode'),
+                    items: _paymentModes.map((m) => DropdownMenuItem(value: m, child: Text(m))).toList(),
+                    onChanged: (v) {
+                      if (v != null) {
+                        setState(() => _paymentModeFilter = v);
+                        _applyFilters();
+                      }
                     },
-                  )),
-                ]),
-      ),
+                  ),
+                ),
+                const SizedBox(width: 16),
+                IconButton(
+                  icon: const Icon(Icons.refresh_rounded, color: BoutiqueColors.accent),
+                  onPressed: _loadBills,
+                  tooltip: 'Refresh',
+                ),
+              ],
+            ),
+          ),
 
-      // Summary bar
-      Container(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-        decoration: const BoxDecoration(
-          color: _brown,
-          boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 4, offset: Offset(0, -2))],
-        ),
-        child: Row(children: [
-          _statChip('Bills', '${_filtered.length}'),
-          const SizedBox(width: 24),
-          _statChip('Items Sold', '$_totalItems'),
-          const Spacer(),
-          _statChip('Total Discount', '₹${_totalDiscount.toStringAsFixed(2)}'),
-          const SizedBox(width: 24),
-          _statChip('Total Sales', '₹${_totalSales.toStringAsFixed(2)}', highlight: true),
-        ]),
+          // Total Sales Summary Banner
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
+            color: BoutiqueColors.accentSoft,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('Total Invoices: ${_filtered.length}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: BoutiqueColors.accent)),
+                Text('Total Sales: ₹${_totalSales.toStringAsFixed(2)}', style: const TextStyle(fontFamily: 'serif', fontWeight: FontWeight.bold, fontSize: 16, color: BoutiqueColors.accent)),
+              ],
+            ),
+          ),
+
+          // Invoices Table
+          Expanded(
+            child: Container(
+              margin: const EdgeInsets.all(32),
+              decoration: BoutiqueDecoration.card(),
+              child: _loading
+                  ? const Center(child: CircularProgressIndicator(color: BoutiqueColors.accent))
+                  : _filtered.isEmpty
+                      ? const Center(child: Text('No invoice records found.', style: TextStyle(color: BoutiqueColors.textSecondary)))
+                      : ListView.separated(
+                          itemCount: _filtered.length,
+                          separatorBuilder: (_, __) => const Divider(height: 1, color: BoutiqueColors.borderLight),
+                          itemBuilder: (context, idx) {
+                            final b = _filtered[idx];
+                            return ListTile(
+                              onTap: () => _viewBill(b),
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 6),
+                              leading: Container(
+                                padding: const EdgeInsets.all(10),
+                                decoration: BoxDecoration(color: BoutiqueColors.accentSoft, borderRadius: BorderRadius.circular(8)),
+                                child: const Icon(Icons.receipt_long_rounded, color: BoutiqueColors.accent, size: 20),
+                              ),
+                              title: Row(
+                                children: [
+                                  Text(b['billNo'] ?? '—', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: BoutiqueColors.accent)),
+                                  const SizedBox(width: 12),
+                                  Text(b['customerName'] ?? 'Walk-in Customer', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: BoutiqueColors.textPrimary)),
+                                ],
+                              ),
+                              subtitle: Text(
+                                'Date: ${_fmt.format((b['billDate'] as Timestamp).toDate())} • Mode: ${b['paymentMode']}',
+                                style: const TextStyle(fontSize: 12, color: BoutiqueColors.textSecondary),
+                              ),
+                              trailing: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    '₹${((b['totalPayable'] as num?)?.toDouble() ?? 0).toStringAsFixed(2)}',
+                                    style: const TextStyle(fontFamily: 'serif', fontSize: 16, fontWeight: FontWeight.bold, color: BoutiqueColors.textPrimary),
+                                  ),
+                                  const SizedBox(width: 16),
+                                  IconButton(
+                                    icon: const Icon(Icons.visibility_outlined, color: BoutiqueColors.accent, size: 20),
+                                    onPressed: () => _viewBill(b),
+                                  ),
+                                  IconButton(
+                                    icon: const Icon(Icons.delete_outline_rounded, color: BoutiqueColors.destructive, size: 20),
+                                    onPressed: () => _deleteBill(b),
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                        ),
+            ),
+          ),
+        ],
       ),
-    ]);
+    );
   }
 
   Widget _datePill(String label, DateTime dt, VoidCallback onTap) {
-    return GestureDetector(
+    return InkWell(
       onTap: onTap,
+      borderRadius: BorderRadius.circular(10),
       child: Container(
-        height: 40,
-        padding: const EdgeInsets.symmetric(horizontal: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         decoration: BoxDecoration(
-          color: _bg,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: _border),
+          color: BoutiqueColors.bgSubtle,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: BoutiqueColors.border),
         ),
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Text('$label: ', style: const TextStyle(fontSize: 11, color: _brownLight)),
-          Text(_fmt.format(dt), style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: _brown)),
-          const SizedBox(width: 4),
-          const Icon(Icons.calendar_today_rounded, size: 13, color: _brownLight),
-        ]),
-      ),
-    );
-  }
-
-  Widget _th(String label, {int flex = 1}) {
-    return Expanded(
-      flex: flex,
-      child: Text(label,
-          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold,
-              letterSpacing: 0.8, color: _brownLight)),
-    );
-  }
-
-  Widget _statChip(String label, String value, {bool highlight = false}) {
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text(label, style: TextStyle(fontSize: 10, color: Colors.white.withValues(alpha: 0.7))),
-      Text(value, style: TextStyle(fontSize: highlight ? 18 : 14,
-          fontWeight: FontWeight.bold, color: Colors.white)),
-    ]);
-  }
-}
-
-// ── Bill Row Widget ───────────────────────────────────────────────────────────
-
-class _BillRow extends StatelessWidget {
-  final Map<String, dynamic> bill;
-  final bool isEven;
-  final DateFormat fmt;
-  final VoidCallback onView;
-  final VoidCallback onDelete;
-
-  const _BillRow({
-    required this.bill,
-    required this.isEven,
-    required this.fmt,
-    required this.onView,
-    required this.onDelete,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final billDate = bill['billDate'] ?? bill['date'];
-    final dateStr = billDate is Timestamp ? fmt.format(billDate.toDate()) : '—';
-    final itemCount = (bill['items'] as List?)?.length ?? 0;
-    final subtotal = (bill['subtotal'] as num?)?.toDouble() ?? 0;
-    final extraDisc = (bill['extraDiscountAmount'] as num?)?.toDouble() ?? 0;
-    final itemDisc = (bill['items'] as List?)?.fold<double>(
-            0, (s, i) => s + ((i['itemDiscountAmount'] as num?)?.toDouble() ?? 0)) ?? 0;
-    final totalDisc = extraDisc + itemDisc;
-    final total = (bill['totalPayable'] as num?)?.toDouble() ?? 0;
-    final mode = bill['paymentMode'] as String? ?? '—';
-    final customer = bill['customerName'] as String? ?? '';
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      color: isEven ? Colors.white : const Color(0xFFFAF8F5),
-      child: Row(children: [
-        Expanded(flex: 2, child: Text(
-          bill['billNo'] as String? ?? '—',
-          style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: _brown),
-        )),
-        Expanded(flex: 2, child: Text(dateStr, style: const TextStyle(fontSize: 12, color: _brownLight))),
-        Expanded(flex: 3, child: Text(
-          customer.isEmpty ? '—' : customer,
-          style: const TextStyle(fontSize: 12, color: _brown),
-          overflow: TextOverflow.ellipsis,
-        )),
-        Expanded(flex: 1, child: Text('$itemCount', style: const TextStyle(fontSize: 12, color: _brownLight))),
-        Expanded(flex: 2, child: Text('₹${subtotal.toStringAsFixed(2)}', style: const TextStyle(fontSize: 12, color: _brownLight))),
-        Expanded(flex: 2, child: Text(
-          totalDisc > 0 ? '₹${totalDisc.toStringAsFixed(2)}' : '—',
-          style: TextStyle(fontSize: 12, color: totalDisc > 0 ? Colors.orange[700] : _brownLight),
-        )),
-        Expanded(flex: 2, child: Text(
-          '₹${total.toStringAsFixed(2)}',
-          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: _green),
-        )),
-        Expanded(flex: 2, child: _modePill(mode)),
-        Expanded(flex: 2, child: Row(children: [
-          _actionBtn(Icons.visibility_outlined, 'View', Colors.blueGrey, onView),
-          const SizedBox(width: 4),
-          _actionBtn(Icons.delete_outline, 'Delete', _errorColor, onDelete),
-        ])),
-      ]),
-    );
-  }
-
-  Widget _modePill(String mode) {
-    Color c = Colors.grey;
-    if (mode == 'Cash') c = _green;
-    if (mode == 'UPI') c = Colors.indigo;
-    if (mode == 'Card') c = Colors.blueAccent;
-    if (mode == 'Split Payment') c = Colors.deepOrange;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(
-        color: c.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: c.withValues(alpha: 0.3)),
-      ),
-      child: Text(mode, style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: c)),
-    );
-  }
-
-  Widget _actionBtn(IconData icon, String tip, Color color, VoidCallback onTap) {
-    return Tooltip(
-      message: tip,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(6),
-        child: Padding(
-          padding: const EdgeInsets.all(4),
-          child: Icon(icon, size: 16, color: color),
+        child: Row(
+          children: [
+            Text('$label: ', style: const TextStyle(fontSize: 12, color: BoutiqueColors.textSecondary)),
+            Text(_fmt.format(dt), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: BoutiqueColors.textPrimary)),
+          ],
         ),
       ),
     );
   }
 }
 
-// ── Bill Detail Dialog ────────────────────────────────────────────────────────
+// ── Printable Invoice Receipt Dialog ──────────────────────────────────────────
 
 class _BillDetailDialog extends StatelessWidget {
   final Map<String, dynamic> bill;
   const _BillDetailDialog({required this.bill});
+
+  Future<void> _handlePrintPdf(BuildContext context) async {
+    final invoiceData = SalesInvoiceData(
+      customerName: bill['customerName']?.toString() ?? 'Customer',
+      customerMobile: bill['customerMobile']?.toString() ?? '',
+      customerAddress: '',
+      customerState: '',
+      invoiceNo: bill['billNo']?.toString() ?? 'FA-0001',
+      date: bill['billDate'] != null ? DateFormat('dd/MM/yyyy').format((bill['billDate'] as Timestamp).toDate()) : '',
+      placeOfSupply: '',
+      items: [],
+      totalPcs: 1,
+      totalGrossWt: 0,
+      totalNetWt: 0,
+      totalMetalAmt: 0,
+      totalAmount: (bill['totalPayable'] as num?)?.toDouble() ?? 0,
+      discountAmt: (bill['extraDiscountAmount'] as num?)?.toDouble() ?? 0,
+      taxableAmount: (bill['subtotal'] as num?)?.toDouble() ?? 0,
+      cgstAmt: 0,
+      sgstAmt: 0,
+      igstAmt: 0,
+      roundOff: 0,
+      grossAmount: (bill['totalPayable'] as num?)?.toDouble() ?? 0,
+      receivedAmt: (bill['amountReceived'] as num?)?.toDouble() ?? 0,
+      amountInWords: PdfInvoiceApi.numberToWords((bill['totalPayable'] as num?)?.toDouble() ?? 0),
+      cardDetails: bill['paymentMode']?.toString() ?? '',
+      customerPan: '',
+      narration: '',
+      dueAmount: 0,
+      receiptDetails: '',
+      credits: '',
+    );
+    final bytes = await PdfInvoiceApi.generate(invoiceData);
+    await Printing.layoutPdf(onLayout: (_) => bytes);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -475,70 +367,147 @@ class _BillDetailDialog extends StatelessWidget {
     final tax = (bill['taxAmount'] as num?)?.toDouble() ?? 0;
 
     return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      backgroundColor: Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      backgroundColor: BoutiqueColors.bgCard,
       child: Container(
-        width: 600,
-        padding: const EdgeInsets.all(24),
+        width: 620,
+        padding: const EdgeInsets.all(32),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(children: [
-              const Icon(Icons.receipt_long_rounded, color: _brown),
-              const SizedBox(width: 8),
-              Text(bill['billNo'] ?? 'Bill', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: _brown)),
-              const Spacer(),
-              Text(dateStr, style: const TextStyle(color: _brownLight)),
-              const SizedBox(width: 12),
-              IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(context)),
-            ]),
-            const Divider(),
-            if ((bill['customerName'] as String? ?? '').isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Text('Customer: ${bill['customerName']}',
-                    style: const TextStyle(fontWeight: FontWeight.w600)),
-              ),
-            // Items
-            Container(
-              decoration: BoxDecoration(border: Border.all(color: _border), borderRadius: BorderRadius.circular(8)),
-              child: Column(children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  child: const Row(children: [
-                    Expanded(flex: 3, child: Text('Item', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: _brownLight))),
-                    Expanded(flex: 1, child: Text('Qty', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: _brownLight))),
-                    Expanded(flex: 2, child: Text('Price', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: _brownLight))),
-                    Expanded(flex: 2, child: Text('Amount', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: _brownLight))),
-                  ]),
+            // Top Action Toolbar (Above Receipt Area)
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text('Invoice Preview', style: TextStyle(fontFamily: 'serif', fontSize: 20, fontWeight: FontWeight.bold, color: BoutiqueColors.textPrimary)),
+                Row(
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.print_outlined, color: BoutiqueColors.accent),
+                      onPressed: () => _handlePrintPdf(context),
+                      tooltip: 'Print Invoice / PDF',
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.download_outlined, color: BoutiqueColors.accent),
+                      onPressed: () => _handlePrintPdf(context),
+                      tooltip: 'Download PDF',
+                    ),
+                    const SizedBox(width: 8),
+                    IconButton(
+                      icon: const Icon(Icons.close_rounded, color: BoutiqueColors.textSecondary),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ],
                 ),
-                ...items.map((item) => Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  child: Row(children: [
-                    Expanded(flex: 3, child: Text('${item['tagId']} – ${item['name']}', style: const TextStyle(fontSize: 13))),
-                    Expanded(flex: 1, child: Text('${item['qty']} ${item['unit'] ?? ''}', style: const TextStyle(fontSize: 13))),
-                    Expanded(flex: 2, child: Text('₹${(item['price'] as num?)?.toStringAsFixed(2) ?? '0.00'}', style: const TextStyle(fontSize: 13))),
-                    Expanded(flex: 2, child: Text('₹${(item['lineAmount'] as num?)?.toStringAsFixed(2) ?? '0.00'}',
-                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600))),
-                  ]),
-                )),
-              ]),
+              ],
             ),
-            const SizedBox(height: 12),
-            _detailRow('Subtotal', '₹${subtotal.toStringAsFixed(2)}'),
-            if (extraDisc > 0) _detailRow('Extra Discount', '− ₹${extraDisc.toStringAsFixed(2)}', color: Colors.orange),
-            if (tax > 0) _detailRow('Tax', '+ ₹${tax.toStringAsFixed(2)}', color: Colors.indigo),
-            const Divider(),
-            _detailRow('TOTAL PAYABLE', '₹${total.toStringAsFixed(2)}', large: true),
-            _detailRow('Payment Mode', bill['paymentMode'] ?? '—'),
-            const SizedBox(height: 12),
-            Align(
-              alignment: Alignment.centerRight,
-              child: ElevatedButton(
-                onPressed: () => Navigator.pop(context),
-                style: ElevatedButton.styleFrom(backgroundColor: _brown, foregroundColor: Colors.white),
-                child: const Text('Close'),
+            const Divider(height: 24, color: BoutiqueColors.border),
+
+            // Printable Receipt Content Box
+            Container(
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: BoutiqueColors.bgSubtle,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: BoutiqueColors.border),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Boutique Header Logo & Address
+                  const Center(
+                    child: Column(
+                      children: [
+                        Text(
+                          'FORGEALLY BOUTIQUE',
+                          style: TextStyle(
+                            fontFamily: 'serif',
+                            fontSize: 22,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 2.0,
+                            color: BoutiqueColors.accent,
+                          ),
+                        ),
+                        SizedBox(height: 4),
+                        Text('High-End Fashion & Custom Couture', style: TextStyle(fontSize: 12, color: BoutiqueColors.textSecondary)),
+                        Text('GSTIN: 33AAAAA0000A1Z5 | Ph: +91 98765 43210', style: TextStyle(fontSize: 11, color: BoutiqueColors.textMuted)),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  const Divider(color: BoutiqueColors.border),
+
+                  // Bill & Customer Info
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Invoice No: ${bill['billNo'] ?? '—'}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: BoutiqueColors.textPrimary)),
+                          Text('Date: $dateStr', style: const TextStyle(fontSize: 12, color: BoutiqueColors.textSecondary)),
+                        ],
+                      ),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Text('Customer: ${bill['customerName'] ?? 'Walk-in Customer'}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: BoutiqueColors.textPrimary)),
+                          Text('Payment: ${bill['paymentMode'] ?? 'Cash'}', style: const TextStyle(fontSize: 12, color: BoutiqueColors.textSecondary)),
+                        ],
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Itemized Table
+                  Container(
+                    decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(8), border: Border.all(color: BoutiqueColors.border)),
+                    child: Column(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                          color: BoutiqueColors.bgSubtle,
+                          child: const Row(
+                            children: [
+                              Expanded(flex: 4, child: Text('Item Description', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: BoutiqueColors.textSecondary))),
+                              Expanded(flex: 1, child: Text('Qty', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: BoutiqueColors.textSecondary))),
+                              Expanded(flex: 2, child: Text('Price', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: BoutiqueColors.textSecondary))),
+                              Expanded(flex: 2, child: Text('Amount', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: BoutiqueColors.textSecondary))),
+                            ],
+                          ),
+                        ),
+                        ...items.map((item) => Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                              child: Row(
+                                children: [
+                                  Expanded(flex: 4, child: Text('${item['tagId'] ?? ''} - ${item['name'] ?? ''}', style: const TextStyle(fontSize: 12, color: BoutiqueColors.textPrimary))),
+                                  Expanded(flex: 1, child: Text('${item['qty']}', style: const TextStyle(fontSize: 12, color: BoutiqueColors.textPrimary))),
+                                  Expanded(flex: 2, child: Text('₹${(item['price'] as num?)?.toStringAsFixed(2) ?? '0'}', style: const TextStyle(fontSize: 12, color: BoutiqueColors.textPrimary))),
+                                  Expanded(flex: 2, child: Text('₹${(item['lineAmount'] as num?)?.toStringAsFixed(2) ?? '0'}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: BoutiqueColors.textPrimary))),
+                                ],
+                              ),
+                            )),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Totals Breakdown
+                  _detailRow('Subtotal', '₹${subtotal.toStringAsFixed(2)}'),
+                  if (extraDisc > 0) _detailRow('Discount', '− ₹${extraDisc.toStringAsFixed(2)}'),
+                  if (tax > 0) _detailRow('GST Tax', '+ ₹${tax.toStringAsFixed(2)}'),
+                  const Divider(color: BoutiqueColors.border),
+                  _detailRow('TOTAL PAID', '₹${total.toStringAsFixed(2)}', large: true),
+
+                  const SizedBox(height: 20),
+                  const Center(
+                    child: Text(
+                      'Thank you for shopping with ForgeAlly Boutique! ✨',
+                      style: TextStyle(fontFamily: 'serif', fontSize: 13, fontStyle: FontStyle.italic, color: BoutiqueColors.accent),
+                    ),
+                  ),
+                ],
               ),
             ),
           ],
@@ -547,14 +516,16 @@ class _BillDetailDialog extends StatelessWidget {
     );
   }
 
-  Widget _detailRow(String label, String value, {Color? color, bool large = false}) {
+  Widget _detailRow(String label, String value, {bool large = false}) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 3),
-      child: Row(children: [
-        Text(label, style: TextStyle(color: color ?? _brownLight, fontSize: large ? 14 : 13, fontWeight: large ? FontWeight.bold : FontWeight.normal)),
-        const Spacer(),
-        Text(value, style: TextStyle(color: color ?? _brown, fontSize: large ? 18 : 13, fontWeight: large ? FontWeight.bold : FontWeight.w600)),
-      ]),
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label, style: TextStyle(fontSize: large ? 15 : 13, fontWeight: large ? FontWeight.bold : FontWeight.normal, color: BoutiqueColors.textPrimary)),
+          Text(value, style: TextStyle(fontFamily: 'serif', fontSize: large ? 20 : 13, fontWeight: FontWeight.bold, color: large ? BoutiqueColors.accent : BoutiqueColors.textPrimary)),
+        ],
+      ),
     );
   }
 }

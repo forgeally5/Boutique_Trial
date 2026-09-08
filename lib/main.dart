@@ -20,6 +20,7 @@ import 'views/add_master_view.dart';
 import 'views/portal_orders_view.dart';
 import 'views/home_view.dart';
 import 'views/widgets/connection_status_badge.dart';
+import 'utils/boutique_theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -47,14 +48,16 @@ class TrilokAdminApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'ForgeAlly-trial',
+      title: 'ForgeAlly Boutique',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,
         fontFamily: 'sans-serif',
+        scaffoldBackgroundColor: BoutiqueColors.bgMain,
         colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF000000),
-          surface: const Color(0xFFFFFFFF),
+          seedColor: BoutiqueColors.accent,
+          primary: BoutiqueColors.accent,
+          surface: BoutiqueColors.bgCard,
         ),
       ),
       home: const AuthGate(),
@@ -95,45 +98,56 @@ class _SplashScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF5EFE6),
+      backgroundColor: BoutiqueColors.bgMain,
       body: Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                const Text(
-                  'ForgeAlly-trial',
-                  style: TextStyle(
-                    fontFamily: 'serif',
-                    fontSize: 32,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 3.5,
-                    color: Color(0xFF000000),
-                  ),
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: BoutiqueColors.accentSoft,
+                shape: BoxShape.circle,
+                border: Border.all(color: BoutiqueColors.accentLightBorder, width: 1.5),
+              ),
+              child: const Text(
+                'F',
+                style: TextStyle(
+                  fontFamily: 'serif',
+                  fontSize: 36,
+                  fontWeight: FontWeight.bold,
+                  color: BoutiqueColors.accent,
                 ),
-              ],
-            ),
-            SizedBox(height: 8),
-            Text(
-              'BOUTIQUE MANAGEMENT',
-              style: TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.w600,
-                letterSpacing: 2.0,
-                color: Color(0xFF8D6E63),
               ),
             ),
-            SizedBox(height: 36),
-            SizedBox(
+            const SizedBox(height: 20),
+            const Text(
+              'ForgeAlly Boutique',
+              style: TextStyle(
+                fontFamily: 'serif',
+                fontSize: 32,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 2.0,
+                color: BoutiqueColors.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'HIGH-END RETAIL & BILLING',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 2.5,
+                color: BoutiqueColors.accent,
+              ),
+            ),
+            const SizedBox(height: 36),
+            const SizedBox(
               width: 24,
               height: 24,
               child: CircularProgressIndicator(
                 strokeWidth: 2.5,
-                color: Color(0xFF000000),
+                color: BoutiqueColors.accent,
               ),
             ),
           ],
@@ -154,27 +168,23 @@ class AdminHomeShell extends StatefulWidget {
 
 class _AdminHomeShellState extends State<AdminHomeShell> {
   final AdminState _state = AdminState();
-  int _activeTabIndex = 5;
-  int? _hoveredTabIndex;
+  // 0: Dashboard, 1: Inventory, 2: Billing, 3: Add Item, 4: Reports, 5: Settings
+  int _activeTabIndex = 0;
   String _selectedBillingSection = 'A Sales Entry';
   String _selectedReportTitle = 'A Daily Activity Report';
   bool _isTransitioning = false;
+  final TextEditingController _globalSearchCtrl = TextEditingController();
 
   Future<void> _switchTab(int index) async {
     if (index == _activeTabIndex) return;
     setState(() => _isTransitioning = true);
-    await Future.delayed(const Duration(milliseconds: 350));
+    await Future.delayed(const Duration(milliseconds: 200));
     if (!mounted) return;
     setState(() {
       _activeTabIndex = index;
       _isTransitioning = false;
     });
   }
-
-  final List<String> _tabs = [
-    'INVENTORY',
-    'BILLING',
-  ];
 
   @override
   void initState() {
@@ -187,14 +197,11 @@ class _AdminHomeShellState extends State<AdminHomeShell> {
           _switchTab(target);
           return;
         }
-        debugPrint('main.dart listener: pendingEstimationTags = ${_state.pendingEstimationTags}');
         if (_state.pendingEstimationTags.isNotEmpty) {
-          if (_activeTabIndex != 1 || _selectedBillingSection != 'A Sales Entry') {
-            debugPrint('main.dart: Switching tab to TRANSACTION / A Sales Entry...');
+          if (_activeTabIndex != 2 || _selectedBillingSection != 'A Sales Entry') {
             _selectedBillingSection = 'A Sales Entry';
-            _switchTab(1);
+            _switchTab(2);
           } else {
-            debugPrint('main.dart: Already on Sales Entry tab.');
             setState(() {});
           }
         } else {
@@ -207,16 +214,28 @@ class _AdminHomeShellState extends State<AdminHomeShell> {
   @override
   void dispose() {
     _state.dispose();
+    _globalSearchCtrl.dispose();
     super.dispose();
   }
-
-
 
   Widget _buildBody() {
     switch (_activeTabIndex) {
       case 0:
-        return InventoryView(state: _state);
+        return HomeView(
+          adminState: _state,
+          onNavigateToBilling: (sec) {
+            _selectedBillingSection = sec;
+            _switchTab(2);
+          },
+          onNavigateToTab: (tabIdx) => _switchTab(tabIdx),
+          onNavigateToReport: (rep) {
+            _selectedReportTitle = rep;
+            _switchTab(4);
+          },
+        );
       case 1:
+        return InventoryView(state: _state);
+      case 2:
         return BillingView(
           state: _state,
           initialSection: _selectedBillingSection,
@@ -224,9 +243,146 @@ class _AdminHomeShellState extends State<AdminHomeShell> {
             setState(() => _selectedBillingSection = sec);
           },
         );
+      case 3:
+        return AddMasterView(adminState: _state);
+      case 4:
+        return MasterView(
+          adminState: _state,
+          initialReportTitle: _selectedReportTitle,
+        );
+      case 5:
+        return _buildSettingsView();
       default:
-        return InventoryView(state: _state);
+        return HomeView(
+          adminState: _state,
+          onNavigateToBilling: (sec) {
+            _selectedBillingSection = sec;
+            _switchTab(2);
+          },
+          onNavigateToTab: (tabIdx) => _switchTab(tabIdx),
+          onNavigateToReport: (rep) {
+            _selectedReportTitle = rep;
+            _switchTab(4);
+          },
+        );
     }
+  }
+
+  Widget _buildSettingsView() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(32),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Boutique Settings & Master Configuration',
+            style: TextStyle(
+              fontFamily: 'serif',
+              fontSize: 26,
+              fontWeight: FontWeight.bold,
+              color: BoutiqueColors.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Configure security credentials, dropdown masters, and system preferences.',
+            style: TextStyle(fontSize: 14, color: BoutiqueColors.textSecondary),
+          ),
+          const SizedBox(height: 32),
+          Wrap(
+            spacing: 20,
+            runSpacing: 20,
+            children: [
+              _buildSettingsCard(
+                icon: Icons.lock_reset_rounded,
+                title: 'Change Password',
+                subtitle: 'Update admin account security password',
+                onTap: _openChangePassword,
+              ),
+              _buildSettingsCard(
+                icon: Icons.create_new_folder_outlined,
+                title: 'Add Master Options',
+                subtitle: 'Create new categories, materials, and units',
+                onTap: _openDropdownOptionsMaster,
+              ),
+              _buildSettingsCard(
+                icon: Icons.sync_rounded,
+                title: 'Sync Database',
+                subtitle: 'Force manual synchronization with Firestore',
+                onTap: () {
+                  SyncService().syncNow();
+                  BoutiqueToast.showSuccess(context, 'Database synchronization initiated');
+                },
+              ),
+              _buildSettingsCard(
+                icon: Icons.logout_rounded,
+                title: 'Logout Admin',
+                subtitle: 'Sign out of current boutique session',
+                isDestructive: true,
+                onTap: _handleLogout,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSettingsCard({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+    bool isDestructive = false,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        width: 320,
+        padding: const EdgeInsets.all(24),
+        decoration: BoutiqueDecoration.card(
+          borderColor: isDestructive ? BoutiqueColors.destructive.withOpacity(0.3) : BoutiqueColors.border,
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: isDestructive ? BoutiqueColors.destructiveBg : BoutiqueColors.accentSoft,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(
+                icon,
+                color: isDestructive ? BoutiqueColors.destructive : BoutiqueColors.accent,
+                size: 24,
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 15,
+                      color: isDestructive ? BoutiqueColors.destructive : BoutiqueColors.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(fontSize: 12, color: BoutiqueColors.textSecondary),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   // ── Logout ─────────────────────────────────────────────────────────────────
@@ -236,34 +392,34 @@ class _AdminHomeShellState extends State<AdminHomeShell> {
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        backgroundColor: Colors.white,
+        backgroundColor: BoutiqueColors.bgCard,
         title: const Text(
           'Confirm Logout',
           style: TextStyle(
             fontFamily: 'serif',
-            fontSize: 18,
+            fontSize: 20,
             fontWeight: FontWeight.bold,
-            color: Color(0xFF000000),
+            color: BoutiqueColors.textPrimary,
           ),
         ),
         content: const Text(
           'Are you sure you want to log out of the admin panel?',
-          style: TextStyle(fontSize: 13, color: Colors.black54),
+          style: TextStyle(fontSize: 14, color: BoutiqueColors.textSecondary),
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text(
-              'Cancel',
-              style: TextStyle(color: Colors.black54),
+          OutlinedButton(
+            style: OutlinedButton.styleFrom(
+              side: const BorderSide(color: BoutiqueColors.border),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
             ),
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel', style: TextStyle(color: BoutiqueColors.textSecondary)),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF000000),
+              backgroundColor: BoutiqueColors.destructive,
               foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8)),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
             ),
             onPressed: () => Navigator.of(ctx).pop(true),
             child: const Text('Logout'),
@@ -276,8 +432,6 @@ class _AdminHomeShellState extends State<AdminHomeShell> {
       await context.read<AuthViewModel>().logout();
     }
   }
-
-  // ── Change Password dialog ─────────────────────────────────────────────────
 
   void _openChangePassword() {
     showDialog(
@@ -298,201 +452,137 @@ class _AdminHomeShellState extends State<AdminHomeShell> {
     );
   }
 
-  // ── Build ──────────────────────────────────────────────────────────────────
-
   @override
   Widget build(BuildContext context) {
+    final isDesktop = MediaQuery.of(context).size.width >= 900;
+    final userEmail = context.watch<AuthViewModel>().adminUser?.email ?? 'admin@boutique.com';
+
     return Scaffold(
-        backgroundColor: const Color(0xFFFCFAF5),
-        body: Column(
+      backgroundColor: BoutiqueColors.bgMain,
+      body: Row(
         children: [
-          // ── Top Navigation Bar ─────────────────────────────────────────────
-          Container(
-            height: 80,
-            padding: const EdgeInsets.symmetric(horizontal: 40),
-            decoration: const BoxDecoration(
-              color: Colors.white,
-              border: Border(
-                bottom: BorderSide(color: Color(0xFFE5DDD0), width: 1),
+          // ── Persistent Left Sidebar (Desktop / Tablet) ──────────────────────
+          if (isDesktop)
+            Container(
+              width: 240,
+              decoration: const BoxDecoration(
+                color: BoutiqueColors.bgCard,
+                border: Border(right: BorderSide(color: BoutiqueColors.border, width: 1)),
               ),
-            ),
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                // Brand
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: InkWell(
-                    onTap: () {
-                      setState(() {
-                        _activeTabIndex = 5;
-                      });
-                    },
-                    borderRadius: BorderRadius.circular(8),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          const Text(
-                            'ForgeAlly-trial',
-                            style: TextStyle(
-                              fontFamily: 'serif',
-                              fontSize: 22,
-                              fontWeight: FontWeight.bold,
-                              letterSpacing: 2.0,
-                              color: Color(0xFF000000),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-
-                // Nav tabs — centered
-                Align(
-                  alignment: Alignment.center,
-                  child: SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
+              child: Column(
+                children: [
+                  // Logo Header
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
                     child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: List.generate(_tabs.length, (index) {
-                        final isSelected = index == _activeTabIndex;
-                        final isHovered = index == _hoveredTabIndex;
-
-                        // Removed dropdown menus to simplify UI
-
-                        return InkWell(
-                          onTap: () => _switchTab(index),
-                          onHover: (hovered) {
-                            setState(() {
-                              _hoveredTabIndex = hovered ? index : null;
-                            });
-                          },
-                          hoverColor: Colors.transparent,
-                          splashColor: Colors.transparent,
-                          highlightColor: Colors.transparent,
-                          child: Container(
-                            height: 80,
-                            padding: const EdgeInsets.symmetric(horizontal: 20),
-                            child: Stack(
-                              clipBehavior: Clip.none,
-                              alignment: Alignment.center,
-                              children: [
-                                Text(
-                                  _tabs[index],
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: isSelected ? FontWeight.bold : FontWeight.w400,
-                                    letterSpacing: 0.8,
-                                    color: isSelected ? const Color(0xFF2D2B3D) : const Color(0xFF8D6E63),
-                                  ),
-                                ),
-                                Positioned(
-                                  bottom: 24,
-                                  left: 0,
-                                  right: 0,
-                                  child: Center(
-                                    child: AnimatedContainer(
-                                      duration: const Duration(milliseconds: 220),
-                                      curve: Curves.easeInOut,
-                                      height: 1.5,
-                                      width: (isSelected || isHovered)
-                                          ? [70.0, 55.0][index]
-                                          : 0,
-                                      decoration: BoxDecoration(
-                                        color: (isSelected || isHovered)
-                                            ? const Color(0xFF2D2B3D)
-                                            : Colors.transparent,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ],
+                      children: [
+                        Container(
+                          width: 34,
+                          height: 34,
+                          decoration: BoxDecoration(
+                            color: BoutiqueColors.accent,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Center(
+                            child: Text(
+                              'F',
+                              style: TextStyle(
+                                fontFamily: 'serif',
+                                color: Colors.white,
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
                           ),
-                        );
-                      }),
+                        ),
+                        const SizedBox(width: 12),
+                        const Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              'ForgeAlly',
+                              style: TextStyle(
+                                fontFamily: 'serif',
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                color: BoutiqueColors.textPrimary,
+                                letterSpacing: 1.0,
+                              ),
+                            ),
+                            Text(
+                              'BOUTIQUE RETAIL',
+                              style: TextStyle(
+                                fontSize: 9,
+                                fontWeight: FontWeight.w600,
+                                letterSpacing: 1.5,
+                                color: BoutiqueColors.accent,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
                     ),
                   ),
-                ),
+                  const Divider(height: 1, color: BoutiqueColors.borderLight),
+                  const SizedBox(height: 16),
 
-                // Settings & Action Menu
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      ConnectionStatusBadge(state: _state),
-                      const SizedBox(width: 12),
-                      Theme(
-                        data: Theme.of(context).copyWith(
-                          cardColor: const Color(0xFFFFFFFF),
+                  // Nav Items
+                  Expanded(
+                    child: ListView(
+                      padding: const EdgeInsets.symmetric(horizontal: 14),
+                      children: [
+                        _buildNavItem(0, Icons.grid_view_rounded, 'Dashboard'),
+                        _buildNavItem(1, Icons.inventory_2_outlined, 'Inventory'),
+                        _buildNavItem(2, Icons.point_of_sale_rounded, 'Billing / POS'),
+                        _buildNavItem(3, Icons.add_circle_outline_rounded, 'Add Item'),
+                        _buildNavItem(4, Icons.insert_chart_outlined_rounded, 'Reports / Sales'),
+                        _buildNavItem(5, Icons.settings_outlined, 'Settings'),
+                      ],
+                    ),
+                  ),
+
+                  // Bottom Profile Banner in Sidebar
+                  Container(
+                    margin: const EdgeInsets.all(14),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: BoutiqueColors.bgSecondary,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: BoutiqueColors.borderLight),
+                    ),
+                    child: Row(
+                      children: [
+                        const CircleAvatar(
+                          radius: 16,
+                          backgroundColor: BoutiqueColors.accent,
+                          child: Icon(Icons.person, color: Colors.white, size: 18),
                         ),
-                        child: PopupMenuButton<String>(
-                          icon: const Icon(
-                            Icons.settings_outlined,
-                            color: Color(0xFF8D6E63),
-                            size: 20,
-                          ),
-                          tooltip: 'Settings',
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        side: const BorderSide(color: Color(0xFFE5DDD0)),
-                      ),
-                      onSelected: (value) {
-                        if (value == 'change_password') {
-                          _openChangePassword();
-                        } else if (value == 'logout') {
-                          _handleLogout();
-                        } else if (value == 'dropdown_master') {
-                          _openDropdownOptionsMaster();
-                        }
-                      },
-                      itemBuilder: (BuildContext context) => [
-                        const PopupMenuItem<String>(
-                          value: 'change_password',
-                          child: Row(
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Icon(Icons.lock_outline,
-                                  color: Color(0xFF8D6E63), size: 18),
-                              SizedBox(width: 8),
-                              Text('Change Password',
-                                  style: TextStyle(
-                                      color: Color(0xFF000000), fontSize: 13)),
+                              const Text(
+                                'Boutique Admin',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                  color: BoutiqueColors.textPrimary,
+                                ),
+                              ),
+                              Text(
+                                userEmail,
+                                style: const TextStyle(fontSize: 10, color: BoutiqueColors.textSecondary),
+                                overflow: TextOverflow.ellipsis,
+                              ),
                             ],
                           ),
                         ),
-                        const PopupMenuItem<String>(
-                          value: 'dropdown_master',
-                          child: Row(
-                            children: [
-                              Icon(Icons.list_alt_rounded,
-                                  color: Color(0xFF8D6E63), size: 18),
-                              SizedBox(width: 8),
-                              Text('Add Master',
-                                  style: TextStyle(
-                                      color: Color(0xFF000000), fontSize: 13)),
-                            ],
-                          ),
-                        ),
-                        const PopupMenuItem<String>(
-                          value: 'logout',
-                          child: Row(
-                            children: [
-                              Icon(Icons.logout_rounded,
-                                  color: Colors.redAccent, size: 18),
-                              SizedBox(width: 8),
-                              Text('Logout',
-                                  style: TextStyle(
-                                      color: Colors.redAccent,
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 13)),
-                            ],
-                          ),
+                        IconButton(
+                          icon: const Icon(Icons.logout_rounded, size: 16, color: BoutiqueColors.textSecondary),
+                          onPressed: _handleLogout,
+                          tooltip: 'Logout',
                         ),
                       ],
                     ),
@@ -500,44 +590,244 @@ class _AdminHomeShellState extends State<AdminHomeShell> {
                 ],
               ),
             ),
-              ],
-            ),
-          ),
 
-          // ── Page body ──────────────────────────────────────────────────────
+          // ── Main Content Area (Header + Body) ──────────────────────────────
           Expanded(
-            child: Stack(
+            child: Column(
               children: [
-                // Content fades in/out on tab switch
-                AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 250),
-                  switchInCurve: Curves.easeOut,
-                  switchOutCurve: Curves.easeIn,
-                  transitionBuilder: (child, animation) => FadeTransition(
-                    opacity: animation,
-                    child: child,
+                // Top Header Bar
+                Container(
+                  height: 70,
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  decoration: const BoxDecoration(
+                    color: BoutiqueColors.bgCard,
+                    border: Border(bottom: BorderSide(color: BoutiqueColors.border, width: 1)),
                   ),
-                  child: KeyedSubtree(
-                    key: ValueKey(_activeTabIndex),
-                    child: _buildBody(),
+                  child: Row(
+                    children: [
+                      // Mobile Nav Drawer Button / Brand
+                      if (!isDesktop) ...[
+                        PopupMenuButton<int>(
+                          icon: const Icon(Icons.menu_rounded, color: BoutiqueColors.textPrimary),
+                          onSelected: (idx) => _switchTab(idx),
+                          itemBuilder: (ctx) => [
+                            const PopupMenuItem(value: 0, child: Text('Dashboard')),
+                            const PopupMenuItem(value: 1, child: Text('Inventory')),
+                            const PopupMenuItem(value: 2, child: Text('Billing / POS')),
+                            const PopupMenuItem(value: 3, child: Text('Add Item')),
+                            const PopupMenuItem(value: 4, child: Text('Reports / Sales')),
+                            const PopupMenuItem(value: 5, child: Text('Settings')),
+                          ],
+                        ),
+                        const SizedBox(width: 8),
+                        const Text(
+                          'ForgeAlly',
+                          style: TextStyle(
+                            fontFamily: 'serif',
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: BoutiqueColors.textPrimary,
+                          ),
+                        ),
+                      ],
+
+                      // Top Bar Search Box
+                      Expanded(
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: Container(
+                            constraints: const BoxConstraints(maxWidth: 380),
+                            height: 40,
+                            margin: const EdgeInsets.only(left: 8),
+                            child: TextField(
+                              controller: _globalSearchCtrl,
+                              style: const TextStyle(fontSize: 13),
+                              decoration: InputDecoration(
+                                hintText: 'Search inventory, tags, customers...',
+                                hintStyle: const TextStyle(fontSize: 12, color: BoutiqueColors.textMuted),
+                                prefixIcon: const Icon(Icons.search_rounded, size: 18, color: BoutiqueColors.textSecondary),
+                                filled: true,
+                                fillColor: BoutiqueColors.bgSubtle,
+                                contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 12),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(20),
+                                  borderSide: const BorderSide(color: BoutiqueColors.border),
+                                ),
+                                enabledBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(20),
+                                  borderSide: const BorderSide(color: BoutiqueColors.border),
+                                ),
+                                focusedBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(20),
+                                  borderSide: const BorderSide(color: BoutiqueColors.accent, width: 1.5),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+
+                      // Header Right Actions
+                      Row(
+                        children: [
+                          ConnectionStatusBadge(state: _state),
+                          const SizedBox(width: 14),
+
+                          // Notifications Icon
+                          IconButton(
+                            icon: const Badge(
+                              smallSize: 8,
+                              backgroundColor: BoutiqueColors.accent,
+                              child: Icon(Icons.notifications_none_rounded, color: BoutiqueColors.textSecondary, size: 22),
+                            ),
+                            onPressed: () {
+                              BoutiqueToast.showSuccess(context, 'All system notifications up to date.');
+                            },
+                            tooltip: 'Notifications',
+                          ),
+                          const SizedBox(width: 8),
+
+                          // Profile Dropdown
+                          Theme(
+                            data: Theme.of(context).copyWith(cardColor: BoutiqueColors.bgCard),
+                            child: PopupMenuButton<String>(
+                              icon: Container(
+                                padding: const EdgeInsets.all(4),
+                                decoration: BoxDecoration(
+                                  border: Border.all(color: BoutiqueColors.border),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(
+                                  Icons.person_outline_rounded,
+                                  color: BoutiqueColors.textPrimary,
+                                  size: 20,
+                                ),
+                              ),
+                              tooltip: 'User Profile',
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                side: const BorderSide(color: BoutiqueColors.border),
+                              ),
+                              onSelected: (value) {
+                                if (value == 'change_password') {
+                                  _openChangePassword();
+                                } else if (value == 'logout') {
+                                  _handleLogout();
+                                } else if (value == 'dropdown_master') {
+                                  _openDropdownOptionsMaster();
+                                }
+                              },
+                              itemBuilder: (BuildContext context) => [
+                                const PopupMenuItem<String>(
+                                  value: 'change_password',
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.lock_outline, color: BoutiqueColors.textSecondary, size: 18),
+                                      SizedBox(width: 8),
+                                      Text('Change Password', style: TextStyle(color: BoutiqueColors.textPrimary, fontSize: 13)),
+                                    ],
+                                  ),
+                                ),
+                                const PopupMenuItem<String>(
+                                  value: 'dropdown_master',
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.list_alt_rounded, color: BoutiqueColors.textSecondary, size: 18),
+                                      SizedBox(width: 8),
+                                      Text('Add Master Options', style: TextStyle(color: BoutiqueColors.textPrimary, fontSize: 13)),
+                                    ],
+                                  ),
+                                ),
+                                const PopupMenuItem<String>(
+                                  value: 'logout',
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.logout_rounded, color: BoutiqueColors.destructive, size: 18),
+                                      SizedBox(width: 8),
+                                      Text('Logout', style: TextStyle(color: BoutiqueColors.destructive, fontWeight: FontWeight.bold, fontSize: 13)),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                   ),
                 ),
 
-                // Blurred overlay + centered dot spinner during transition
-                if (_isTransitioning)
-                  Positioned.fill(
-                    child: BackdropFilter(
-                      filter: ImageFilter.blur(sigmaX: 4, sigmaY: 4),
-                      child: const ColoredBox(
-                        color: Colors.transparent,
-                        child: _DotSpinner(),
+                // Page Body
+                Expanded(
+                  child: Stack(
+                    children: [
+                      AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 200),
+                        switchInCurve: Curves.easeOut,
+                        switchOutCurve: Curves.easeIn,
+                        transitionBuilder: (child, animation) => FadeTransition(
+                          opacity: animation,
+                          child: child,
+                        ),
+                        child: KeyedSubtree(
+                          key: ValueKey(_activeTabIndex),
+                          child: _buildBody(),
+                        ),
                       ),
-                    ),
+                      if (_isTransitioning)
+                        Positioned.fill(
+                          child: BackdropFilter(
+                            filter: ImageFilter.blur(sigmaX: 3, sigmaY: 3),
+                            child: const ColoredBox(
+                              color: Colors.transparent,
+                              child: _DotSpinner(),
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
+                ),
               ],
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildNavItem(int index, IconData icon, String label) {
+    final isSelected = _activeTabIndex == index;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 6),
+      child: InkWell(
+        onTap: () => _switchTab(index),
+        borderRadius: BorderRadius.circular(10),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            color: isSelected ? BoutiqueColors.accentSoft : Colors.transparent,
+            borderRadius: BorderRadius.circular(10),
+            border: isSelected ? Border.all(color: BoutiqueColors.accentLightBorder, width: 1) : null,
+          ),
+          child: Row(
+            children: [
+              Icon(
+                icon,
+                size: 20,
+                color: isSelected ? BoutiqueColors.accent : BoutiqueColors.textSecondary,
+              ),
+              const SizedBox(width: 14),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                  color: isSelected ? BoutiqueColors.accent : BoutiqueColors.textPrimary,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -552,8 +842,7 @@ class _DotSpinner extends StatefulWidget {
   State<_DotSpinner> createState() => _DotSpinnerState();
 }
 
-class _DotSpinnerState extends State<_DotSpinner>
-    with SingleTickerProviderStateMixin {
+class _DotSpinnerState extends State<_DotSpinner> with SingleTickerProviderStateMixin {
   late AnimationController _ctrl;
 
   @override
@@ -561,7 +850,7 @@ class _DotSpinnerState extends State<_DotSpinner>
     super.initState();
     _ctrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1100),
+      duration: const Duration(milliseconds: 1000),
     )..repeat();
   }
 
@@ -577,7 +866,7 @@ class _DotSpinnerState extends State<_DotSpinner>
       child: AnimatedBuilder(
         animation: _ctrl,
         builder: (context, child) => CustomPaint(
-          size: const Size(52, 52),
+          size: const Size(48, 48),
           painter: _DotSpinnerPainter(_ctrl.value),
         ),
       ),
@@ -587,43 +876,28 @@ class _DotSpinnerState extends State<_DotSpinner>
 
 class _DotSpinnerPainter extends CustomPainter {
   final double progress;
-  static const int _n = 14;
+  static const int _n = 12;
 
   const _DotSpinnerPainter(this.progress);
 
   @override
   void paint(Canvas canvas, Size size) {
     final center = Offset(size.width / 2, size.height / 2);
-    final radius = size.width / 2 - 5;
+    final radius = size.width / 2 - 4;
 
     for (int i = 0; i < _n; i++) {
-      // t: 1.0 = head (brightest), 0.0 = tail (invisible)
       final t = (i + 1) / _n;
-      final angle =
-          (2 * math.pi * i / _n) - (2 * math.pi * progress);
+      final angle = (2 * math.pi * i / _n) - (2 * math.pi * progress);
       final pos = Offset(
         center.dx + radius * math.cos(angle),
         center.dy + radius * math.sin(angle),
       );
 
-      final dotRadius = 1.4 + t * 2.2;
-      final opacity = t * t; // quadratic fade for a nice tail
+      final dotRadius = 1.5 + t * 2.0;
+      final opacity = t * t;
 
-      // Warm glow for the brighter dots
-      if (t > 0.55) {
-        final glowPaint = Paint()
-          ..color = const Color(0xFFCA6F1E).withAlpha((opacity * 60).round())
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5);
-        canvas.drawCircle(pos, dotRadius + 2.5, glowPaint);
-      }
-
-      // Core dot: fades from transparent to deep warm brown
       final dotPaint = Paint()
-        ..color = Color.lerp(
-          const Color(0xFFD4A574).withAlpha(0),
-          const Color(0xFF000000),
-          opacity,
-        )!;
+        ..color = BoutiqueColors.accent.withOpacity(opacity.clamp(0.0, 1.0));
       canvas.drawCircle(pos, dotRadius, dotPaint);
     }
   }
@@ -631,6 +905,3 @@ class _DotSpinnerPainter extends CustomPainter {
   @override
   bool shouldRepaint(_DotSpinnerPainter old) => old.progress != progress;
 }
-
-
-

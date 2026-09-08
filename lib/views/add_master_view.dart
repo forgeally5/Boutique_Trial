@@ -2076,3 +2076,14 @@ class _AddMasterDialogState extends State<AddMasterDialog> {
     }
   }
 }
+
+class AddMasterView extends StatelessWidget {
+  final AdminState adminState;
+  const AddMasterView({super.key, required this.adminState});
+
+  @override
+  Widget build(BuildContext context) {
+    return AddMasterDialog(adminState: adminState);
+  }
+}
+
