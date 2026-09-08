@@ -145,7 +145,28 @@ class _LoginPageState extends State<LoginPage> {
                       });
                     },
                   ),
-                  const SizedBox(height: 40),
+                  // Error message display
+                  if (authVM.errorMessage != null &&
+                      authVM.errorMessage!.isNotEmpty) ...[
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.red.shade50,
+                        border: Border.all(color: Colors.red.shade300),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        authVM.errorMessage!,
+                        style: TextStyle(
+                          color: Colors.red.shade900,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                  ],
 
                   // Login Button
                   ElevatedButton(

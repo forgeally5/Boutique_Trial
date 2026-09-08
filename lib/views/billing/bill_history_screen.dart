@@ -26,13 +26,10 @@ class _BillHistoryScreenState extends State<BillHistoryScreen> {
 
   final _searchCtrl = TextEditingController();
 
-  String _paymentModeFilter = 'All';
   bool _loading = false;
 
   List<Map<String, dynamic>> _bills = [];
   List<Map<String, dynamic>> _filtered = [];
-
-  static const _paymentModes = ['All', 'Cash', 'UPI', 'Card', 'Split Payment'];
 
   @override
   void initState() {
@@ -109,8 +106,6 @@ class _BillHistoryScreenState extends State<BillHistoryScreen> {
           final mobile = (e['customerMobile'] ?? '').toString();
           if (!billNo.contains(q) && !customer.contains(q) && !mobile.contains(q)) return false;
         }
-        // Payment mode filter
-        if (_paymentModeFilter != 'All' && e['paymentMode'] != _paymentModeFilter) return false;
         return true;
       }).toList();
     });
@@ -237,23 +232,6 @@ class _BillHistoryScreenState extends State<BillHistoryScreen> {
             _datePill('From', _dateFrom, () => _pickDate(isFrom: true)),
             const Text('→', style: TextStyle(color: _brownLight)),
             _datePill('To', _dateTo, () => _pickDate(isFrom: false)),
-            // Payment mode
-            SizedBox(
-              width: 160,
-              height: 40,
-              child: DropdownButtonFormField<String>(
-                value: _paymentModeFilter,
-                decoration: InputDecoration(
-                  filled: true, fillColor: _bg,
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 10),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: _border)),
-                  enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: _border)),
-                ),
-                items: _paymentModes.map((m) => DropdownMenuItem(value: m, child: Text(m, style: const TextStyle(fontSize: 13)))).toList(),
-                onChanged: (v) { setState(() => _paymentModeFilter = v!); _applyFilters(); },
-                style: const TextStyle(color: _brown, fontSize: 13),
-              ),
-            ),
           ],
         ),
       ),
@@ -280,7 +258,6 @@ class _BillHistoryScreenState extends State<BillHistoryScreen> {
                       _th('Subtotal', flex: 2),
                       _th('Discount', flex: 2),
                       _th('Total', flex: 2),
-                      _th('Mode', flex: 2),
                       _th('', flex: 2),
                     ]),
                   ),
@@ -415,30 +392,12 @@ class _BillRow extends StatelessWidget {
           '₹${total.toStringAsFixed(2)}',
           style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: _green),
         )),
-        Expanded(flex: 2, child: _modePill(mode)),
         Expanded(flex: 2, child: Row(children: [
           _actionBtn(Icons.visibility_outlined, 'View', Colors.blueGrey, onView),
           const SizedBox(width: 4),
           _actionBtn(Icons.delete_outline, 'Delete', _errorColor, onDelete),
         ])),
       ]),
-    );
-  }
-
-  Widget _modePill(String mode) {
-    Color c = Colors.grey;
-    if (mode == 'Cash') c = _green;
-    if (mode == 'UPI') c = Colors.indigo;
-    if (mode == 'Card') c = Colors.blueAccent;
-    if (mode == 'Split Payment') c = Colors.deepOrange;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(
-        color: c.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: c.withValues(alpha: 0.3)),
-      ),
-      child: Text(mode, style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: c)),
     );
   }
 

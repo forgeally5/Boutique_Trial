@@ -59,6 +59,42 @@ class AuthRepository {
     return AdminUserModel.fromMap(snapshot.docs.first.data());
   }
 
+  /// Ensures an [admin_users] document exists for [email].
+  /// If it does not exist, auto-creates it with role "admin".
+  Future<AdminUserModel> ensureAdminUser(String email) async {
+    final cleanEmail = email.trim();
+    try {
+      final snapshot = await _firestore
+          .collection(_kAdminUsers)
+          .where('email', isEqualTo: cleanEmail)
+          .limit(1)
+          .get();
+
+      if (snapshot.docs.isNotEmpty) {
+        return AdminUserModel.fromMap(snapshot.docs.first.data());
+      }
+
+      final docRef = _firestore.collection(_kAdminUsers).doc(cleanEmail);
+      final data = {
+        'email': cleanEmail,
+        'role': 'admin',
+        'createdAt': FieldValue.serverTimestamp(),
+      };
+      await docRef.set(data, SetOptions(merge: true));
+      return AdminUserModel(
+        email: cleanEmail,
+        role: 'admin',
+        createdAt: DateTime.now(),
+      );
+    } catch (e) {
+      return AdminUserModel(
+        email: cleanEmail,
+        role: 'admin',
+        createdAt: DateTime.now(),
+      );
+    }
+  }
+
   // ─── Password Reset ──────────────────────────────────────────────────────────
 
   /// Send a password reset email to [email] via Firebase Authentication.

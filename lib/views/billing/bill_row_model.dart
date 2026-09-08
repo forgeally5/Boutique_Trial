@@ -1,10 +1,11 @@
 import '../../models/product.dart';
 
 /// Represents a single line-item row in a bill/invoice.
+/// All items are piece-based — qty is always an integer count.
 class BillRow {
   Product? product;
-  double qty;        // integer qty for Quantity-Based, decimal weight for Weight-Based
-  double price;      // selling price per unit/gram — editable
+  double qty;        // always integer quantity (piece-based)
+  double price;      // selling price per unit — editable
   double discountValue;
   String discountType; // "%" or "₹"
 
@@ -17,10 +18,7 @@ class BillRow {
   });
 
   /// Unit label shown in the table
-  String get unitLabel => product?.unit ?? 'pc';
-
-  /// Whether this row is weight-based
-  bool get isWeightBased => product?.pricingType == 'Weight-Based';
+  String get unitLabel => product?.unit ?? 'Piece';
 
   /// Raw amount before item discount
   double get grossAmount => qty * price;
@@ -42,8 +40,8 @@ class BillRow {
     'tagId': product?.tagId ?? '',
     'name': product?.name ?? '',
     'category': product?.category ?? '',
-    'pricingType': product?.pricingType ?? 'Quantity-Based',
-    'qty': qty,
+    'pricingType': 'Quantity-Based',
+    'qty': qty.toInt(),
     'unit': product?.unit ?? '',
     'price': price,
     'discountValue': discountValue,

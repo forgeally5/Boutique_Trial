@@ -20,7 +20,6 @@ class _InventoryViewState extends State<InventoryView> {
   String _searchQuery = '';
   String _selectedCategory = 'All Categories';
   String _selectedStatus = 'All Statuses';
-  String _selectedPricingTab = 'Quantity-Based'; // Or 'Weight-Based'
 
   final List<String> _categories = [
     'All Categories',
@@ -180,9 +179,8 @@ class _InventoryViewState extends State<InventoryView> {
               p.tagId.toLowerCase().contains(_searchQuery);
           final matchesCategory = _selectedCategory == 'All Categories' || p.category == _selectedCategory;
           final matchesStatus = _selectedStatus == 'All Statuses' || p.status == _selectedStatus;
-          final matchesPricing = p.pricingType == _selectedPricingTab;
 
-          return matchesSearch && matchesCategory && matchesStatus && matchesPricing;
+          return matchesSearch && matchesCategory && matchesStatus;
         }).toList();
 
         return Container(
@@ -226,10 +224,10 @@ class _InventoryViewState extends State<InventoryView> {
                     ),
                     const SizedBox(height: 24),
 
-                    // Dashboard Cards
+                    // Dashboard Cards (3 cards)
                     LayoutBuilder(
                       builder: (context, constraints) {
-                        int crossAxisCount = constraints.maxWidth > 1200 ? 4 : (constraints.maxWidth > 800 ? 2 : 1);
+                        int crossAxisCount = constraints.maxWidth > 1200 ? 3 : (constraints.maxWidth > 800 ? 2 : 1);
                         final cardWidth = (constraints.maxWidth - (crossAxisCount - 1) * 16) / crossAxisCount;
 
                         final cards = [
@@ -245,13 +243,6 @@ class _InventoryViewState extends State<InventoryView> {
                             title: '${state.totalQuantityBasedStock}',
                             subtitle: 'QUANTITY STOCK',
                             detailText: 'Total pieces in stock',
-                            color: const Color(0xFFF9F6F0),
-                          ),
-                          _buildSummaryCard(
-                            icon: Icons.scale_outlined,
-                            title: 'Mixed',
-                            subtitle: 'WEIGHT-BASED STOCK',
-                            detailText: 'Gross Weight tracked',
                             color: const Color(0xFFF9F6F0),
                           ),
                           _buildSummaryCard(
@@ -353,19 +344,7 @@ class _InventoryViewState extends State<InventoryView> {
                 ),
               ),
 
-              // Tabs for Pricing Type
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: Row(
-                  children: [
-                    _buildTab('Quantity-Based'),
-                    const SizedBox(width: 16),
-                    _buildTab('Weight-Based'),
-                  ],
-                ),
-              ),
-
-              const SizedBox(height: 16),
+              const SizedBox(height: 8),
 
               // Data Table
               Expanded(
@@ -382,6 +361,7 @@ class _InventoryViewState extends State<InventoryView> {
                           itemCount: filteredList.length,
                           itemBuilder: (context, index) {
                             final p = filteredList[index];
+                            final matStr = p.material.isNotEmpty ? ' • ${p.material}' : '';
                             return ListTile(
                               leading: Container(
                                 padding: const EdgeInsets.all(8),
@@ -389,11 +369,9 @@ class _InventoryViewState extends State<InventoryView> {
                                   color: const Color(0xFFF9F6F0),
                                   borderRadius: BorderRadius.circular(8),
                                 ),
-                                child: Icon(
-                                  _selectedPricingTab == 'Quantity-Based'
-                                      ? Icons.production_quantity_limits
-                                      : Icons.scale_outlined,
-                                  color: const Color(0xFF8D6E63),
+                                child: const Icon(
+                                  Icons.inventory_2_outlined,
+                                  color: Color(0xFF8D6E63),
                                 ),
                               ),
                               title: Text(
@@ -401,9 +379,7 @@ class _InventoryViewState extends State<InventoryView> {
                                 style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF3E2723)),
                               ),
                               subtitle: Text(
-                                _selectedPricingTab == 'Quantity-Based'
-                                    ? '${p.category} • ${p.material} • Qty: ${p.quantity} ${p.unit} • MRP: ₹${p.mrp}'
-                                    : '${p.category} • ${p.material} • Gross Wt: ${p.grossWeight}g • Net Wt: ${p.netWeight}g',
+                                '${p.category}$matStr • Qty: ${p.quantity} ${p.unit} • Price: ₹${p.mrp}',
                               ),
                               trailing: Row(
                                 mainAxisSize: MainAxisSize.min,
@@ -443,32 +419,6 @@ class _InventoryViewState extends State<InventoryView> {
           ),
         );
       },
-    );
-  }
-
-  Widget _buildTab(String title) {
-    final isSelected = _selectedPricingTab == title;
-    return InkWell(
-      onTap: () {
-        setState(() {
-          _selectedPricingTab = title;
-        });
-      },
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-        decoration: BoxDecoration(
-          color: isSelected ? const Color(0xFF3E2723) : const Color(0xFFF9F6F0),
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: isSelected ? const Color(0xFF3E2723) : const Color(0xFFE5DDD0)),
-        ),
-        child: Text(
-          title,
-          style: TextStyle(
-            fontWeight: FontWeight.bold,
-            color: isSelected ? Colors.white : const Color(0xFF8D6E63),
-          ),
-        ),
-      ),
     );
   }
 }

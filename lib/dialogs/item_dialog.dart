@@ -32,36 +32,25 @@ class _ItemDialogState extends State<ItemDialog> {
   late TextEditingController _sizeCtrl;
   late TextEditingController _vendorCtrl;
   late TextEditingController _notesCtrl;
-
-  // Weight-based
-  late TextEditingController _grossWeightCtrl;
-  late TextEditingController _netWeightCtrl;
-  late TextEditingController _ratePerGramCtrl;
-  late TextEditingController _makingChargesCtrl;
-
-  // Quantity-based
   late TextEditingController _quantityCtrl;
   late TextEditingController _mrpCtrl;
   late TextEditingController _sellingPriceCtrl;
-
-  // Discount
   late TextEditingController _discountCtrl;
-  String _discountType = '%'; // "%" or "₹"
 
-  String _pricingType = 'Quantity-Based';
-  String _category = 'Others';
+  String _discountType = '%'; // "%" or "₹"
+  String _category = 'Idols';
   String _deity = 'General';
   String _material = 'Brass';
   String _status = 'In Stock';
-  String _unit = 'piece';
+  String _unit = 'Piece';
   bool _isFestivalStock = false;
 
-  // Validation error flags (for touched fields)
+  // Validation touched flags
   bool _tagIdTouched = false;
   bool _nameTouched = false;
+  bool _categoryTouched = false;
   bool _sellingPriceTouched = false;
   bool _quantityTouched = false;
-  bool _weightTouched = false;
 
   static const _brown = Color(0xFF3E2723);
   static const _lightBrown = Color(0xFF8D6E63);
@@ -81,8 +70,7 @@ class _ItemDialogState extends State<ItemDialog> {
     'Brass', 'Silver', 'Panchaloha', 'Wood', 'Clay', 'Marble', 'Plastic/Steel', 'N/A'
   ];
   final List<String> _statuses = ['In Stock', 'Reserved', 'Sold Out', 'Discontinued'];
-  final List<String> _qtyUnits = ['piece', 'box', 'packet', 'set', 'pair'];
-  final List<String> _wtUnits = ['gram', 'kg'];
+  final List<String> _units = ['Piece', 'Set', 'Pair', 'Box', 'Packet'];
 
   @override
   void initState() {
@@ -93,31 +81,27 @@ class _ItemDialogState extends State<ItemDialog> {
     _sizeCtrl = TextEditingController(text: p?.size ?? '');
     _vendorCtrl = TextEditingController(text: p?.vendor ?? '');
     _notesCtrl = TextEditingController(text: p?.notes ?? '');
-
-    _grossWeightCtrl = TextEditingController(text: p != null ? p.grossWeight.toString() : '');
-    _netWeightCtrl = TextEditingController(text: p != null ? p.netWeight.toString() : '');
-    _ratePerGramCtrl = TextEditingController(text: p != null ? p.ratePerGram.toString() : '');
-    _makingChargesCtrl = TextEditingController(text: p != null ? p.makingCharges.toString() : '');
-
     _quantityCtrl = TextEditingController(text: p != null ? p.quantity.toString() : '');
     _mrpCtrl = TextEditingController(text: p != null && p.mrp > 0 ? p.mrp.toString() : '');
-    _sellingPriceCtrl = TextEditingController(text: p != null ? p.sellingPrice.toString() : '');
+    _sellingPriceCtrl = TextEditingController(text: p != null && p.sellingPrice > 0 ? p.sellingPrice.toString() : '');
     _discountCtrl = TextEditingController(text: p != null && p.discountValue > 0 ? p.discountValue.toString() : '');
 
     if (p != null) {
-      _pricingType = p.pricingType.isNotEmpty ? p.pricingType : 'Quantity-Based';
       _category = _categories.contains(p.category) ? p.category : 'Others';
       _deity = _deities.contains(p.deity) ? p.deity : 'General';
       _material = _materials.contains(p.material) ? p.material : 'Brass';
       _status = _statuses.contains(p.status) ? p.status : 'In Stock';
-      _unit = p.unit.isNotEmpty ? p.unit : (_pricingType == 'Quantity-Based' ? 'piece' : 'gram');
+      // Normalise stored unit to capitalised list
+      final storedUnit = p.unit.isNotEmpty ? p.unit : 'Piece';
+      final normUnit = _units.firstWhere(
+        (u) => u.toLowerCase() == storedUnit.toLowerCase(),
+        orElse: () => 'Piece',
+      );
+      _unit = normUnit;
       _isFestivalStock = p.isFestivalStock;
       _discountType = p.discountType.isNotEmpty ? p.discountType : '%';
-    } else {
-      _unit = 'piece';
     }
 
-    // Listen for live recalculation
     _sellingPriceCtrl.addListener(_onPriceChanged);
     _discountCtrl.addListener(_onPriceChanged);
   }
@@ -131,10 +115,6 @@ class _ItemDialogState extends State<ItemDialog> {
     _sizeCtrl.dispose();
     _vendorCtrl.dispose();
     _notesCtrl.dispose();
-    _grossWeightCtrl.dispose();
-    _netWeightCtrl.dispose();
-    _ratePerGramCtrl.dispose();
-    _makingChargesCtrl.dispose();
     _quantityCtrl.dispose();
     _mrpCtrl.dispose();
     _sellingPriceCtrl.dispose();
@@ -142,7 +122,7 @@ class _ItemDialogState extends State<ItemDialog> {
     super.dispose();
   }
 
-  // ── Discount Calculation ─────────────────────────────────────────────────────
+  // ── Discount Calculation ──────────────────────────────────────────────────────
 
   double get _sellingPrice => double.tryParse(_sellingPriceCtrl.text) ?? 0.0;
   double get _discountAmount => double.tryParse(_discountCtrl.text) ?? 0.0;
@@ -164,7 +144,7 @@ class _ItemDialogState extends State<ItemDialog> {
     return ((mrp - _finalPrice) / mrp * 100);
   }
 
-  // ── Validation ───────────────────────────────────────────────────────────────
+  // ── Validation ────────────────────────────────────────────────────────────────
 
   String? _tagIdError() {
     if (!_tagIdTouched) return null;
@@ -184,24 +164,23 @@ class _ItemDialogState extends State<ItemDialog> {
     return null;
   }
 
+  String? _categoryError() {
+    if (!_categoryTouched) return null;
+    if (_category.isEmpty) return 'Category is required';
+    return null;
+  }
+
   String? _sellingPriceError() {
     if (!_sellingPriceTouched) return null;
     final v = double.tryParse(_sellingPriceCtrl.text);
-    if (v == null || v <= 0) return 'Selling Price must be greater than 0';
+    if (v == null || v <= 0) return 'Selling Price must be greater than ₹0';
     return null;
   }
 
   String? _quantityError() {
-    if (_pricingType != 'Quantity-Based' || !_quantityTouched) return null;
+    if (!_quantityTouched) return null;
     final v = int.tryParse(_quantityCtrl.text);
     if (v == null || v < 0) return 'Quantity must be 0 or more';
-    return null;
-  }
-
-  String? _weightError() {
-    if (_pricingType != 'Weight-Based' || !_weightTouched) return null;
-    final v = double.tryParse(_grossWeightCtrl.text);
-    if (v == null || v <= 0) return 'Weight must be greater than 0';
     return null;
   }
 
@@ -220,29 +199,24 @@ class _ItemDialogState extends State<ItemDialog> {
     if (_tagIdCtrl.text.trim().isEmpty) return false;
     if (_tagIdError() != null) return false;
     if (_nameCtrl.text.trim().isEmpty) return false;
+    if (_category.isEmpty) return false;
     final sp = double.tryParse(_sellingPriceCtrl.text);
     if (sp == null || sp <= 0) return false;
-    if (_pricingType == 'Quantity-Based') {
-      final q = int.tryParse(_quantityCtrl.text);
-      if (q == null || q < 0) return false;
-    } else {
-      final w = double.tryParse(_grossWeightCtrl.text);
-      if (w == null || w <= 0) return false;
-    }
+    final q = int.tryParse(_quantityCtrl.text);
+    if (q == null || q < 0) return false;
     if (_discountError() != null) return false;
     return true;
   }
 
-  // ── Save ────────────────────────────────────────────────────────────────────
+  // ── Save ──────────────────────────────────────────────────────────────────────
 
   void _save() {
-    // Mark all required fields as touched for final validation UI
     setState(() {
       _tagIdTouched = true;
       _nameTouched = true;
+      _categoryTouched = true;
       _sellingPriceTouched = true;
       _quantityTouched = true;
-      _weightTouched = true;
     });
 
     if (!_isFormValid) return;
@@ -257,11 +231,11 @@ class _ItemDialogState extends State<ItemDialog> {
       status: _status,
       vendor: _vendorCtrl.text.trim(),
       notes: _notesCtrl.text.trim(),
-      pricingType: _pricingType,
-      grossWeight: double.tryParse(_grossWeightCtrl.text) ?? 0.0,
-      netWeight: double.tryParse(_netWeightCtrl.text) ?? 0.0,
-      ratePerGram: double.tryParse(_ratePerGramCtrl.text) ?? 0.0,
-      makingCharges: double.tryParse(_makingChargesCtrl.text) ?? 0.0,
+      pricingType: 'Quantity-Based',
+      grossWeight: 0.0,
+      netWeight: 0.0,
+      ratePerGram: 0.0,
+      makingCharges: 0.0,
       quantity: int.tryParse(_quantityCtrl.text) ?? 0,
       unit: _unit,
       mrp: double.tryParse(_mrpCtrl.text) ?? 0.0,
@@ -280,7 +254,7 @@ class _ItemDialogState extends State<ItemDialog> {
     Navigator.pop(context);
   }
 
-  // ── Build ────────────────────────────────────────────────────────────────────
+  // ── Build ─────────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
@@ -357,8 +331,16 @@ class _ItemDialogState extends State<ItemDialog> {
                     ]),
                     const SizedBox(height: 16),
                     Row(children: [
-                      Expanded(child: _dropdown('Category *', _category, _categories,
-                          (v) => setState(() => _category = v!))),
+                      Expanded(child: _dropdownWithError(
+                        label: 'Category *',
+                        value: _category,
+                        items: _categories,
+                        error: _categoryError(),
+                        onChanged: (v) => setState(() {
+                          _category = v!;
+                          _categoryTouched = true;
+                        }),
+                      )),
                       const SizedBox(width: 16),
                       Expanded(child: _dropdown('Material', _material, _materials,
                           (v) => setState(() => _material = v!))),
@@ -388,104 +370,36 @@ class _ItemDialogState extends State<ItemDialog> {
 
                     const SizedBox(height: 24),
 
-                    // ── Section 2: Pricing Type ────────────────────────────
-                    _sectionHeader('Pricing Type', Icons.calculate_outlined),
+                    // ── Section 2: Stock & Unit ────────────────────────────
+                    _sectionHeader('Stock & Unit', Icons.inventory_2_outlined),
                     const SizedBox(height: 12),
-                    Container(
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: _border),
-                      ),
-                      child: Row(
-                        children: [
-                          _pricingTab('Quantity-Based', Icons.production_quantity_limits),
-                          _pricingTab('Weight-Based', Icons.scale_outlined),
-                        ],
-                      ),
-                    ),
-
-                    const SizedBox(height: 16),
-
-                    if (_pricingType == 'Quantity-Based') ...[
-                      Row(children: [
-                        Expanded(
-                          child: _field(
-                            label: 'Quantity *',
-                            controller: _quantityCtrl,
-                            isNum: true,
-                            isInt: true,
-                            error: _quantityError(),
-                            hint: '0',
-                            onChanged: (_) => setState(() => _quantityTouched = true),
-                          ),
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: _dropdown(
-                            'Unit *',
-                            _qtyUnits.contains(_unit) ? _unit : 'piece',
-                            _qtyUnits,
-                            (v) => setState(() => _unit = v!),
-                          ),
-                        ),
-                      ]),
-                    ] else ...[
-                      Row(children: [
-                        Expanded(
-                          child: _field(
-                            label: 'Gross Weight *',
-                            controller: _grossWeightCtrl,
-                            isNum: true,
-                            error: _weightError(),
-                            hint: '0.0',
-                            onChanged: (_) => setState(() => _weightTouched = true),
-                          ),
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: _field(
-                            label: 'Net Weight',
-                            controller: _netWeightCtrl,
-                            isNum: true,
-                            hint: '0.0',
-                          ),
-                        ),
-                      ]),
-                      const SizedBox(height: 16),
-                      Row(children: [
-                        Expanded(child: _field(
-                          label: 'Rate Per Gram (₹)',
-                          controller: _ratePerGramCtrl,
+                    Row(children: [
+                      Expanded(
+                        child: _field(
+                          label: 'Quantity *',
+                          controller: _quantityCtrl,
                           isNum: true,
-                          hint: '0.0',
-                        )),
-                        const SizedBox(width: 16),
-                        Expanded(child: _field(
-                          label: 'Making Charges (₹)',
-                          controller: _makingChargesCtrl,
-                          isNum: true,
-                          hint: '0.0',
-                        )),
-                      ]),
-                      const SizedBox(height: 16),
-                      _dropdown(
-                        'Weight Unit *',
-                        _wtUnits.contains(_unit) ? _unit : 'gram',
-                        _wtUnits,
-                        (v) => setState(() => _unit = v!),
+                          isInt: true,
+                          error: _quantityError(),
+                          hint: '0',
+                          onChanged: (_) => setState(() => _quantityTouched = true),
+                        ),
                       ),
-                    ],
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: _dropdown(
+                          'Unit *',
+                          _units.contains(_unit) ? _unit : 'Piece',
+                          _units,
+                          (v) => setState(() => _unit = v!),
+                        ),
+                      ),
+                    ]),
 
                     const SizedBox(height: 24),
 
                     // ── Section 3: Pricing & Discount ─────────────────────
-                    _sectionHeader(
-                      _pricingType == 'Weight-Based'
-                          ? 'Pricing (per ${_wtUnits.contains(_unit) ? _unit : 'gram'})'
-                          : 'Pricing & Discount',
-                      Icons.currency_rupee_rounded,
-                    ),
+                    _sectionHeader('Pricing & Discount', Icons.currency_rupee_rounded),
                     const SizedBox(height: 12),
                     Row(children: [
                       Expanded(child: _field(
@@ -497,9 +411,7 @@ class _ItemDialogState extends State<ItemDialog> {
                       )),
                       const SizedBox(width: 16),
                       Expanded(child: _field(
-                        label: _pricingType == 'Weight-Based'
-                            ? 'Selling Price (₹ per ${_wtUnits.contains(_unit) ? _unit : 'gram'}) *'
-                            : 'Selling Price (₹) *',
+                        label: 'Selling Price (₹) *',
                         controller: _sellingPriceCtrl,
                         isNum: true,
                         error: _sellingPriceError(),
@@ -649,7 +561,7 @@ class _ItemDialogState extends State<ItemDialog> {
               ),
               child: Row(
                 children: [
-                  if (!_isFormValid && (_tagIdTouched || _nameTouched || _sellingPriceTouched))
+                  if (!_isFormValid && (_tagIdTouched || _nameTouched || _sellingPriceTouched || _quantityTouched))
                     const Row(children: [
                       Icon(Icons.error_outline, color: _errorColor, size: 16),
                       SizedBox(width: 6),
@@ -689,7 +601,7 @@ class _ItemDialogState extends State<ItemDialog> {
     );
   }
 
-  // ── Widgets ──────────────────────────────────────────────────────────────────
+  // ── Widgets ───────────────────────────────────────────────────────────────────
 
   Widget _sectionHeader(String title, IconData icon) {
     return Row(children: [
@@ -707,44 +619,10 @@ class _ItemDialogState extends State<ItemDialog> {
     ]);
   }
 
-  Widget _pricingTab(String type, IconData icon) {
-    final isSelected = _pricingType == type;
-    return Expanded(
-      child: GestureDetector(
-        onTap: () => setState(() {
-          _pricingType = type;
-          _unit = type == 'Quantity-Based' ? 'piece' : 'gram';
-        }),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
-          margin: const EdgeInsets.all(4),
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          decoration: BoxDecoration(
-            color: isSelected ? _brown : Colors.transparent,
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-            Icon(icon, size: 18, color: isSelected ? Colors.white : _lightBrown),
-            const SizedBox(width: 8),
-            Text(
-              type,
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                color: isSelected ? Colors.white : _lightBrown,
-              ),
-            ),
-          ]),
-        ),
-      ),
-    );
-  }
-
   Widget _discountTypeBtn(String type) {
     final isSelected = _discountType == type;
     return GestureDetector(
-      onTap: () => setState(() {
-        _discountType = type;
-      }),
+      onTap: () => setState(() => _discountType = type),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 150),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -864,6 +742,52 @@ class _ItemDialogState extends State<ItemDialog> {
           onChanged: onChanged,
           style: const TextStyle(color: _brown, fontSize: 14),
         ),
+      ],
+    );
+  }
+
+  /// Dropdown with an inline error message below (for required dropdowns).
+  Widget _dropdownWithError({
+    required String label,
+    required String value,
+    required List<String> items,
+    String? error,
+    required ValueChanged<String?> onChanged,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 12, fontWeight: FontWeight.w600, color: _lightBrown,
+          ),
+        ),
+        const SizedBox(height: 5),
+        DropdownButtonFormField<String>(
+          value: items.contains(value) ? value : items.first,
+          decoration: InputDecoration(
+            filled: true,
+            fillColor: Colors.white,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(color: error != null ? _errorColor : _border),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(color: error != null ? _errorColor : _brown, width: 1.5),
+            ),
+          ),
+          items: items.map((i) => DropdownMenuItem(value: i, child: Text(i))).toList(),
+          onChanged: onChanged,
+          style: const TextStyle(color: _brown, fontSize: 14),
+        ),
+        if (error != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 4, left: 2),
+            child: Text(error, style: const TextStyle(fontSize: 11, color: _errorColor)),
+          ),
       ],
     );
   }
