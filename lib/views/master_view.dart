@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../state/admin_state.dart';
 import 'dart:math' as math;
 import 'dart:typed_data';
 import '../dialogs/bill_detail_dialog.dart';
@@ -87,13 +88,21 @@ List<Widget> buildReportMenuItems(
 }
 
 class MasterView extends StatelessWidget {
-  const MasterView({super.key});
+  final AdminState? adminState;
+  final String? initialReportTitle;
+
+  const MasterView({
+    super.key,
+    this.adminState,
+    this.initialReportTitle,
+  });
 
   @override
   Widget build(BuildContext context) {
     return const FinancialYearView();
   }
 }
+
 
 class FinancialYearView extends StatefulWidget {
   const FinancialYearView({super.key});
