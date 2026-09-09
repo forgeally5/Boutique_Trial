@@ -168,8 +168,8 @@ class AdminHomeShell extends StatefulWidget {
 
 class _AdminHomeShellState extends State<AdminHomeShell> {
   final AdminState _state = AdminState();
-  // 0: Dashboard, 1: Inventory, 2: Billing, 3: Add Item, 4: Reports, 5: Settings
-  int _activeTabIndex = 0;
+  // 1: Inventory, 2: Billing, 4: Reports, 5: Settings
+  int _activeTabIndex = 1;
   String _selectedBillingSection = 'A Sales Entry';
   String _selectedReportTitle = 'A Daily Activity Report';
   bool _isTransitioning = false;
@@ -220,19 +220,6 @@ class _AdminHomeShellState extends State<AdminHomeShell> {
 
   Widget _buildBody() {
     switch (_activeTabIndex) {
-      case 0:
-        return HomeView(
-          adminState: _state,
-          onNavigateToBilling: (sec) {
-            _selectedBillingSection = sec;
-            _switchTab(2);
-          },
-          onNavigateToTab: (tabIdx) => _switchTab(tabIdx),
-          onNavigateToReport: (rep) {
-            _selectedReportTitle = rep;
-            _switchTab(4);
-          },
-        );
       case 1:
         return InventoryView(state: _state);
       case 2:
@@ -243,8 +230,6 @@ class _AdminHomeShellState extends State<AdminHomeShell> {
             setState(() => _selectedBillingSection = sec);
           },
         );
-      case 3:
-        return AddMasterView(adminState: _state);
       case 4:
         return MasterView(
           adminState: _state,
@@ -253,18 +238,7 @@ class _AdminHomeShellState extends State<AdminHomeShell> {
       case 5:
         return _buildSettingsView();
       default:
-        return HomeView(
-          adminState: _state,
-          onNavigateToBilling: (sec) {
-            _selectedBillingSection = sec;
-            _switchTab(2);
-          },
-          onNavigateToTab: (tabIdx) => _switchTab(tabIdx),
-          onNavigateToReport: (rep) {
-            _selectedReportTitle = rep;
-            _switchTab(4);
-          },
-        );
+        return InventoryView(state: _state);
     }
   }
 
@@ -532,10 +506,8 @@ class _AdminHomeShellState extends State<AdminHomeShell> {
                     child: ListView(
                       padding: const EdgeInsets.symmetric(horizontal: 14),
                       children: [
-                        _buildNavItem(0, Icons.grid_view_rounded, 'Dashboard'),
                         _buildNavItem(1, Icons.inventory_2_outlined, 'Inventory'),
                         _buildNavItem(2, Icons.point_of_sale_rounded, 'Billing / POS'),
-                        _buildNavItem(3, Icons.add_circle_outline_rounded, 'Add Item'),
                         _buildNavItem(4, Icons.insert_chart_outlined_rounded, 'Reports / Sales'),
                         _buildNavItem(5, Icons.settings_outlined, 'Settings'),
                       ],
@@ -611,10 +583,8 @@ class _AdminHomeShellState extends State<AdminHomeShell> {
                           icon: const Icon(Icons.menu_rounded, color: BoutiqueColors.textPrimary),
                           onSelected: (idx) => _switchTab(idx),
                           itemBuilder: (ctx) => [
-                            const PopupMenuItem(value: 0, child: Text('Dashboard')),
                             const PopupMenuItem(value: 1, child: Text('Inventory')),
                             const PopupMenuItem(value: 2, child: Text('Billing / POS')),
-                            const PopupMenuItem(value: 3, child: Text('Add Item')),
                             const PopupMenuItem(value: 4, child: Text('Reports / Sales')),
                             const PopupMenuItem(value: 5, child: Text('Settings')),
                           ],
