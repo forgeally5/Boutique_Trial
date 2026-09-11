@@ -213,7 +213,7 @@ class _AdminHomeShellState extends State<AdminHomeShell> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            'Boutique Settings & Master Configuration',
+            'Boutique Settings',
             style: TextStyle(
               fontFamily: 'serif',
               fontSize: 26,
@@ -223,7 +223,7 @@ class _AdminHomeShellState extends State<AdminHomeShell> {
           ),
           const SizedBox(height: 8),
           const Text(
-            'Configure security credentials, dropdown masters, and system preferences.',
+            'Manage session and system settings.',
             style: TextStyle(fontSize: 14, color: BoutiqueColors.textSecondary),
           ),
           const SizedBox(height: 32),
@@ -231,12 +231,6 @@ class _AdminHomeShellState extends State<AdminHomeShell> {
             spacing: 20,
             runSpacing: 20,
             children: [
-              _buildSettingsCard(
-                icon: Icons.lock_reset_rounded,
-                title: 'Change Password',
-                subtitle: 'Update admin account security password',
-                onTap: _openChangePassword,
-              ),
               _buildSettingsCard(
                 icon: Icons.logout_rounded,
                 title: 'Logout Admin',
