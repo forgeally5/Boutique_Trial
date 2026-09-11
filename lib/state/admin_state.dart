@@ -274,6 +274,17 @@ class AdminState extends ChangeNotifier {
   List<Product> get products => _products;
 
   final List<String> _dynamicCategories = [];
+  final List<String> _dynamicMaterials = [];
+  final List<String> _dynamicUnits = [];
+
+  final Set<String> _deletedCategories = {};
+  final Set<String> _deletedMaterials = {};
+  final Set<String> _deletedUnits = {};
+
+  final List<String> _defaultMaterials = [
+    'Brass', 'Silver', 'Panchaloha', 'Wood', 'Clay', 'Marble', 'Plastic/Steel', 'N/A'
+  ];
+  final List<String> _defaultUnits = ['Piece', 'Set', 'Pair', 'Box', 'Packet'];
 
   List<String> get categories {
     final set = <String>{
@@ -282,18 +293,106 @@ class AdminState extends ChangeNotifier {
       ..._dynamicCategories,
       ..._products.map((p) => p.category).where((c) => c.isNotEmpty)
     };
-    return set.toList();
+    return set.where((c) => !_deletedCategories.contains(c) || c == 'All Categories').toList();
+  }
+
+  List<String> get materials {
+    final set = <String>{
+      ..._defaultMaterials,
+      ..._dynamicMaterials,
+      ..._products.map((p) => p.material).where((m) => m.isNotEmpty)
+    };
+    return set.where((m) => !_deletedMaterials.contains(m)).toList();
+  }
+
+  List<String> get units {
+    final set = <String>{
+      ..._defaultUnits,
+      ..._dynamicUnits,
+      ..._products.map((p) => p.unit).where((u) => u.isNotEmpty)
+    };
+    return set.where((u) => !_deletedUnits.contains(u)).toList();
   }
 
   void addCategory(String newCat) {
     final trimmed = newCat.trim();
-    if (trimmed.isNotEmpty && !_dynamicCategories.contains(trimmed)) {
-      _dynamicCategories.add(trimmed);
-      try {
-        _firestore.collection('categories').add({'name': trimmed, 'createdAt': FieldValue.serverTimestamp()});
-      } catch (_) {}
+    if (trimmed.isNotEmpty) {
+      _deletedCategories.remove(trimmed);
+      if (!_dynamicCategories.contains(trimmed)) {
+        _dynamicCategories.add(trimmed);
+        try {
+          _firestore.collection('categories').add({'name': trimmed, 'createdAt': FieldValue.serverTimestamp()});
+        } catch (_) {}
+      }
       notifyListeners();
     }
+  }
+
+  Future<void> deleteCategory(String cat) async {
+    final trimmed = cat.trim();
+    _dynamicCategories.remove(trimmed);
+    _deletedCategories.add(trimmed);
+    notifyListeners();
+    try {
+      final snap = await _firestore.collection('categories').where('name', isEqualTo: trimmed).get();
+      for (var doc in snap.docs) {
+        await doc.reference.delete();
+      }
+    } catch (_) {}
+  }
+
+  void addMaterial(String newMat) {
+    final trimmed = newMat.trim();
+    if (trimmed.isNotEmpty) {
+      _deletedMaterials.remove(trimmed);
+      if (!_dynamicMaterials.contains(trimmed)) {
+        _dynamicMaterials.add(trimmed);
+        try {
+          _firestore.collection('materials').add({'name': trimmed, 'createdAt': FieldValue.serverTimestamp()});
+        } catch (_) {}
+      }
+      notifyListeners();
+    }
+  }
+
+  Future<void> deleteMaterial(String mat) async {
+    final trimmed = mat.trim();
+    _dynamicMaterials.remove(trimmed);
+    _deletedMaterials.add(trimmed);
+    notifyListeners();
+    try {
+      final snap = await _firestore.collection('materials').where('name', isEqualTo: trimmed).get();
+      for (var doc in snap.docs) {
+        await doc.reference.delete();
+      }
+    } catch (_) {}
+  }
+
+  void addUnit(String newUnit) {
+    final trimmed = newUnit.trim();
+    if (trimmed.isNotEmpty) {
+      _deletedUnits.remove(trimmed);
+      if (!_dynamicUnits.contains(trimmed)) {
+        _dynamicUnits.add(trimmed);
+        try {
+          _firestore.collection('units').add({'name': trimmed, 'createdAt': FieldValue.serverTimestamp()});
+        } catch (_) {}
+      }
+      notifyListeners();
+    }
+  }
+
+  Future<void> deleteUnit(String unit) async {
+    final trimmed = unit.trim();
+    _dynamicUnits.remove(trimmed);
+    _deletedUnits.add(trimmed);
+    notifyListeners();
+    try {
+      final snap = await _firestore.collection('units').where('name', isEqualTo: trimmed).get();
+      for (var doc in snap.docs) {
+        await doc.reference.delete();
+      }
+    } catch (_) {}
   }
 
   // ─── Fetch from collections (both jewelry_inventory & products) ──────────
@@ -304,8 +403,30 @@ class AdminState extends ChangeNotifier {
       _firestore.collection('categories').snapshots().listen((snap) {
         for (var doc in snap.docs) {
           final name = doc.data()['name']?.toString() ?? '';
-          if (name.isNotEmpty && !_dynamicCategories.contains(name)) {
+          if (name.isNotEmpty && !_dynamicCategories.contains(name) && !_deletedCategories.contains(name)) {
             _dynamicCategories.add(name);
+          }
+        }
+        _debouncedNotify();
+      });
+
+      // Fetch materials
+      _firestore.collection('materials').snapshots().listen((snap) {
+        for (var doc in snap.docs) {
+          final name = doc.data()['name']?.toString() ?? '';
+          if (name.isNotEmpty && !_dynamicMaterials.contains(name) && !_deletedMaterials.contains(name)) {
+            _dynamicMaterials.add(name);
+          }
+        }
+        _debouncedNotify();
+      });
+
+      // Fetch units
+      _firestore.collection('units').snapshots().listen((snap) {
+        for (var doc in snap.docs) {
+          final name = doc.data()['name']?.toString() ?? '';
+          if (name.isNotEmpty && !_dynamicUnits.contains(name) && !_deletedUnits.contains(name)) {
+            _dynamicUnits.add(name);
           }
         }
         _debouncedNotify();

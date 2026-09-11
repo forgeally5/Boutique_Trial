@@ -85,39 +85,134 @@ class _ItemDialogState extends State<ItemDialog> {
 
   List<String> get _availableCategories {
     final list = widget.adminState.categories.where((c) => c != 'All Categories').toList();
-    if (list.isEmpty) return _categories;
-    return list;
+    return list.isNotEmpty ? list : _categories;
   }
 
-  void _showAddCategoryDialog() {
+  List<String> get _availableMaterials {
+    final list = widget.adminState.materials;
+    return list.isNotEmpty ? list : _materials;
+  }
+
+  List<String> get _availableUnits {
+    final list = widget.adminState.units;
+    return list.isNotEmpty ? list : _units;
+  }
+
+  void _showManageMasterListDialog(String type) {
     final ctrl = TextEditingController();
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-        title: const Text('Add New Category', style: TextStyle(fontFamily: 'serif', color: _brown)),
-        content: TextField(
-          controller: ctrl,
-          decoration: const InputDecoration(
-            hintText: 'Category Name (e.g. Sarees, Dresses)',
-          ),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: _brown),
-            onPressed: () {
-              final cat = ctrl.text.trim();
-              if (cat.isNotEmpty) {
-                widget.adminState.addCategory(cat);
-                setState(() => _category = cat);
-              }
-              Navigator.pop(ctx);
-            },
-            child: const Text('Add', style: TextStyle(color: Colors.white)),
-          ),
-        ],
-      ),
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            List<String> currentItems;
+            if (type == 'Category') {
+              currentItems = widget.adminState.categories.where((c) => c != 'All Categories').toList();
+            } else if (type == 'Material') {
+              currentItems = widget.adminState.materials;
+            } else {
+              currentItems = widget.adminState.units;
+            }
+
+            return AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              title: Row(
+                children: [
+                  const Icon(Icons.settings_outlined, color: _brown),
+                  const SizedBox(width: 8),
+                  Text('Manage $type List', style: const TextStyle(fontFamily: 'serif', color: _brown, fontWeight: FontWeight.bold)),
+                ],
+              ),
+              content: SizedBox(
+                width: 380,
+                height: 400,
+                child: Column(
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: ctrl,
+                            decoration: InputDecoration(
+                              hintText: 'Add new $type...',
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: _brown,
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          ),
+                          onPressed: () {
+                            final val = ctrl.text.trim();
+                            if (val.isNotEmpty) {
+                              if (type == 'Category') {
+                                widget.adminState.addCategory(val);
+                                setState(() => _category = val);
+                              } else if (type == 'Material') {
+                                widget.adminState.addMaterial(val);
+                                setState(() => _material = val);
+                              } else if (type == 'Unit') {
+                                widget.adminState.addUnit(val);
+                                setState(() => _unit = val);
+                              }
+                              ctrl.clear();
+                              setDialogState(() {});
+                            }
+                          },
+                          child: const Text('Add', style: TextStyle(color: Colors.white)),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    const Divider(height: 1),
+                    const SizedBox(height: 8),
+                    Expanded(
+                      child: currentItems.isEmpty
+                          ? const Center(child: Text('No items in list'))
+                          : ListView.separated(
+                              itemCount: currentItems.length,
+                              separatorBuilder: (_, __) => const Divider(height: 1),
+                              itemBuilder: (ctx, i) {
+                                final item = currentItems[i];
+                                return ListTile(
+                                  dense: true,
+                                  title: Text(item, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+                                  trailing: IconButton(
+                                    icon: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 20),
+                                    onPressed: () async {
+                                      if (type == 'Category') {
+                                        await widget.adminState.deleteCategory(item);
+                                      } else if (type == 'Material') {
+                                        await widget.adminState.deleteMaterial(item);
+                                      } else if (type == 'Unit') {
+                                        await widget.adminState.deleteUnit(item);
+                                      }
+                                      setDialogState(() {});
+                                      setState(() {});
+                                    },
+                                  ),
+                                );
+                              },
+                            ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Close', style: TextStyle(color: _brown, fontWeight: FontWeight.bold)),
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
   }
 
@@ -391,16 +486,35 @@ class _ItemDialogState extends State<ItemDialog> {
                             ),
                             const SizedBox(width: 4),
                             IconButton(
-                              onPressed: _showAddCategoryDialog,
-                              icon: const Icon(Icons.add_circle_outline, color: _brown),
-                              tooltip: 'Add New Category',
+                              onPressed: () => _showManageMasterListDialog('Category'),
+                              icon: const Icon(Icons.settings_outlined, color: _brown),
+                              tooltip: 'Manage Categories',
                             ),
                           ],
                         ),
                       ),
                       const SizedBox(width: 16),
-                      Expanded(child: _dropdown('Material', _material, _materials,
-                          (v) => setState(() => _material = v!))),
+                      Expanded(
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Expanded(
+                              child: _dropdown(
+                                'Material',
+                                _availableMaterials.contains(_material) ? _material : (_availableMaterials.isNotEmpty ? _availableMaterials.first : 'Brass'),
+                                _availableMaterials,
+                                (v) => setState(() => _material = v!),
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            IconButton(
+                              onPressed: () => _showManageMasterListDialog('Material'),
+                              icon: const Icon(Icons.settings_outlined, color: _brown),
+                              tooltip: 'Manage Materials',
+                            ),
+                          ],
+                        ),
+                      ),
                     ]),
                     const SizedBox(height: 16),
                     Row(children: [
@@ -444,11 +558,24 @@ class _ItemDialogState extends State<ItemDialog> {
                       ),
                       const SizedBox(width: 16),
                       Expanded(
-                        child: _dropdown(
-                          'Unit *',
-                          _units.contains(_unit) ? _unit : 'Piece',
-                          _units,
-                          (v) => setState(() => _unit = v!),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Expanded(
+                              child: _dropdown(
+                                'Unit *',
+                                _availableUnits.contains(_unit) ? _unit : (_availableUnits.isNotEmpty ? _availableUnits.first : 'Piece'),
+                                _availableUnits,
+                                (v) => setState(() => _unit = v!),
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            IconButton(
+                              onPressed: () => _showManageMasterListDialog('Unit'),
+                              icon: const Icon(Icons.settings_outlined, color: _brown),
+                              tooltip: 'Manage Units',
+                            ),
+                          ],
                         ),
                       ),
                     ]),

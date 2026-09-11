@@ -357,8 +357,128 @@ class _AdminHomeShellState extends State<AdminHomeShell> {
   }
 
   void _openChangePassword() {
-    // Change password can be done through Firebase Auth directly
-    BoutiqueToast.showSuccess(context, 'Please use Firebase Console to reset password.');
+    final currentCtrl = TextEditingController();
+    final newCtrl = TextEditingController();
+    final confirmCtrl = TextEditingController();
+    String? errorMsg;
+    bool isLoading = false;
+
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              backgroundColor: BoutiqueColors.bgCard,
+              title: const Text(
+                'Change Password',
+                style: TextStyle(
+                  fontFamily: 'serif',
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: BoutiqueColors.textPrimary,
+                ),
+              ),
+              content: SizedBox(
+                width: 340,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (errorMsg != null)
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        margin: const EdgeInsets.only(bottom: 12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFFEBEE),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          errorMsg!,
+                          style: const TextStyle(color: BoutiqueColors.destructive, fontSize: 13),
+                        ),
+                      ),
+                    TextField(
+                      controller: currentCtrl,
+                      obscureText: true,
+                      decoration: BoutiqueInputDecoration.field(hintText: 'Current Password'),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: newCtrl,
+                      obscureText: true,
+                      decoration: BoutiqueInputDecoration.field(hintText: 'New Password'),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: confirmCtrl,
+                      obscureText: true,
+                      decoration: BoutiqueInputDecoration.field(hintText: 'Confirm New Password'),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                OutlinedButton(
+                  onPressed: isLoading ? null : () => Navigator.pop(ctx),
+                  child: const Text('Cancel', style: TextStyle(color: BoutiqueColors.textSecondary)),
+                ),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(backgroundColor: BoutiqueColors.accent),
+                  onPressed: isLoading
+                      ? null
+                      : () async {
+                          final curr = currentCtrl.text.trim();
+                          final newP = newCtrl.text.trim();
+                          final confP = confirmCtrl.text.trim();
+                          if (curr.isEmpty || newP.isEmpty || confP.isEmpty) {
+                            setDialogState(() => errorMsg = 'Please fill in all fields.');
+                            return;
+                          }
+                          if (newP.length < 6) {
+                            setDialogState(() => errorMsg = 'New password must be at least 6 characters.');
+                            return;
+                          }
+                          if (newP != confP) {
+                            setDialogState(() => errorMsg = 'New passwords do not match.');
+                            return;
+                          }
+
+                          setDialogState(() {
+                            isLoading = true;
+                            errorMsg = null;
+                          });
+
+                          try {
+                            await context.read<AuthViewModel>().changePassword(
+                                  currentPassword: curr,
+                                  newPassword: newP,
+                                );
+                            if (ctx.mounted) {
+                              Navigator.pop(ctx);
+                              BoutiqueToast.showSuccess(context, 'Password updated successfully!');
+                            }
+                          } catch (e) {
+                            setDialogState(() {
+                              isLoading = false;
+                              errorMsg = e.toString().replaceAll('Exception: ', '');
+                            });
+                          }
+                        },
+                  child: isLoading
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                        )
+                      : const Text('Update Password', style: TextStyle(color: Colors.white)),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
   }
 
   @override

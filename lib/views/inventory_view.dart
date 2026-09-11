@@ -53,14 +53,14 @@ class _InventoryViewState extends State<InventoryView> {
   String _lastSearch = '';
   String _lastCategory = '';
   String _lastStatus = '';
+  bool _filterLowStockOnly = false;
 
   List<Product> _getFilteredList(List<Product> allProducts) {
-    // Only recompute when inputs change
     if (identical(allProducts, _lastSourceProducts) &&
         _searchQuery == _lastSearch &&
         _selectedCategory == _lastCategory &&
         _selectedStatus == _lastStatus) {
-      return _cachedFilteredList;
+      return _cachedFilteredList.where((p) => !_filterLowStockOnly || p.quantity < 5).toList();
     }
     _lastSourceProducts = allProducts;
     _lastSearch = _searchQuery;
@@ -76,7 +76,7 @@ class _InventoryViewState extends State<InventoryView> {
           _selectedStatus == 'All Statuses' || p.status == _selectedStatus;
       return matchesSearch && matchesCategory && matchesStatus;
     }).toList();
-    return _cachedFilteredList;
+    return _cachedFilteredList.where((p) => !_filterLowStockOnly || p.quantity < 5).toList();
   }
 
   final List<String> _statuses = [
@@ -245,10 +245,62 @@ class _InventoryViewState extends State<InventoryView> {
                             spacing: 12,
                             runSpacing: 12,
                             children: [
-                              SizedBox(width: w, child: _buildMiniStat('Total Stock', '${state.totalStockQuantity} pcs', Icons.inventory_2_outlined, BoutiqueColors.accentSoft)),
-                              SizedBox(width: w, child: _buildMiniStat('In Stock', '${state.availableProductsCount}', Icons.check_circle_outline, const Color(0xFFE8F5E9))),
-                              SizedBox(width: w, child: _buildMiniStat('Low Stock', '${state.lowStockCount}', Icons.warning_amber_rounded, BoutiqueColors.lowStockBg)),
-                              SizedBox(width: w, child: _buildMiniStat('Categories', '${state.totalCategoriesUsed}', Icons.category_outlined, BoutiqueColors.goldSoft)),
+                              SizedBox(
+                                width: w,
+                                child: _buildMiniStat(
+                                  'Total Stock',
+                                  '${state.totalStockQuantity} pcs',
+                                  Icons.inventory_2_outlined,
+                                  BoutiqueColors.accentSoft,
+                                  onTap: () => setState(() {
+                                    _selectedStatus = 'All Statuses';
+                                    _selectedCategory = 'All Categories';
+                                    _filterLowStockOnly = false;
+                                    _searchCtrl.clear();
+                                    _searchQuery = '';
+                                  }),
+                                ),
+                              ),
+                              SizedBox(
+                                width: w,
+                                child: _buildMiniStat(
+                                  'In Stock',
+                                  '${state.availableProductsCount}',
+                                  Icons.check_circle_outline,
+                                  _selectedStatus == 'In Stock' && !_filterLowStockOnly
+                                      ? const Color(0xFFC8E6C9)
+                                      : const Color(0xFFE8F5E9),
+                                  onTap: () => setState(() {
+                                    _selectedStatus = _selectedStatus == 'In Stock' ? 'All Statuses' : 'In Stock';
+                                    _filterLowStockOnly = false;
+                                  }),
+                                ),
+                              ),
+                              SizedBox(
+                                width: w,
+                                child: _buildMiniStat(
+                                  'Low Stock',
+                                  '${state.lowStockCount}',
+                                  Icons.warning_amber_rounded,
+                                  _filterLowStockOnly ? const Color(0xFFFDE68A) : BoutiqueColors.lowStockBg,
+                                  onTap: () => setState(() {
+                                    _filterLowStockOnly = !_filterLowStockOnly;
+                                  }),
+                                ),
+                              ),
+                              SizedBox(
+                                width: w,
+                                child: _buildMiniStat(
+                                  'Categories',
+                                  '${state.totalCategoriesUsed}',
+                                  Icons.category_outlined,
+                                  BoutiqueColors.goldSoft,
+                                  onTap: () => setState(() {
+                                    _selectedCategory = 'All Categories';
+                                    _filterLowStockOnly = false;
+                                  }),
+                                ),
+                              ),
                             ],
                           );
                         },
@@ -419,26 +471,30 @@ class _InventoryViewState extends State<InventoryView> {
     );
   }
 
-  Widget _buildMiniStat(String label, String value, IconData icon, Color bg) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: BoutiqueColors.borderLight),
-      ),
-      child: Row(
-        children: [
-          Icon(icon, size: 18, color: BoutiqueColors.textPrimary),
-          const SizedBox(width: 10),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(value, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: BoutiqueColors.textPrimary)),
-              Text(label, style: const TextStyle(fontSize: 10, color: BoutiqueColors.textSecondary)),
-            ],
-          ),
-        ],
+  Widget _buildMiniStat(String label, String value, IconData icon, Color bg, {VoidCallback? onTap}) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: BoutiqueColors.borderLight),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, size: 18, color: BoutiqueColors.textPrimary),
+            const SizedBox(width: 10),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(value, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: BoutiqueColors.textPrimary)),
+                Text(label, style: const TextStyle(fontSize: 10, color: BoutiqueColors.textSecondary)),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
