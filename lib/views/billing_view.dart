@@ -46,19 +46,22 @@ class _BillingViewState extends State<BillingView> {
             ],
           ),
         ),
-        // Content
+        // Content — Offstage keeps CreateBillScreen state alive without
+        // building BillHistoryScreen until the user first opens it.
         Expanded(
-          child: IndexedStack(
-            index: _tab,
+          child: Stack(
             children: [
-              CreateBillScreen(
-                state: widget.state,
-                onSaved: () {
-                  // After saving, switch to history to see the new bill
-                  setState(() => _tab = 1);
-                },
+              Offstage(
+                offstage: _tab != 0,
+                child: CreateBillScreen(
+                  state: widget.state,
+                  onSaved: () {
+                    setState(() => _tab = 1);
+                  },
+                ),
               ),
-              BillHistoryScreen(state: widget.state),
+              if (_tab == 1)
+                BillHistoryScreen(state: widget.state),
             ],
           ),
         ),

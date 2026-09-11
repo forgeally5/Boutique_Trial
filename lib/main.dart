@@ -1,7 +1,5 @@
 import 'dart:math' as math;
-import 'dart:ui';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'auth/viewmodels/auth_viewmodel.dart';
@@ -11,14 +9,10 @@ import 'services/sync_service.dart';
 import 'services/local_db_service.dart';
 import 'views/inventory_view.dart';
 import 'views/billing_view.dart';
-import 'views/rates_view.dart';
 import 'login_page.dart';
 import 'views/master_view.dart';
-import 'views/master/report_shared.dart';
 import 'views/change_password_dialog.dart';
 import 'views/add_master_view.dart';
-import 'views/portal_orders_view.dart';
-import 'views/home_view.dart';
 import 'views/widgets/connection_status_badge.dart';
 import 'utils/boutique_theme.dart';
 
@@ -172,17 +166,12 @@ class _AdminHomeShellState extends State<AdminHomeShell> {
   int _activeTabIndex = 1;
   String _selectedBillingSection = 'A Sales Entry';
   String _selectedReportTitle = 'A Daily Activity Report';
-  bool _isTransitioning = false;
   final TextEditingController _globalSearchCtrl = TextEditingController();
 
-  Future<void> _switchTab(int index) async {
+  void _switchTab(int index) {
     if (index == _activeTabIndex) return;
-    setState(() => _isTransitioning = true);
-    await Future.delayed(const Duration(milliseconds: 200));
-    if (!mounted) return;
     setState(() {
       _activeTabIndex = index;
-      _isTransitioning = false;
     });
   }
 
@@ -218,29 +207,10 @@ class _AdminHomeShellState extends State<AdminHomeShell> {
     super.dispose();
   }
 
-  Widget _buildBody() {
-    switch (_activeTabIndex) {
-      case 1:
-        return InventoryView(state: _state);
-      case 2:
-        return BillingView(
-          state: _state,
-          initialSection: _selectedBillingSection,
-          onSectionChanged: (sec) {
-            setState(() => _selectedBillingSection = sec);
-          },
-        );
-      case 4:
-        return MasterView(
-          adminState: _state,
-          initialReportTitle: _selectedReportTitle,
-        );
-      case 5:
-        return _buildSettingsView();
-      default:
-        return InventoryView(state: _state);
-    }
-  }
+  // Tab index → IndexedStack position mapping
+  // 1=Inventory, 2=Billing, 4=Reports/Master, 5=Settings
+  static const _tabToStackIndex = {1: 0, 2: 1, 4: 2, 5: 3};
+  int get _stackIndex => _tabToStackIndex[_activeTabIndex] ?? 0;
 
   Widget _buildSettingsView() {
     return SingleChildScrollView(
@@ -508,7 +478,6 @@ class _AdminHomeShellState extends State<AdminHomeShell> {
                       children: [
                         _buildNavItem(1, Icons.inventory_2_outlined, 'Inventory'),
                         _buildNavItem(2, Icons.point_of_sale_rounded, 'Billing / POS'),
-                        _buildNavItem(4, Icons.insert_chart_outlined_rounded, 'Reports / Sales'),
                         _buildNavItem(5, Icons.settings_outlined, 'Settings'),
                       ],
                     ),
@@ -585,7 +554,6 @@ class _AdminHomeShellState extends State<AdminHomeShell> {
                           itemBuilder: (ctx) => [
                             const PopupMenuItem(value: 1, child: Text('Inventory')),
                             const PopupMenuItem(value: 2, child: Text('Billing / POS')),
-                            const PopupMenuItem(value: 4, child: Text('Reports / Sales')),
                             const PopupMenuItem(value: 5, child: Text('Settings')),
                           ],
                         ),
@@ -727,33 +695,28 @@ class _AdminHomeShellState extends State<AdminHomeShell> {
                   ),
                 ),
 
-                // Page Body
+                // Page Body — IndexedStack keeps all views alive for instant tab switching
                 Expanded(
-                  child: Stack(
+                  child: IndexedStack(
+                    index: _stackIndex,
                     children: [
-                      AnimatedSwitcher(
-                        duration: const Duration(milliseconds: 200),
-                        switchInCurve: Curves.easeOut,
-                        switchOutCurve: Curves.easeIn,
-                        transitionBuilder: (child, animation) => FadeTransition(
-                          opacity: animation,
-                          child: child,
-                        ),
-                        child: KeyedSubtree(
-                          key: ValueKey(_activeTabIndex),
-                          child: _buildBody(),
-                        ),
+                      // Index 0: Inventory
+                      InventoryView(state: _state),
+                      // Index 1: Billing
+                      BillingView(
+                        state: _state,
+                        initialSection: _selectedBillingSection,
+                        onSectionChanged: (sec) {
+                          setState(() => _selectedBillingSection = sec);
+                        },
                       ),
-                      if (_isTransitioning)
-                        Positioned.fill(
-                          child: BackdropFilter(
-                            filter: ImageFilter.blur(sigmaX: 3, sigmaY: 3),
-                            child: const ColoredBox(
-                              color: Colors.transparent,
-                              child: _DotSpinner(),
-                            ),
-                          ),
-                        ),
+                      // Index 2: Master/Reports
+                      MasterView(
+                        adminState: _state,
+                        initialReportTitle: _selectedReportTitle,
+                      ),
+                      // Index 3: Settings
+                      _buildSettingsView(),
                     ],
                   ),
                 ),

@@ -16,6 +16,14 @@ class AdminState extends ChangeNotifier {
   bool _isOnline = true;
   bool get isOnline => _isOnline;
   StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
+  Timer? _periodicConnTimer;
+
+  // ── Debounce notifyListeners so rapid Firestore events batch into one rebuild ──
+  Timer? _debounceTimer;
+  void _debouncedNotify() {
+    _debounceTimer?.cancel();
+    _debounceTimer = Timer(const Duration(milliseconds: 80), notifyListeners);
+  }
 
   // Static definitions for Diamond Rates table
   static const List<String> clarities = ['IF', 'VVS', 'VS', 'SI', 'I'];
@@ -53,7 +61,9 @@ class AdminState extends ChangeNotifier {
   // Diamond Rates Map: key is "CLARITY_COLOR-RANGE" (e.g. "IF_D-E")
   final Map<String, double> _diamondRates = {};
 
-  // Products
+  // Products — separate raw maps per Firestore collection to avoid double-merge cost
+  final Map<String, Product> _jewelryInventoryMap = {};
+  final Map<String, Product> _productsMap = {};
   List<Product> _productsList = [];
 
   /// Tombstone set — tagIds deleted by the user in this session.
@@ -109,18 +119,14 @@ class AdminState extends ChangeNotifier {
     'Yet to add',
   ];
 
-  // Categories
+  // Default devotional-store categories (merged with dynamic Firestore categories in getter)
   final List<String> _categories = [
-    'All Categories',
-    'EARRINGS',
-    'RINGS',
-    'NECKLACES',
-    'PENDANTS',
-    'BRACELETS',
-    'BANGLES',
+    'Idols', 'Pooja Thali Sets', 'Lamps/Vilakku', 'Incense/Agarbathi',
+    'Camphor', 'Oil/Ghee', 'Bells', 'Kalasam', 'Religious Books',
+    'Silver/Brass Items', 'Decorative Items', 'Festival Specials', 'Others',
   ];
 
-  List<String> get categories => _categories;
+  // 'categories' getter is defined below with dynamic merge (line ~279)
   List<String> get statuses => _statuses;
   String get searchQuery => _searchQuery;
   String get selectedCategory => _selectedCategory;
@@ -183,7 +189,7 @@ class AdminState extends ChangeNotifier {
       final bool online = await ConnectivityHelper.isOnline();
       if (_isOnline != online) {
         _isOnline = online;
-        notifyListeners();
+        notifyListeners(); // connectivity changes are infrequent — OK to notify directly
       }
     });
 
@@ -194,8 +200,8 @@ class AdminState extends ChangeNotifier {
       }
     });
 
-    // Run a periodic checker (every 10 seconds) to handle connection drops
-    Timer.periodic(const Duration(seconds: 10), (_) async {
+    // Periodic check every 30s (was 10s) — stored so it can be cancelled on dispose
+    _periodicConnTimer = Timer.periodic(const Duration(seconds: 30), (_) async {
       try {
         final bool online = await ConnectivityHelper.isOnline();
         if (_isOnline != online) {
@@ -209,6 +215,8 @@ class AdminState extends ChangeNotifier {
   @override
   void dispose() {
     _connectivitySubscription?.cancel();
+    _periodicConnTimer?.cancel();
+    _debounceTimer?.cancel();
     super.dispose();
   }
 
@@ -227,7 +235,7 @@ class AdminState extends ChangeNotifier {
             linkedRateId: data['linkedRateId']?.toString().trim(),
           );
         }).where((m) => m.metalId.isNotEmpty).toList();
-        notifyListeners();
+        _debouncedNotify(); // debounced — metal group updates are background events
       });
     } catch (e) {
       debugPrint('Error fetching metal groups: $e');
@@ -262,37 +270,97 @@ class AdminState extends ChangeNotifier {
     return deduped.values.toList();
   }
 
+  /// Public accessor — applies tombstone filtering so views get clean list.
   List<Product> get products => _products;
 
-  // ─── Fetch from collections ──────────────────────────────────────────
+  final List<String> _dynamicCategories = [];
+
+  List<String> get categories {
+    final set = <String>{
+      'All Categories',
+      ..._categories.where((c) => c != 'All Categories'),
+      ..._dynamicCategories,
+      ..._products.map((p) => p.category).where((c) => c.isNotEmpty)
+    };
+    return set.toList();
+  }
+
+  void addCategory(String newCat) {
+    final trimmed = newCat.trim();
+    if (trimmed.isNotEmpty && !_dynamicCategories.contains(trimmed)) {
+      _dynamicCategories.add(trimmed);
+      try {
+        _firestore.collection('categories').add({'name': trimmed, 'createdAt': FieldValue.serverTimestamp()});
+      } catch (_) {}
+      notifyListeners();
+    }
+  }
+
+  // ─── Fetch from collections (both jewelry_inventory & products) ──────────
 
   Future<void> fetchProducts() async {
     try {
-      _firestore.collection('jewelry_inventory').snapshots().listen((snapshot) {
-        final List<Product> list = [];
-        for (final doc in snapshot.docs) {
-          try {
-            final data = doc.data();
-            final p = Product.fromJson(data);
-            final tagId = p.tagId.trim().isEmpty ? doc.id : p.tagId;
-            final updatedP = p.copyWith(tagId: tagId);
-            if (_isMeaningfulProduct(updatedP)) {
-              list.add(updatedP);
-            }
-          } catch (e, stack) {
-            debugPrint('Error parsing document ${doc.id}: $e');
-            debugPrint(stack.toString());
+      // 1. Fetch categories
+      _firestore.collection('categories').snapshots().listen((snap) {
+        for (var doc in snap.docs) {
+          final name = doc.data()['name']?.toString() ?? '';
+          if (name.isNotEmpty && !_dynamicCategories.contains(name)) {
+            _dynamicCategories.add(name);
           }
         }
-        _productsList = list;
-        notifyListeners();
-      }, onError: (e) {
-        debugPrint('Error listening to snapshots: $e');
+        _debouncedNotify();
+      });
+
+      // 2. Listen to jewelry_inventory — updates separate raw map
+      _firestore.collection('jewelry_inventory').snapshots().listen((snapshot) {
+        _parseDocsIntoMap(snapshot.docs, _jewelryInventoryMap);
+        _rebuildProductsList();
+      });
+
+      // 3. Listen to products collection — updates separate raw map
+      _firestore.collection('products').snapshots().listen((snapshot) {
+        _parseDocsIntoMap(snapshot.docs, _productsMap);
+        _rebuildProductsList();
       });
     } catch (e) {
-      debugPrint('Error fetching legacy products: $e');
+      debugPrint('Error fetching products: $e');
     }
   }
+
+  /// Parse docs into a dedicated map (per collection) without merging immediately.
+  void _parseDocsIntoMap(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+    Map<String, Product> targetMap,
+  ) {
+    for (final doc in docs) {
+      try {
+        final data = doc.data();
+        final p = Product.fromJson(data);
+        final tagId = p.tagId.trim().isEmpty ? doc.id : p.tagId;
+        final updatedP = p.copyWith(tagId: tagId);
+        if (_isMeaningfulProduct(updatedP)) {
+          targetMap[tagId.trim().toLowerCase()] = updatedP;
+        }
+      } catch (e) {
+        debugPrint('Error parsing doc ${doc.id}: $e');
+      }
+    }
+  }
+
+  /// Rebuild the flat products list by merging both collection maps, then debounce notify.
+  void _rebuildProductsList() {
+    final merged = <String, Product>{};
+    // jewelry_inventory wins over products if same tagId
+    merged.addAll(_productsMap);
+    merged.addAll(_jewelryInventoryMap);
+    _productsList = merged.entries
+        .where((e) => !_deletedTagIds.contains(e.key))
+        .map((e) => e.value)
+        .toList();
+    _debouncedNotify();
+  }
+
+  // _parseAndMergeProducts removed — replaced by _parseDocsIntoMap + _rebuildProductsList
 
   /// Returns true only for products that have at least a name OR a category
   /// OR a non-zero gross weight. This filters out ghost/orphan Firestore
@@ -337,8 +405,13 @@ class AdminState extends ChangeNotifier {
 
   // Analytics Metrics
   int get totalProductsCount => _products.length;
-  int get availableProductsCount => _products.where((p) => p.status.toLowerCase() != 'sold out' && p.status.toLowerCase() != 'discontinued').length;
-  
+  int get totalStockQuantity => _products.fold(0, (sum, p) => sum + p.quantity);
+  int get availableProductsCount =>
+      _products.where((p) => p.status != 'Sold Out' && p.status != 'Discontinued' && p.quantity > 0).length;
+  int get lowStockCount => _products.where((p) => p.isLowStock).length;
+  int get totalCategoriesUsed =>
+      _products.map((p) => p.category).where((c) => c.isNotEmpty).toSet().length;
+
   Map<String, double> get totalWeightBasedStock {
     final Map<String, double> weightByMaterial = {};
     for (var p in _products) {
@@ -354,12 +427,6 @@ class AdminState extends ChangeNotifier {
         .where((p) => p.pricingType == 'Quantity-Based' && p.status.toLowerCase() != 'sold out' && p.status.toLowerCase() != 'discontinued')
         .fold(0, (total, p) => total + p.quantity);
   }
-
-  int get lowStockCount {
-    return _products.where((p) => p.isLowStock).length;
-  }
-
-  int get totalCategoriesUsed => _products.map((p) => p.category).toSet().length;
 
   // Actions
   void updateSearchQuery(String query) {
@@ -443,22 +510,17 @@ class AdminState extends ChangeNotifier {
         }
       }
 
-      _persistCalculationsToFirestore();
-      notifyListeners();
+      // NOTE: _persistCalculationsToFirestore() removed from here.
+      // It was causing N+1 Firestore writes on every rate stream event.
+      // Recalculations are persisted only when the user explicitly saves rates
+      // via updateMultipleLiveRates() or updateDiamondRates().
+      _debouncedNotify();
     });
   }
 
-  Future<void> _persistCalculationsToFirestore() async {
-    for (final p in _products) {
-      try {
-        final Map<String, dynamic> json = p.toJson();
-        // Update 'jewelry_inventory'
-        await _firestore.collection('jewelry_inventory').doc(p.tagId).set(json, SetOptions(merge: true));
-      } catch (e) {
-        debugPrint('Error persisting recalculated product ${p.tagId}: $e');
-      }
-    }
-  }
+  // _persistCalculationsToFirestore removed (was causing N+1 Firestore writes
+  // on every live-rate stream event). Rates are persisted only when the user
+  // explicitly calls updateMultipleLiveRates() or updateDiamondRates().
 
   Future<void> updateLiveRate(String id, double newRate) async {
     await updateMultipleLiveRates({id: newRate});
@@ -532,34 +594,50 @@ class AdminState extends ChangeNotifier {
   }
 
   Future<void> addProduct(Product product) async {
-    try {
-      final Map<String, dynamic> json = product.toJson();
+    final Map<String, dynamic> json = product.toJson();
 
-      // Clear tombstone so a re-added product becomes visible again
-      if (product.tagId.isNotEmpty) {
-        _deletedTagIds.remove(product.tagId.trim().toLowerCase());
-      }
-
-      if (product.tagId.isEmpty) {
-        await _firestore.collection('jewelry_inventory').add(json);
-      } else {
-        await _firestore.collection('jewelry_inventory').doc(product.tagId).set(json);
-      }
-    } catch (e) {
-      debugPrint("Error adding product: $e");
+    if (product.tagId.isNotEmpty) {
+      _deletedTagIds.remove(product.tagId.trim().toLowerCase());
     }
+
+    final docId = product.tagId.trim().isNotEmpty
+        ? product.tagId.trim()
+        : _firestore.collection('jewelry_inventory').doc().id;
+    final updatedJson = Map<String, dynamic>.from(json);
+    updatedJson['tagId'] = docId;
+
+    await _firestore.collection('jewelry_inventory').doc(docId).set(updatedJson, SetOptions(merge: true));
+    await _firestore.collection('products').doc(docId).set(updatedJson, SetOptions(merge: true));
+
+    // Local update
+    final updatedProduct = product.copyWith(tagId: docId);
+    final key = docId.toLowerCase();
+    _jewelryInventoryMap[key] = updatedProduct;
+    _productsMap[key] = updatedProduct;
+    _productsList.removeWhere((p) => p.tagId.toLowerCase() == key);
+    _productsList.add(updatedProduct);
+    notifyListeners();
   }
 
   Future<void> updateProduct(Product product) async {
-    try {
-      final Map<String, dynamic> json = product.toJson();
+    final Map<String, dynamic> json = product.toJson();
+    final docId = product.tagId.trim();
 
-      // Update 'jewelry_inventory' collection
-      await _firestore.collection('jewelry_inventory').doc(product.tagId).set(json, SetOptions(merge: true));
-    } catch (e) {
-      debugPrint("Error updating product: $e");
+    await _firestore.collection('jewelry_inventory').doc(docId).set(json, SetOptions(merge: true));
+    await _firestore.collection('products').doc(docId).set(json, SetOptions(merge: true));
+
+    final key = docId.toLowerCase();
+    _jewelryInventoryMap[key] = product;
+    _productsMap[key] = product;
+    final idx = _productsList.indexWhere((p) => p.tagId.toLowerCase() == key);
+    if (idx != -1) {
+      _productsList[idx] = product;
+    } else {
+      _productsList.add(product);
     }
+    notifyListeners();
   }
+
 
   Future<void> deleteProduct(String tagId) async {
     String localGetBaseTagId(String id) {
@@ -587,9 +665,8 @@ class AdminState extends ChangeNotifier {
     for (final id in tagsToDelete) {
       final normId = id.trim().toLowerCase();
       _deletedTagIds.add(normId);
-      Future.delayed(const Duration(seconds: 8), () {
-        _deletedTagIds.remove(normId);
-      });
+      _jewelryInventoryMap.remove(normId);
+      _productsMap.remove(normId);
       _productsList.removeWhere(
         (p) => p.tagId.trim().toLowerCase() == normId,
       );
@@ -599,15 +676,26 @@ class AdminState extends ChangeNotifier {
     for (final id in tagsToDelete) {
       try {
         await _firestore.collection('jewelry_inventory').doc(id).delete();
-        final legacyQuery = await _firestore
+        await _firestore.collection('products').doc(id).delete();
+
+        // Also query by tagId field in case docId was auto-generated
+        final snap1 = await _firestore
             .collection('jewelry_inventory')
             .where('tagId', isEqualTo: id)
             .get();
-        for (var doc in legacyQuery.docs) {
+        for (final doc in snap1.docs) {
+          await doc.reference.delete();
+        }
+
+        final snap2 = await _firestore
+            .collection('products')
+            .where('tagId', isEqualTo: id)
+            .get();
+        for (final doc in snap2.docs) {
           await doc.reference.delete();
         }
       } catch (e) {
-        debugPrint('Error deleting product sub-tag: $e');
+        debugPrint('Error deleting product: $e');
       }
     }
   }

@@ -107,8 +107,6 @@ class _HomeViewState extends State<HomeView> {
   }
 
   Future<void> _fetchShortcuts() async {
-    setState(() => _isLoading = true);
-    await Future.delayed(const Duration(milliseconds: 300));
     setState(() {
       _shortcuts.clear();
       _shortcuts.add(ShortcutItem(id: '1', title: 'Sales Entry', type: 'billing', target: 'A Sales Entry', icon: Icons.point_of_sale_rounded, color: BoutiqueColors.accent));

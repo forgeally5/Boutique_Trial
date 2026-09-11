@@ -11,8 +11,8 @@ class LoginPage extends StatefulWidget {
 }
 
 class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMixin {
-  final _emailController = TextEditingController(text: 'trial@forgeally.com');
-  final _passwordController = TextEditingController(text: 'admin12345');
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
   bool _isPasswordVisible = false;
   bool _rememberMe = true;
 

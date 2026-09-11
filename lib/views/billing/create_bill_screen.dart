@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
@@ -29,28 +28,44 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
 
   final List<BillRow> _rows = [BillRow()];
 
+  // Summary controllers — managed separately so only summary panel rebuilds
   final _extraDiscountCtrl = TextEditingController(text: '0');
   String _extraDiscountType = '₹';
-
   bool _gstEnabled = false;
   final _taxPercentCtrl = TextEditingController(text: '5');
 
   String _paymentMode = 'Cash';
-  final List<String> _paymentModes = ['Cash', 'Card', 'UPI', 'Bank Transfer', 'Cheque'];
 
   bool _isSaving = false;
   bool _attemptedSave = false;
 
+  // Tracks row mutations (product select, qty change) so summary panel recalculates
+  final ValueNotifier<int> _rowVersion = ValueNotifier(0);
+
+  // Cached product list — read from state once, not on every rebuild
+  List<Product> _cachedProducts = [];
+
   @override
   void initState() {
     super.initState();
+    _cachedProducts = widget.state.products;
     _fetchNextBillNo();
-    _extraDiscountCtrl.addListener(() => setState(() {}));
-    _taxPercentCtrl.addListener(() => setState(() {}));
+    // Listen to AdminState for product list updates ONLY — no full-form rebuild
+    widget.state.addListener(_onStateProductsUpdate);
+  }
+
+  void _onStateProductsUpdate() {
+    // Only update products cache — does NOT rebuild the whole form
+    final fresh = widget.state.products;
+    if (fresh != _cachedProducts) {
+      setState(() => _cachedProducts = fresh);
+    }
   }
 
   @override
   void dispose() {
+    widget.state.removeListener(_onStateProductsUpdate);
+    _rowVersion.dispose();
     _billNoCtrl.dispose();
     _customerNameCtrl.dispose();
     _customerMobileCtrl.dispose();
@@ -75,35 +90,25 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
           nextNum = (int.tryParse(match.group(0)!) ?? 0) + 1;
         }
       }
-      _billNoCtrl.text = 'FA-${nextNum.toString().padLeft(4, '0')}';
+      if (mounted) _billNoCtrl.text = 'FA-${nextNum.toString().padLeft(4, '0')}';
     } catch (_) {
-      _billNoCtrl.text = 'FA-0001';
+      if (mounted) _billNoCtrl.text = 'FA-0001';
     }
   }
 
-  // ── Calculation Helpers ────────────────────────────────────────────────────────
+  // ── Calculation Helpers ───────────────────────────────────────────────────
 
-  double get _subtotal => _rows.fold(0, (sum, r) => sum + r.lineAmount);
+  double get _subtotal => _rows.fold(0, (s, r) => s + r.lineAmount);
 
-  double get _extraDiscountAmount {
+  double _extraDiscountAmount(double subtotal) {
     final v = double.tryParse(_extraDiscountCtrl.text) ?? 0;
-    if (_extraDiscountType == '%') {
-      return (_subtotal * v / 100).clamp(0, _subtotal);
-    }
-    return v.clamp(0, _subtotal);
+    if (_extraDiscountType == '%') return (subtotal * v / 100).clamp(0, subtotal);
+    return v.clamp(0, subtotal);
   }
 
-  double get _discountedSubtotal => (_subtotal - _extraDiscountAmount).clamp(0, double.infinity);
-
-  double get _taxAmount {
-    if (!_gstEnabled) return 0;
-    final p = double.tryParse(_taxPercentCtrl.text) ?? 0;
-    return _discountedSubtotal * p / 100;
-  }
-
-  double get _totalPayable => (_discountedSubtotal + _taxAmount).clamp(0, double.infinity);
 
   String? _mobileError() {
+    if (!_attemptedSave) return null; // show only after first save attempt
     final m = _customerMobileCtrl.text.trim();
     if (m.isEmpty) return null;
     if (!RegExp(r'^\d{10}$').hasMatch(m)) return 'Must be 10 digits';
@@ -114,7 +119,8 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
 
   bool get _canSave {
     if (!_hasValidRows) return false;
-    if (_mobileError() != null) return false;
+    final m = _customerMobileCtrl.text.trim();
+    if (m.isNotEmpty && !RegExp(r'^\d{10}$').hasMatch(m)) return false;
     return true;
   }
 
@@ -128,6 +134,12 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
     setState(() => _isSaving = true);
     try {
       final validRows = _rows.where((r) => r.isValid).toList();
+      final subtotal = _subtotal;
+      final discAmt = _extraDiscountAmount(subtotal);
+      final discounted = (subtotal - discAmt).clamp(0.0, double.infinity);
+      final taxPct = _gstEnabled ? (double.tryParse(_taxPercentCtrl.text) ?? 0) : 0.0;
+      final taxAmt = discounted * taxPct / 100;
+      final total = (discounted + taxAmt).clamp(0.0, double.infinity);
 
       final billData = {
         'billNo': _billNoCtrl.text.trim(),
@@ -136,23 +148,22 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
         'customerName': _customerNameCtrl.text.trim(),
         'customerMobile': _customerMobileCtrl.text.trim(),
         'items': validRows.map((r) => r.toMap()).toList(),
-        'subtotal': _subtotal,
+        'subtotal': subtotal,
         'extraDiscountType': _extraDiscountType,
         'extraDiscountValue': double.tryParse(_extraDiscountCtrl.text) ?? 0,
-        'extraDiscountAmount': _extraDiscountAmount,
+        'extraDiscountAmount': discAmt,
         'gstEnabled': _gstEnabled,
-        'taxPercent': _gstEnabled ? (double.tryParse(_taxPercentCtrl.text) ?? 0) : 0,
-        'taxAmount': _taxAmount,
-        'totalPayable': _totalPayable,
+        'taxPercent': taxPct,
+        'taxAmount': taxAmt,
+        'totalPayable': total,
         'paymentMode': _paymentMode,
-        'amountReceived': _totalPayable,
+        'amountReceived': total,
         'balanceReturned': 0.0,
         'createdAt': FieldValue.serverTimestamp(),
       };
 
       await FirebaseFirestore.instance.collection('bills').add(billData);
 
-      // Deduct stock
       for (final row in validRows) {
         final p = row.product!;
         final newQty = (p.quantity - row.qty.toInt()).clamp(0, 999999);
@@ -169,9 +180,7 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
         widget.onSaved?.call();
       }
     } catch (e) {
-      if (mounted) {
-        BoutiqueToast.showError(context, 'Error saving bill: $e');
-      }
+      if (mounted) BoutiqueToast.showError(context, 'Error saving bill: $e');
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
@@ -198,13 +207,18 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
 
     final fmt = DateFormat('dd/MM/yyyy');
     final pdf = pw.Document();
-
     final fontRegular = await PdfGoogleFonts.robotoRegular();
     final fontBold = await PdfGoogleFonts.robotoBold();
-
     const tColor = PdfColor.fromInt(0xFF5E1729);
     const tLight = PdfColor.fromInt(0xFFF9F6F0);
     const greenColor = PdfColor.fromInt(0xFF2E7D32);
+
+    final subtotal = _subtotal;
+    final discAmt = _extraDiscountAmount(subtotal);
+    final discounted = (subtotal - discAmt).clamp(0.0, double.infinity);
+    final taxPct = _gstEnabled ? (double.tryParse(_taxPercentCtrl.text) ?? 0) : 0.0;
+    final taxAmt = discounted * taxPct / 100;
+    final total = (discounted + taxAmt).clamp(0.0, double.infinity);
 
     pdf.addPage(
       pw.MultiPage(
@@ -306,11 +320,11 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
                 width: 220,
                 child: pw.Column(
                   children: [
-                    _pdfTotalRow('Subtotal', '₹${_subtotal.toStringAsFixed(2)}', tColor),
-                    if (_extraDiscountAmount > 0)
-                      _pdfTotalRow('Extra Discount', '− ₹${_extraDiscountAmount.toStringAsFixed(2)}', tColor),
-                    if (_taxAmount > 0)
-                      _pdfTotalRow('Tax (${_taxPercentCtrl.text}%)', '+ ₹${_taxAmount.toStringAsFixed(2)}', tColor),
+                    _pdfTotalRow('Subtotal', '₹${subtotal.toStringAsFixed(2)}', tColor),
+                    if (discAmt > 0)
+                      _pdfTotalRow('Extra Discount', '− ₹${discAmt.toStringAsFixed(2)}', tColor),
+                    if (taxAmt > 0)
+                      _pdfTotalRow('Tax (${_taxPercentCtrl.text}%)', '+ ₹${taxAmt.toStringAsFixed(2)}', tColor),
                     pw.Container(height: 1, color: tColor),
                     pw.Container(
                       padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 5),
@@ -319,7 +333,7 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
                         mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                         children: [
                           pw.Text('TOTAL PAYABLE', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 11, color: tColor)),
-                          pw.Text('₹${_totalPayable.toStringAsFixed(2)}', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 13, color: tColor)),
+                          pw.Text('₹${total.toStringAsFixed(2)}', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 13, color: tColor)),
                         ],
                       ),
                     ),
@@ -379,47 +393,60 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
     );
   }
 
+  // ── Build ─────────────────────────────────────────────────────────────────
+  // NOTE: No ListenableBuilder(widget.state) here — we track products via
+  // _onStateProductsUpdate() listener which only updates _cachedProducts.
+  // This prevents AdminState Firestore events from rebuilding the whole form.
+
   @override
   Widget build(BuildContext context) {
-    return ListenableBuilder(
-      listenable: widget.state,
-      builder: (context, _) {
-        return Container(
-          color: BoutiqueColors.bgMain,
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Left Two-Panel Checkout Area (Customer Info & Items)
-              Expanded(
-                flex: 7,
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.all(32),
-                  child: Column(
-                    children: [
-                      _buildCustomerSection(),
-                      const SizedBox(height: 24),
-                      _buildItemTable(),
-                    ],
-                  ),
-                ),
+    return Container(
+      color: BoutiqueColors.bgMain,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Left: Customer Info + Item Table
+          Expanded(
+            flex: 7,
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(32),
+              child: Column(
+                children: [
+                  _buildCustomerSection(),
+                  const SizedBox(height: 24),
+                  _buildItemTable(),
+                ],
               ),
-
-              // Right Running Cart & Billing Summary Panel
-              Expanded(
-                flex: 5,
-                child: Container(
-                  height: double.infinity,
-                  color: BoutiqueColors.bgCard,
-                  padding: const EdgeInsets.all(32),
-                  child: SingleChildScrollView(
-                    child: _buildSummaryPanel(),
-                  ),
-                ),
-              ),
-            ],
+            ),
           ),
-        );
-      },
+
+          // Right: Summary Panel — isolated widget that manages its own rebuilds
+          Expanded(
+            flex: 5,
+            child: Container(
+              height: double.infinity,
+              color: BoutiqueColors.bgCard,
+              padding: const EdgeInsets.all(32),
+              child: SingleChildScrollView(
+                child: _BillSummaryPanel(
+                  rows: _rows,
+                  rowVersion: _rowVersion,
+                  extraDiscountCtrl: _extraDiscountCtrl,
+                  taxPercentCtrl: _taxPercentCtrl,
+                  extraDiscountType: _extraDiscountType,
+                  gstEnabled: _gstEnabled,
+                  isSaving: _isSaving,
+                  hasValidRows: _hasValidRows,
+                  onDiscountTypeChanged: (t) => setState(() => _extraDiscountType = t),
+                  onGstChanged: (v) => setState(() => _gstEnabled = v),
+                  onSave: _saveBill,
+                  onDownload: _downloadInvoice,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -430,7 +457,8 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Customer & Invoice Details', style: TextStyle(fontFamily: 'serif', fontSize: 18, fontWeight: FontWeight.bold, color: BoutiqueColors.textPrimary)),
+          const Text('Customer & Invoice Details',
+              style: TextStyle(fontFamily: 'serif', fontSize: 18, fontWeight: FontWeight.bold, color: BoutiqueColors.textPrimary)),
           const SizedBox(height: 16),
           Row(
             children: [
@@ -458,7 +486,8 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
                       children: [
                         const Icon(Icons.calendar_today_rounded, size: 18, color: BoutiqueColors.accent),
                         const SizedBox(width: 10),
-                        Text(_fmt.format(_billDate), style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: BoutiqueColors.textPrimary)),
+                        Text(_fmt.format(_billDate),
+                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: BoutiqueColors.textPrimary)),
                       ],
                     ),
                   ),
@@ -469,14 +498,17 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
           const SizedBox(height: 16),
           Row(
             children: [
+              // Customer name — no setState, TextField manages its own text
               Expanded(
                 child: TextField(
                   controller: _customerNameCtrl,
                   style: const TextStyle(fontSize: 13),
-                  decoration: BoutiqueInputDecoration.field(hintText: 'Walk-in Customer', labelText: 'Customer Name'),
+                  decoration: BoutiqueInputDecoration.field(
+                      hintText: 'Walk-in Customer', labelText: 'Customer Name'),
                 ),
               ),
               const SizedBox(width: 16),
+              // Mobile field — error shown only after save attempt, not on every keystroke
               Expanded(
                 child: TextField(
                   controller: _customerMobileCtrl,
@@ -487,7 +519,6 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
                     labelText: 'Mobile Number',
                     errorText: _mobileError(),
                   ),
-                  onChanged: (_) => setState(() {}),
                 ),
               ),
             ],
@@ -507,7 +538,8 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text('Select Products to Bill', style: TextStyle(fontFamily: 'serif', fontSize: 18, fontWeight: FontWeight.bold, color: BoutiqueColors.textPrimary)),
+              const Text('Select Products to Bill',
+                  style: TextStyle(fontFamily: 'serif', fontSize: 18, fontWeight: FontWeight.bold, color: BoutiqueColors.textPrimary)),
               ElevatedButton.icon(
                 onPressed: () => setState(() => _rows.add(BillRow())),
                 style: ElevatedButton.styleFrom(
@@ -521,232 +553,25 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
             ],
           ),
           const SizedBox(height: 16),
-          ...List.generate(_rows.length, (i) => _buildItemRow(i)),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildItemRow(int i) {
-    final row = _rows[i];
-    final products = widget.state.products;
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: BoutiqueColors.bgSubtle,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: BoutiqueColors.border),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            flex: 4,
-            child: _ItemSearchField(
-              products: products,
-              selected: row.product,
-              onSelected: (p) {
-                setState(() {
-                  row.product = p;
-                  row.price = p.finalPrice > 0 ? p.finalPrice : p.mrp;
-                  row.discountValue = p.discountValue;
-                  row.discountType = p.discountType;
-                });
+          // Each row is its own StatefulWidget — changes in one row don't rebuild others
+          for (int i = 0; i < _rows.length; i++)
+            _BillRowWidget(
+              key: ObjectKey(_rows[i]),
+              row: _rows[i],
+              products: _cachedProducts,
+              onChanged: () {
+                _rowVersion.value++; // notify summary panel
+                setState(() {});    // refresh row display (qty, line amount)
               },
-            ),
-          ),
-          const SizedBox(width: 12),
-
-          // Quantity Steppers (+/-)
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: BoutiqueColors.border),
-            ),
-            child: Row(
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.remove, size: 14, color: BoutiqueColors.textSecondary),
-                  onPressed: () {
-                    if (row.qty > 1) {
-                      setState(() => row.qty -= 1);
+              onDelete: _rows.length > 1
+                  ? () {
+                      _rowVersion.value++;
+                      setState(() => _rows.removeAt(i));
                     }
-                  },
-                ),
-                Text('${row.qty.toInt()}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                IconButton(
-                  icon: const Icon(Icons.add, size: 14, color: BoutiqueColors.accent),
-                  onPressed: () {
-                    setState(() => row.qty += 1);
-                  },
-                ),
-              ],
+                  : null,
             ),
-          ),
-          const SizedBox(width: 12),
-
-          // Price & Total
-          SizedBox(
-            width: 110,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Text('₹${row.lineAmount.toStringAsFixed(2)}', style: const TextStyle(fontFamily: 'serif', fontSize: 15, fontWeight: FontWeight.bold, color: BoutiqueColors.textPrimary)),
-                Text('@ ₹${row.price}', style: const TextStyle(fontSize: 11, color: BoutiqueColors.textSecondary)),
-              ],
-            ),
-          ),
-          const SizedBox(width: 8),
-
-          IconButton(
-            icon: const Icon(Icons.delete_outline_rounded, color: BoutiqueColors.destructive, size: 20),
-            onPressed: () {
-              if (_rows.length > 1) {
-                setState(() => _rows.removeAt(i));
-              }
-            },
-          ),
         ],
       ),
-    );
-  }
-
-  Widget _buildSummaryPanel() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text('Running Cart & Summary', style: TextStyle(fontFamily: 'serif', fontSize: 20, fontWeight: FontWeight.bold, color: BoutiqueColors.textPrimary)),
-        const Divider(height: 24, color: BoutiqueColors.border),
-
-        _summaryRow('Subtotal', '₹${_subtotal.toStringAsFixed(2)}'),
-        const SizedBox(height: 12),
-
-        // Extra Discount Field
-        Row(
-          children: [
-            const Text('Extra Discount', style: TextStyle(fontSize: 13, color: BoutiqueColors.textSecondary)),
-            const Spacer(),
-            SizedBox(
-              width: 90,
-              height: 38,
-              child: TextField(
-                controller: _extraDiscountCtrl,
-                keyboardType: TextInputType.number,
-                style: const TextStyle(fontSize: 13),
-                decoration: BoutiqueInputDecoration.field(hintText: '0'),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-
-        // GST Switch
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            const Text('Apply GST Tax', style: TextStyle(fontSize: 13, color: BoutiqueColors.textSecondary)),
-            Switch(
-              value: _gstEnabled,
-              activeColor: BoutiqueColors.accent,
-              onChanged: (v) => setState(() => _gstEnabled = v),
-            ),
-          ],
-        ),
-        if (_gstEnabled) ...[
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              const Text('Tax %', style: TextStyle(fontSize: 12, color: BoutiqueColors.textSecondary)),
-              const Spacer(),
-              SizedBox(
-                width: 90,
-                height: 38,
-                child: TextField(
-                  controller: _taxPercentCtrl,
-                  keyboardType: TextInputType.number,
-                  style: const TextStyle(fontSize: 13),
-                  decoration: BoutiqueInputDecoration.field(hintText: '5'),
-                ),
-              ),
-            ],
-          ),
-        ],
-        const Divider(height: 28, color: BoutiqueColors.border),
-
-        // Total Payable Highlight
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            const Text('TOTAL PAYABLE', style: TextStyle(fontFamily: 'serif', fontSize: 16, fontWeight: FontWeight.bold, color: BoutiqueColors.textPrimary)),
-            Text('₹${_totalPayable.toStringAsFixed(2)}', style: const TextStyle(fontFamily: 'serif', fontSize: 24, fontWeight: FontWeight.bold, color: BoutiqueColors.accent)),
-          ],
-        ),
-        const SizedBox(height: 24),
-
-        // Segmented Payment Method Selector
-        const Text('Payment Method', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: BoutiqueColors.textPrimary)),
-        const SizedBox(height: 8),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: _paymentModes.map((mode) {
-            final isSelected = _paymentMode == mode;
-            return ChoiceChip(
-              label: Text(mode),
-              selected: isSelected,
-              selectedColor: BoutiqueColors.accent,
-              labelStyle: TextStyle(color: isSelected ? Colors.white : BoutiqueColors.textPrimary, fontWeight: FontWeight.bold, fontSize: 12),
-              onSelected: (sel) {
-                if (sel) setState(() => _paymentMode = mode);
-              },
-            );
-          }).toList(),
-        ),
-        const SizedBox(height: 24),
-
-        // Prominent Checkout & PDF Download Buttons
-        ElevatedButton.icon(
-          onPressed: _isSaving ? null : _saveBill,
-          style: ElevatedButton.styleFrom(
-            backgroundColor: BoutiqueColors.accent,
-            foregroundColor: Colors.white,
-            minimumSize: const Size(double.infinity, 50),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-            elevation: 0,
-          ),
-          icon: _isSaving
-              ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-              : const Icon(Icons.check_circle_rounded, size: 20),
-          label: const Text('GENERATE BILL & CHECKOUT', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, letterSpacing: 0.5)),
-        ),
-        const SizedBox(height: 12),
-
-        ElevatedButton.icon(
-          onPressed: _hasValidRows ? _downloadInvoice : null,
-          style: ElevatedButton.styleFrom(
-            backgroundColor: const Color(0xFF2E7D32),
-            foregroundColor: Colors.white,
-            minimumSize: const Size(double.infinity, 50),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-            elevation: 0,
-          ),
-          icon: const Icon(Icons.download_rounded, size: 20),
-          label: const Text('DOWNLOAD INVOICE PDF', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, letterSpacing: 0.5)),
-        ),
-      ],
-    );
-  }
-
-  Widget _summaryRow(String label, String value) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(label, style: const TextStyle(fontSize: 13, color: BoutiqueColors.textSecondary)),
-        Text(value, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: BoutiqueColors.textPrimary)),
-      ],
     );
   }
 
@@ -761,12 +586,129 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
   }
 }
 
-class _ItemSearchField extends StatelessWidget {
+// ── Bill Row Widget ───────────────────────────────────────────────────────────
+// Isolated StatefulWidget: qty stepper and product selection manage their own
+// state internally; parent only notified via onChanged when values actually change.
+
+class _BillRowWidget extends StatefulWidget {
+  final BillRow row;
+  final List<Product> products;
+  final VoidCallback onChanged;
+  final VoidCallback? onDelete;
+
+  const _BillRowWidget({
+    super.key,
+    required this.row,
+    required this.products,
+    required this.onChanged,
+    this.onDelete,
+  });
+
+  @override
+  State<_BillRowWidget> createState() => _BillRowWidgetState();
+}
+
+class _BillRowWidgetState extends State<_BillRowWidget> {
+  @override
+  Widget build(BuildContext context) {
+    final row = widget.row;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: BoutiqueColors.bgSubtle,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: BoutiqueColors.border),
+      ),
+      child: Row(
+        children: [
+          // Product search — Autocomplete so only visible suggestions are built
+          Expanded(
+            flex: 4,
+            child: _ProductAutocomplete(
+              products: widget.products,
+              selected: row.product,
+              onSelected: (p) {
+                setState(() {
+                  row.product = p;
+                  row.price = p.finalPrice > 0 ? p.finalPrice : p.mrp;
+                  row.discountValue = p.discountValue;
+                  row.discountType = p.discountType;
+                });
+                widget.onChanged();
+              },
+            ),
+          ),
+          const SizedBox(width: 12),
+
+          // Qty stepper — only rebuilds this widget, not parent
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: BoutiqueColors.border),
+            ),
+            child: Row(
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.remove, size: 14, color: BoutiqueColors.textSecondary),
+                  onPressed: row.qty > 1
+                      ? () {
+                          setState(() => row.qty -= 1);
+                          widget.onChanged();
+                        }
+                      : null,
+                ),
+                Text('${row.qty.toInt()}',
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                IconButton(
+                  icon: const Icon(Icons.add, size: 14, color: BoutiqueColors.accent),
+                  onPressed: () {
+                    setState(() => row.qty += 1);
+                    widget.onChanged();
+                  },
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+
+          // Price & Total
+          SizedBox(
+            width: 110,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text('₹${row.lineAmount.toStringAsFixed(2)}',
+                    style: const TextStyle(fontFamily: 'serif', fontSize: 15, fontWeight: FontWeight.bold, color: BoutiqueColors.textPrimary)),
+                Text('@ ₹${row.price}',
+                    style: const TextStyle(fontSize: 11, color: BoutiqueColors.textSecondary)),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+
+          IconButton(
+            icon: const Icon(Icons.delete_outline_rounded, color: BoutiqueColors.destructive, size: 20),
+            onPressed: widget.onDelete,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Product Autocomplete ──────────────────────────────────────────────────────
+// Uses Flutter's Autocomplete widget — only renders the suggestions that match
+// the search query, NOT all products as widget items simultaneously.
+
+class _ProductAutocomplete extends StatelessWidget {
   final List<Product> products;
   final Product? selected;
   final ValueChanged<Product> onSelected;
 
-  const _ItemSearchField({
+  const _ProductAutocomplete({
     required this.products,
     required this.selected,
     required this.onSelected,
@@ -774,20 +716,265 @@ class _ItemSearchField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return DropdownButtonFormField<Product>(
-      value: selected,
-      isExpanded: true,
-      style: const TextStyle(fontSize: 13, color: BoutiqueColors.textPrimary),
-      decoration: BoutiqueInputDecoration.field(hintText: 'Select boutique product...'),
-      items: products.map((p) {
-        return DropdownMenuItem(
-          value: p,
-          child: Text('${p.tagId} - ${p.name} (₹${p.mrp})', overflow: TextOverflow.ellipsis),
+    return Autocomplete<Product>(
+      initialValue: selected != null
+          ? TextEditingValue(text: '${selected!.tagId} - ${selected!.name}')
+          : TextEditingValue.empty,
+      displayStringForOption: (p) => '${p.tagId} - ${p.name}',
+      optionsBuilder: (textEditingValue) {
+        final query = textEditingValue.text.toLowerCase().trim();
+        if (query.isEmpty) return products.take(30); // show first 30 when empty
+        return products.where(
+          (p) =>
+              p.tagId.toLowerCase().contains(query) ||
+              p.name.toLowerCase().contains(query),
         );
-      }).toList(),
-      onChanged: (val) {
-        if (val != null) onSelected(val);
       },
+      optionsViewBuilder: (context, onSelected, options) {
+        return Align(
+          alignment: Alignment.topLeft,
+          child: Material(
+            elevation: 4,
+            borderRadius: BorderRadius.circular(8),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 250, maxWidth: 420),
+              child: ListView.builder(
+                padding: EdgeInsets.zero,
+                shrinkWrap: true,
+                itemCount: options.length,
+                itemBuilder: (context, index) {
+                  final p = options.elementAt(index);
+                  return InkWell(
+                    onTap: () => onSelected(p),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '${p.tagId} - ${p.name}',
+                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: BoutiqueColors.textPrimary),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          Text(
+                            '₹${p.mrp}  •  ${p.category}  •  Qty: ${p.quantity}',
+                            style: const TextStyle(fontSize: 11, color: BoutiqueColors.textSecondary),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+        );
+      },
+      fieldViewBuilder: (context, textCtrl, focusNode, onSubmit) {
+        return TextField(
+          controller: textCtrl,
+          focusNode: focusNode,
+          style: const TextStyle(fontSize: 13),
+          decoration: BoutiqueInputDecoration.field(
+            hintText: 'Search product name or tag ID...',
+            prefixIcon: const Icon(Icons.search_rounded, size: 16, color: BoutiqueColors.textSecondary),
+          ),
+        );
+      },
+      onSelected: onSelected,
+    );
+  }
+}
+
+// ── Summary Panel ─────────────────────────────────────────────────────────────
+// Isolated StatefulWidget that listens to its OWN controllers via AnimatedBuilder.
+// Typing in discount / tax fields ONLY rebuilds this panel, not the item table.
+
+class _BillSummaryPanel extends StatefulWidget {
+  final List<BillRow> rows;
+  final ValueNotifier<int> rowVersion;
+  final TextEditingController extraDiscountCtrl;
+  final TextEditingController taxPercentCtrl;
+  final String extraDiscountType;
+  final bool gstEnabled;
+  final bool isSaving;
+  final bool hasValidRows;
+  final ValueChanged<String> onDiscountTypeChanged;
+  final ValueChanged<bool> onGstChanged;
+  final VoidCallback onSave;
+  final VoidCallback onDownload;
+
+  const _BillSummaryPanel({
+    required this.rows,
+    required this.rowVersion,
+    required this.extraDiscountCtrl,
+    required this.taxPercentCtrl,
+    required this.extraDiscountType,
+    required this.gstEnabled,
+    required this.isSaving,
+    required this.hasValidRows,
+    required this.onDiscountTypeChanged,
+    required this.onGstChanged,
+    required this.onSave,
+    required this.onDownload,
+  });
+
+  @override
+  State<_BillSummaryPanel> createState() => _BillSummaryPanelState();
+}
+
+class _BillSummaryPanelState extends State<_BillSummaryPanel> {
+  @override
+  Widget build(BuildContext context) {
+    // AnimatedBuilder listens to discount/tax controllers AND rowVersion
+    // so subtotal recalculates on product select, qty change, or discount/tax edits
+    return AnimatedBuilder(
+      animation: Listenable.merge([widget.extraDiscountCtrl, widget.taxPercentCtrl, widget.rowVersion]),
+      builder: (context, _) {
+        final subtotal = widget.rows.fold<double>(0, (s, r) => s + r.lineAmount);
+        final discV = double.tryParse(widget.extraDiscountCtrl.text) ?? 0;
+        final discAmt = widget.extraDiscountType == '%'
+            ? (subtotal * discV / 100).clamp(0, subtotal)
+            : discV.clamp(0, subtotal);
+        final discounted = (subtotal - discAmt).clamp(0.0, double.infinity);
+        final taxPct = widget.gstEnabled ? (double.tryParse(widget.taxPercentCtrl.text) ?? 0) : 0.0;
+        final taxAmt = discounted * taxPct / 100;
+        final total = (discounted + taxAmt).clamp(0.0, double.infinity);
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Running Cart & Summary',
+                style: TextStyle(fontFamily: 'serif', fontSize: 20, fontWeight: FontWeight.bold, color: BoutiqueColors.textPrimary)),
+            const Divider(height: 24, color: BoutiqueColors.border),
+
+            _summaryRow('Subtotal', '₹${subtotal.toStringAsFixed(2)}'),
+            const SizedBox(height: 12),
+
+            // Extra Discount
+            Row(
+              children: [
+                const Text('Extra Discount', style: TextStyle(fontSize: 13, color: BoutiqueColors.textSecondary)),
+                const SizedBox(width: 8),
+                DropdownButton<String>(
+                  value: widget.extraDiscountType,
+                  underline: const SizedBox(),
+                  isDense: true,
+                  items: const [
+                    DropdownMenuItem(value: '₹', child: Text('₹')),
+                    DropdownMenuItem(value: '%', child: Text('%')),
+                  ],
+                  onChanged: (v) { if (v != null) widget.onDiscountTypeChanged(v); },
+                ),
+                const Spacer(),
+                SizedBox(
+                  width: 90,
+                  height: 38,
+                  child: TextField(
+                    controller: widget.extraDiscountCtrl,
+                    keyboardType: TextInputType.number,
+                    style: const TextStyle(fontSize: 13),
+                    decoration: BoutiqueInputDecoration.field(hintText: '0'),
+                  ),
+                ),
+              ],
+            ),
+            if (discAmt > 0) ...[
+              const SizedBox(height: 4),
+              _summaryRow('Discount Applied', '− ₹${discAmt.toStringAsFixed(2)}'),
+            ],
+            const SizedBox(height: 12),
+
+            // GST Switch
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text('Apply GST Tax', style: TextStyle(fontSize: 13, color: BoutiqueColors.textSecondary)),
+                Switch(
+                  value: widget.gstEnabled,
+                  activeThumbColor: BoutiqueColors.accent,
+                  onChanged: widget.onGstChanged,
+                ),
+              ],
+            ),
+            if (widget.gstEnabled) ...[
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  const Text('Tax %', style: TextStyle(fontSize: 12, color: BoutiqueColors.textSecondary)),
+                  const Spacer(),
+                  SizedBox(
+                    width: 90,
+                    height: 38,
+                    child: TextField(
+                      controller: widget.taxPercentCtrl,
+                      keyboardType: TextInputType.number,
+                      style: const TextStyle(fontSize: 13),
+                      decoration: BoutiqueInputDecoration.field(hintText: '5'),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              _summaryRow('Tax (${widget.taxPercentCtrl.text}%)', '+ ₹${taxAmt.toStringAsFixed(2)}'),
+            ],
+            const Divider(height: 28, color: BoutiqueColors.border),
+
+            // Total
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text('TOTAL PAYABLE',
+                    style: TextStyle(fontFamily: 'serif', fontSize: 16, fontWeight: FontWeight.bold, color: BoutiqueColors.textPrimary)),
+                Text('₹${total.toStringAsFixed(2)}',
+                    style: const TextStyle(fontFamily: 'serif', fontSize: 24, fontWeight: FontWeight.bold, color: BoutiqueColors.accent)),
+              ],
+            ),
+            const SizedBox(height: 24),
+
+            ElevatedButton.icon(
+              onPressed: widget.isSaving ? null : widget.onSave,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: BoutiqueColors.accent,
+                foregroundColor: Colors.white,
+                minimumSize: const Size(double.infinity, 50),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                elevation: 0,
+              ),
+              icon: widget.isSaving
+                  ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                  : const Icon(Icons.check_circle_rounded, size: 20),
+              label: const Text('SAVE & CHECKOUT',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, letterSpacing: 0.5)),
+            ),
+            const SizedBox(height: 12),
+
+            ElevatedButton.icon(
+              onPressed: widget.hasValidRows ? widget.onDownload : null,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF2E7D32),
+                foregroundColor: Colors.white,
+                minimumSize: const Size(double.infinity, 48),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                elevation: 0,
+              ),
+              icon: const Icon(Icons.print_rounded, size: 18),
+              label: const Text('PRINT / DOWNLOAD',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, letterSpacing: 0.5)),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _summaryRow(String label, String value) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(label, style: const TextStyle(fontSize: 13, color: BoutiqueColors.textSecondary)),
+        Text(value, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: BoutiqueColors.textPrimary)),
+      ],
     );
   }
 }

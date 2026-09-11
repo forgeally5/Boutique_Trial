@@ -23,22 +23,37 @@ class _InventoryViewState extends State<InventoryView> {
   bool _isGridView = false;
   Product? _selectedDrawerProduct;
 
-  final List<String> _categories = [
-    'All Categories',
-    'Idols',
-    'Pooja Thali Sets',
-    'Lamps/Vilakku',
-    'Incense/Agarbathi',
-    'Camphor',
-    'Oil/Ghee',
-    'Bells',
-    'Kalasam',
-    'Religious Books',
-    'Silver/Brass Items',
-    'Decorative Items',
-    'Festival Specials',
-    'Others'
-  ];
+  // ── Memoized filter cache ──
+  List<Product> _cachedFilteredList = [];
+  List<Product> _lastSourceProducts = [];
+  String _lastSearch = '';
+  String _lastCategory = '';
+  String _lastStatus = '';
+
+  List<Product> _getFilteredList(List<Product> allProducts) {
+    // Only recompute when inputs change
+    if (identical(allProducts, _lastSourceProducts) &&
+        _searchQuery == _lastSearch &&
+        _selectedCategory == _lastCategory &&
+        _selectedStatus == _lastStatus) {
+      return _cachedFilteredList;
+    }
+    _lastSourceProducts = allProducts;
+    _lastSearch = _searchQuery;
+    _lastCategory = _selectedCategory;
+    _lastStatus = _selectedStatus;
+    _cachedFilteredList = allProducts.where((p) {
+      final matchesSearch = _searchQuery.isEmpty ||
+          p.name.toLowerCase().contains(_searchQuery) ||
+          p.tagId.toLowerCase().contains(_searchQuery);
+      final matchesCategory =
+          _selectedCategory == 'All Categories' || p.category == _selectedCategory;
+      final matchesStatus =
+          _selectedStatus == 'All Statuses' || p.status == _selectedStatus;
+      return matchesSearch && matchesCategory && matchesStatus;
+    }).toList();
+    return _cachedFilteredList;
+  }
 
   final List<String> _statuses = [
     'All Statuses',
@@ -93,11 +108,12 @@ class _InventoryViewState extends State<InventoryView> {
             style: ElevatedButton.styleFrom(backgroundColor: BoutiqueColors.destructive),
             onPressed: () {
               Navigator.of(context).pop();
-              setState(() {
-                if (_selectedDrawerProduct?.tagId == tagId) {
-                  _selectedDrawerProduct = null;
-                }
-              });
+              // Clear drawer selection if this product was open
+              if (_selectedDrawerProduct?.tagId == tagId) {
+                setState(() => _selectedDrawerProduct = null);
+              }
+              // Actually delete from Firestore + local state
+              state.deleteProduct(tagId);
               BoutiqueToast.showSuccess(context, 'Product deleted');
             },
             child: const Text('Delete', style: TextStyle(color: Colors.white)),
@@ -113,16 +129,7 @@ class _InventoryViewState extends State<InventoryView> {
       listenable: state,
       builder: (context, _) {
         final List<Product> allProducts = state.products;
-
-        final filteredList = allProducts.where((p) {
-          final matchesSearch = _searchQuery.isEmpty ||
-              p.name.toLowerCase().contains(_searchQuery) ||
-              p.tagId.toLowerCase().contains(_searchQuery);
-          final matchesCategory = _selectedCategory == 'All Categories' || p.category == _selectedCategory;
-          final matchesStatus = _selectedStatus == 'All Statuses' || p.status == _selectedStatus;
-
-          return matchesSearch && matchesCategory && matchesStatus;
-        }).toList();
+        final filteredList = _getFilteredList(allProducts);
 
         return Stack(
           children: [
@@ -207,7 +214,7 @@ class _InventoryViewState extends State<InventoryView> {
                       ),
                       const SizedBox(height: 20),
 
-                      // Metrics Bar
+                      // Metrics Bar — 4 stat cards
                       LayoutBuilder(
                         builder: (context, constraints) {
                           int count = constraints.maxWidth > 1100 ? 4 : (constraints.maxWidth > 700 ? 2 : 1);
@@ -216,8 +223,8 @@ class _InventoryViewState extends State<InventoryView> {
                             spacing: 12,
                             runSpacing: 12,
                             children: [
-                              SizedBox(width: w, child: _buildMiniStat('Total Items', '${state.totalProductsCount}', Icons.inventory_2_outlined, BoutiqueColors.accentSoft)),
-                              SizedBox(width: w, child: _buildMiniStat('Available', '${state.availableProductsCount}', Icons.check_circle_outline, const Color(0xFFE8F5E9))),
+                              SizedBox(width: w, child: _buildMiniStat('Total Stock', '${state.totalStockQuantity} pcs', Icons.inventory_2_outlined, BoutiqueColors.accentSoft)),
+                              SizedBox(width: w, child: _buildMiniStat('In Stock', '${state.availableProductsCount}', Icons.check_circle_outline, const Color(0xFFE8F5E9))),
                               SizedBox(width: w, child: _buildMiniStat('Low Stock', '${state.lowStockCount}', Icons.warning_amber_rounded, BoutiqueColors.lowStockBg)),
                               SizedBox(width: w, child: _buildMiniStat('Categories', '${state.totalCategoriesUsed}', Icons.category_outlined, BoutiqueColors.goldSoft)),
                             ],
@@ -251,10 +258,10 @@ class _InventoryViewState extends State<InventoryView> {
                       Expanded(
                         flex: 2,
                         child: DropdownButtonFormField<String>(
-                          initialValue: _selectedCategory,
+                          initialValue: state.categories.contains(_selectedCategory) ? _selectedCategory : 'All Categories',
                           style: const TextStyle(fontSize: 13, color: BoutiqueColors.textPrimary),
                           decoration: BoutiqueInputDecoration.field(hintText: 'Category'),
-                          items: _categories.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
+                          items: state.categories.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
                           onChanged: (val) {
                             if (val != null) setState(() => _selectedCategory = val);
                           },

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../models/product.dart';
 import '../state/admin_state.dart';
+import '../utils/boutique_theme.dart';
 
 class ItemDialog extends StatefulWidget {
   final String adminEmail;
@@ -72,26 +73,76 @@ class _ItemDialogState extends State<ItemDialog> {
   final List<String> _statuses = ['In Stock', 'Reserved', 'Sold Out', 'Discontinued'];
   final List<String> _units = ['Piece', 'Set', 'Pair', 'Box', 'Packet'];
 
+  String _autoGenerateTagId() {
+    int maxVal = 1000;
+    for (final tag in widget.existingTagIds) {
+      final match = RegExp(r'\d+').firstMatch(tag);
+      if (match != null) {
+        final val = int.tryParse(match.group(0)!) ?? 0;
+        if (val > maxVal) maxVal = val;
+      }
+    }
+    return 'FA-${maxVal + 1}';
+  }
+
+  List<String> get _availableCategories {
+    final list = widget.adminState.categories.where((c) => c != 'All Categories').toList();
+    if (list.isEmpty) return _categories;
+    return list;
+  }
+
+  void _showAddCategoryDialog() {
+    final ctrl = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        title: const Text('Add New Category', style: TextStyle(fontFamily: 'serif', color: _brown)),
+        content: TextField(
+          controller: ctrl,
+          decoration: const InputDecoration(
+            hintText: 'Category Name (e.g. Sarees, Dresses)',
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: _brown),
+            onPressed: () {
+              final cat = ctrl.text.trim();
+              if (cat.isNotEmpty) {
+                widget.adminState.addCategory(cat);
+                setState(() => _category = cat);
+              }
+              Navigator.pop(ctx);
+            },
+            child: const Text('Add', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   void initState() {
     super.initState();
     final p = widget.initialProduct;
-    _tagIdCtrl = TextEditingController(text: p?.tagId ?? '');
+    final defaultTagId = p?.tagId ?? _autoGenerateTagId();
+    _tagIdCtrl = TextEditingController(text: defaultTagId);
     _nameCtrl = TextEditingController(text: p?.name ?? '');
     _sizeCtrl = TextEditingController(text: p?.size ?? '');
     _vendorCtrl = TextEditingController(text: p?.vendor ?? '');
     _notesCtrl = TextEditingController(text: p?.notes ?? '');
-    _quantityCtrl = TextEditingController(text: p != null ? p.quantity.toString() : '');
+    _quantityCtrl = TextEditingController(text: p != null ? p.quantity.toString() : '1');
     _mrpCtrl = TextEditingController(text: p != null && p.mrp > 0 ? p.mrp.toString() : '');
     _sellingPriceCtrl = TextEditingController(text: p != null && p.sellingPrice > 0 ? p.sellingPrice.toString() : '');
     _discountCtrl = TextEditingController(text: p != null && p.discountValue > 0 ? p.discountValue.toString() : '');
 
     if (p != null) {
-      _category = _categories.contains(p.category) ? p.category : 'Others';
+      _category = p.category.isNotEmpty ? p.category : 'Others';
       _deity = _deities.contains(p.deity) ? p.deity : 'General';
       _material = _materials.contains(p.material) ? p.material : 'Brass';
       _status = _statuses.contains(p.status) ? p.status : 'In Stock';
-      // Normalise stored unit to capitalised list
       final storedUnit = p.unit.isNotEmpty ? p.unit : 'Piece';
       final normUnit = _units.firstWhere(
         (u) => u.toLowerCase() == storedUnit.toLowerCase(),
@@ -100,13 +151,16 @@ class _ItemDialogState extends State<ItemDialog> {
       _unit = normUnit;
       _isFestivalStock = p.isFestivalStock;
       _discountType = p.discountType.isNotEmpty ? p.discountType : '%';
+    } else {
+      if (_availableCategories.isNotEmpty) {
+        _category = _availableCategories.first;
+      }
     }
 
-    _sellingPriceCtrl.addListener(_onPriceChanged);
-    _discountCtrl.addListener(_onPriceChanged);
+    // Note: price/discount listeners removed — the final price preview
+    // uses AnimatedBuilder to listen directly to these controllers so only
+    // that small widget rebuilds on keystroke, not the entire dialog.
   }
-
-  void _onPriceChanged() => setState(() {});
 
   @override
   void dispose() {
@@ -124,7 +178,7 @@ class _ItemDialogState extends State<ItemDialog> {
 
   // ── Discount Calculation ──────────────────────────────────────────────────────
 
-  double get _sellingPrice => double.tryParse(_sellingPriceCtrl.text) ?? 0.0;
+  double get _sellingPrice => double.tryParse(_sellingPriceCtrl.text) ?? double.tryParse(_mrpCtrl.text) ?? 0.0;
   double get _discountAmount => double.tryParse(_discountCtrl.text) ?? 0.0;
 
   double get _finalPrice {
@@ -172,8 +226,8 @@ class _ItemDialogState extends State<ItemDialog> {
 
   String? _sellingPriceError() {
     if (!_sellingPriceTouched) return null;
-    final v = double.tryParse(_sellingPriceCtrl.text);
-    if (v == null || v <= 0) return 'Selling Price must be greater than ₹0';
+    final sp = _sellingPrice;
+    if (sp < 0) return 'Selling Price cannot be negative';
     return null;
   }
 
@@ -200,17 +254,13 @@ class _ItemDialogState extends State<ItemDialog> {
     if (_tagIdError() != null) return false;
     if (_nameCtrl.text.trim().isEmpty) return false;
     if (_category.isEmpty) return false;
-    final sp = double.tryParse(_sellingPriceCtrl.text);
-    if (sp == null || sp <= 0) return false;
     final q = int.tryParse(_quantityCtrl.text);
     if (q == null || q < 0) return false;
     if (_discountError() != null) return false;
     return true;
   }
 
-  // ── Save ──────────────────────────────────────────────────────────────────────
-
-  void _save() {
+  Future<void> _save() async {
     setState(() {
       _tagIdTouched = true;
       _nameTouched = true;
@@ -219,7 +269,10 @@ class _ItemDialogState extends State<ItemDialog> {
       _quantityTouched = true;
     });
 
-    if (!_isFormValid) return;
+    if (!_isFormValid) {
+      BoutiqueToast.showError(context, 'Please fill in all required fields (Tag ID, Name, Category, Quantity).');
+      return;
+    }
 
     final product = Product(
       tagId: _tagIdCtrl.text.trim().toUpperCase(),
@@ -246,15 +299,19 @@ class _ItemDialogState extends State<ItemDialog> {
       isFestivalStock: _isFestivalStock,
     );
 
-    if (widget.initialProduct == null) {
-      widget.adminState.addProduct(product);
-    } else {
-      widget.adminState.updateProduct(product);
+    try {
+      if (widget.initialProduct == null) {
+        await widget.adminState.addProduct(product);
+        if (mounted) BoutiqueToast.showSuccess(context, 'Product added successfully!');
+      } else {
+        await widget.adminState.updateProduct(product);
+        if (mounted) BoutiqueToast.showSuccess(context, 'Product updated successfully!');
+      }
+      if (mounted) Navigator.pop(context);
+    } catch (e) {
+      if (mounted) BoutiqueToast.showError(context, 'Failed to save to Firestore: $e');
     }
-    Navigator.pop(context);
   }
-
-  // ── Build ─────────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
@@ -331,16 +388,31 @@ class _ItemDialogState extends State<ItemDialog> {
                     ]),
                     const SizedBox(height: 16),
                     Row(children: [
-                      Expanded(child: _dropdownWithError(
-                        label: 'Category *',
-                        value: _category,
-                        items: _categories,
-                        error: _categoryError(),
-                        onChanged: (v) => setState(() {
-                          _category = v!;
-                          _categoryTouched = true;
-                        }),
-                      )),
+                      Expanded(
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Expanded(
+                              child: _dropdownWithError(
+                                label: 'Category *',
+                                value: _availableCategories.contains(_category) ? _category : (_availableCategories.isNotEmpty ? _availableCategories.first : 'Others'),
+                                items: _availableCategories,
+                                error: _categoryError(),
+                                onChanged: (v) => setState(() {
+                                  _category = v!;
+                                  _categoryTouched = true;
+                                }),
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            IconButton(
+                              onPressed: _showAddCategoryDialog,
+                              icon: const Icon(Icons.add_circle_outline, color: _brown),
+                              tooltip: 'Add New Category',
+                            ),
+                          ],
+                        ),
+                      ),
                       const SizedBox(width: 16),
                       Expanded(child: _dropdown('Material', _material, _materials,
                           (v) => setState(() => _material = v!))),
@@ -456,54 +528,63 @@ class _ItemDialogState extends State<ItemDialog> {
                         ],
                       ),
                       const SizedBox(width: 16),
-                      // Final Price display
+                      // Final Price — AnimatedBuilder so only this rebuilds on price/discount keystrokes
                       Expanded(
                         flex: 2,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text('Final Price', style: TextStyle(
-                              fontSize: 12, color: _lightBrown, fontWeight: FontWeight.w600,
-                            )),
-                            const SizedBox(height: 6),
-                            Container(
-                              height: 50,
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFE8F5E9),
-                                borderRadius: BorderRadius.circular(8),
-                                border: Border.all(color: const Color(0xFFA5D6A7)),
-                              ),
-                              alignment: Alignment.centerLeft,
-                              padding: const EdgeInsets.symmetric(horizontal: 14),
-                              child: Row(children: [
-                                const Icon(Icons.currency_rupee, size: 16, color: Color(0xFF2E7D32)),
-                                Text(
-                                  _finalPrice.toStringAsFixed(2),
-                                  style: const TextStyle(
-                                    fontSize: 18, fontWeight: FontWeight.bold,
-                                    color: Color(0xFF2E7D32),
+                        child: AnimatedBuilder(
+                          animation: Listenable.merge([_sellingPriceCtrl, _discountCtrl]),
+                          builder: (context, _) {
+                            final sp = double.tryParse(_sellingPriceCtrl.text) ?? 0.0;
+                            final d = double.tryParse(_discountCtrl.text) ?? 0.0;
+                            final fp = _discountType == '%'
+                                ? (sp - sp * d / 100).clamp(0.0, double.infinity)
+                                : (sp - d).clamp(0.0, double.infinity);
+                            final mrp = double.tryParse(_mrpCtrl.text) ?? 0.0;
+                            final pctOff = (mrp > 0 && fp < mrp) ? (mrp - fp) / mrp * 100 : null;
+                            return Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text('Final Price', style: TextStyle(
+                                  fontSize: 12, color: _lightBrown, fontWeight: FontWeight.w600,
+                                )),
+                                const SizedBox(height: 6),
+                                Container(
+                                  height: 50,
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFE8F5E9),
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(color: const Color(0xFFA5D6A7)),
                                   ),
+                                  alignment: Alignment.centerLeft,
+                                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                                  child: Row(children: [
+                                    const Icon(Icons.currency_rupee, size: 16, color: Color(0xFF2E7D32)),
+                                    Text(
+                                      fp.toStringAsFixed(2),
+                                      style: const TextStyle(
+                                        fontSize: 18, fontWeight: FontWeight.bold,
+                                        color: Color(0xFF2E7D32),
+                                      ),
+                                    ),
+                                  ]),
                                 ),
-                              ]),
-                            ),
-                          ],
+                                if (pctOff != null) ...[  
+                                  const SizedBox(height: 6),
+                                  Row(children: [
+                                    const Icon(Icons.info_outline, size: 14, color: _lightBrown),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      '${pctOff.toStringAsFixed(1)}% off MRP',
+                                      style: const TextStyle(fontSize: 12, color: _lightBrown),
+                                    ),
+                                  ]),
+                                ],
+                              ],
+                            );
+                          },
                         ),
                       ),
                     ]),
-
-                    // MRP discount reference
-                    if (_effectiveDiscountVsMrp != null)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 8),
-                        child: Row(children: [
-                          const Icon(Icons.info_outline, size: 14, color: _lightBrown),
-                          const SizedBox(width: 4),
-                          Text(
-                            '${_effectiveDiscountVsMrp!.toStringAsFixed(1)}% off MRP',
-                            style: const TextStyle(fontSize: 12, color: _lightBrown),
-                          ),
-                        ]),
-                      ),
 
                     const SizedBox(height: 24),
 
