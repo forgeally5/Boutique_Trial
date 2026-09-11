@@ -25,8 +25,6 @@ class ItemDialog extends StatefulWidget {
 }
 
 class _ItemDialogState extends State<ItemDialog> {
-  final _formKey = GlobalKey<FormState>();
-
   // Controllers
   late TextEditingController _tagIdCtrl;
   late TextEditingController _nameCtrl;
@@ -70,7 +68,7 @@ class _ItemDialogState extends State<ItemDialog> {
   final List<String> _materials = [
     'Brass', 'Silver', 'Panchaloha', 'Wood', 'Clay', 'Marble', 'Plastic/Steel', 'N/A'
   ];
-  final List<String> _statuses = ['In Stock', 'Reserved', 'Sold Out', 'Discontinued'];
+  final List<String> _statuses = ['In Stock', 'Sold Out'];
   final List<String> _units = ['Piece', 'Set', 'Pair', 'Box', 'Packet'];
 
   String _autoGenerateTagId() {
@@ -192,12 +190,6 @@ class _ItemDialogState extends State<ItemDialog> {
     }
   }
 
-  double? get _effectiveDiscountVsMrp {
-    final mrp = double.tryParse(_mrpCtrl.text) ?? 0.0;
-    if (mrp <= 0 || _finalPrice >= mrp) return null;
-    return ((mrp - _finalPrice) / mrp * 100);
-  }
-
   // ── Validation ────────────────────────────────────────────────────────────────
 
   String? _tagIdError() {
@@ -221,13 +213,6 @@ class _ItemDialogState extends State<ItemDialog> {
   String? _categoryError() {
     if (!_categoryTouched) return null;
     if (_category.isEmpty) return 'Category is required';
-    return null;
-  }
-
-  String? _sellingPriceError() {
-    if (!_sellingPriceTouched) return null;
-    final sp = _sellingPrice;
-    if (sp < 0) return 'Selling Price cannot be negative';
     return null;
   }
 
@@ -475,20 +460,15 @@ class _ItemDialogState extends State<ItemDialog> {
                     const SizedBox(height: 12),
                     Row(children: [
                       Expanded(child: _field(
-                        label: 'MRP (₹)',
-                        controller: _mrpCtrl,
-                        isNum: true,
-                        hint: 'Optional',
-                        onChanged: (_) => setState(() {}),
-                      )),
-                      const SizedBox(width: 16),
-                      Expanded(child: _field(
-                        label: 'Selling Price (₹) *',
+                        label: 'Price (₹) *',
                         controller: _sellingPriceCtrl,
                         isNum: true,
-                        error: _sellingPriceError(),
                         hint: '0.00',
-                        onChanged: (_) => setState(() => _sellingPriceTouched = true),
+                        onChanged: (v) {
+                          // Keep MRP in sync with price
+                          _mrpCtrl.text = v;
+                          setState(() => _sellingPriceTouched = true);
+                        },
                       )),
                     ]),
                     const SizedBox(height: 16),

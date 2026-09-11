@@ -8,7 +8,8 @@ import '../utils/boutique_theme.dart';
 
 class InventoryView extends StatefulWidget {
   final AdminState state;
-  const InventoryView({super.key, required this.state});
+  final TextEditingController? globalSearchCtrl;
+  const InventoryView({super.key, required this.state, this.globalSearchCtrl});
 
   @override
   State<InventoryView> createState() => _InventoryViewState();
@@ -22,6 +23,29 @@ class _InventoryViewState extends State<InventoryView> {
   String _selectedStatus = 'All Statuses';
   bool _isGridView = false;
   Product? _selectedDrawerProduct;
+  final TextEditingController _searchCtrl = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    // Listen to global search from top bar
+    widget.globalSearchCtrl?.addListener(_onGlobalSearch);
+  }
+
+  void _onGlobalSearch() {
+    final q = widget.globalSearchCtrl?.text.trim().toLowerCase() ?? '';
+    if (q != _searchQuery) {
+      _searchCtrl.text = widget.globalSearchCtrl?.text ?? '';
+      setState(() => _searchQuery = q);
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.globalSearchCtrl?.removeListener(_onGlobalSearch);
+    _searchCtrl.dispose();
+    super.dispose();
+  }
 
   // ── Memoized filter cache ──
   List<Product> _cachedFilteredList = [];
@@ -58,9 +82,7 @@ class _InventoryViewState extends State<InventoryView> {
   final List<String> _statuses = [
     'All Statuses',
     'In Stock',
-    'Reserved',
     'Sold Out',
-    'Discontinued'
   ];
 
   void _showAddItemDialog(BuildContext context) async {
@@ -245,12 +267,20 @@ class _InventoryViewState extends State<InventoryView> {
                       Expanded(
                         flex: 3,
                         child: TextField(
+                          controller: _searchCtrl,
                           style: const TextStyle(fontSize: 13),
                           decoration: BoutiqueInputDecoration.field(
                             hintText: 'Search product name or tag ID...',
                             prefixIcon: const Icon(Icons.search_rounded, size: 18, color: BoutiqueColors.textSecondary),
                           ),
-                          onChanged: (val) => setState(() => _searchQuery = val.toLowerCase()),
+                          onChanged: (val) {
+                            setState(() => _searchQuery = val.toLowerCase());
+                            // Sync back to global search
+                            if (widget.globalSearchCtrl != null &&
+                                widget.globalSearchCtrl!.text != val) {
+                              widget.globalSearchCtrl!.text = val;
+                            }
+                          },
                         ),
                       ),
                       const SizedBox(width: 16),
@@ -321,7 +351,7 @@ class _InventoryViewState extends State<InventoryView> {
                             : ListView.separated(
                                 padding: const EdgeInsets.symmetric(vertical: 8),
                                 itemCount: filteredList.length,
-                                separatorBuilder: (_, __) => const Divider(height: 1, color: BoutiqueColors.borderLight),
+                                separatorBuilder: (_, _) => const Divider(height: 1, color: BoutiqueColors.borderLight),
                                 itemBuilder: (context, index) {
                                   final p = filteredList[index];
                                   return _buildTableRow(p);

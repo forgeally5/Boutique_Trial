@@ -405,7 +405,7 @@ class AdminState extends ChangeNotifier {
 
   // Analytics Metrics
   int get totalProductsCount => _products.length;
-  int get totalStockQuantity => _products.fold(0, (sum, p) => sum + p.quantity);
+  int get totalStockQuantity => _products.fold(0, (total, p) => total + p.quantity);
   int get availableProductsCount =>
       _products.where((p) => p.status != 'Sold Out' && p.status != 'Discontinued' && p.quantity > 0).length;
   int get lowStockCount => _products.where((p) => p.isLowStock).length;

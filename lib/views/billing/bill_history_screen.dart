@@ -113,17 +113,132 @@ class _BillHistoryScreenState extends State<BillHistoryScreen> {
   }
 
   Future<void> _pickDate({required bool isFrom}) async {
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: isFrom ? _dateFrom : _dateTo,
-      firstDate: DateTime(2020),
-      lastDate: DateTime(2100),
-    );
+    final initial = isFrom ? _dateFrom : _dateTo;
+    final picked = await _showMonthYearDatePicker(context, initial);
     if (picked != null) {
       setState(() => isFrom ? _dateFrom = picked : _dateTo = picked);
       _loadBills();
     }
   }
+
+  /// Custom date picker: first pick month+year, then pick the day.
+  Future<DateTime?> _showMonthYearDatePicker(BuildContext ctx, DateTime initial) async {
+    int selectedYear = initial.year;
+    int selectedMonth = initial.month;
+
+    // Step 1: Pick month + year
+    final confirmed = await showDialog<bool>(
+      context: ctx,
+      builder: (dialogCtx) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            final months = [
+              'January','February','March','April','May','June',
+              'July','August','September','October','November','December'
+            ];
+            final years = List.generate(12, (i) => 2020 + i);
+            return AlertDialog(
+              backgroundColor: BoutiqueColors.bgCard,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              title: const Text('Select Month & Year',
+                style: TextStyle(fontFamily: 'serif', fontSize: 18, color: BoutiqueColors.textPrimary)),
+              content: SizedBox(
+                width: 340,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Year selector
+                    Row(
+                      children: [
+                        const Text('Year:', style: TextStyle(color: BoutiqueColors.textSecondary, fontSize: 13)),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: DropdownButton<int>(
+                            value: selectedYear,
+                            isExpanded: true,
+                            dropdownColor: BoutiqueColors.bgCard,
+                            style: const TextStyle(color: BoutiqueColors.textPrimary, fontSize: 14),
+                            items: years.map((y) => DropdownMenuItem(value: y, child: Text('$y'))).toList(),
+                            onChanged: (y) => setDialogState(() => selectedYear = y!),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    // Month grid
+                    GridView.count(
+                      crossAxisCount: 3,
+                      shrinkWrap: true,
+                      childAspectRatio: 2.2,
+                      mainAxisSpacing: 8,
+                      crossAxisSpacing: 8,
+                      children: List.generate(12, (i) {
+                        final isSelected = (i + 1) == selectedMonth;
+                        return GestureDetector(
+                          onTap: () => setDialogState(() => selectedMonth = i + 1),
+                          child: Container(
+                            alignment: Alignment.center,
+                            decoration: BoxDecoration(
+                              color: isSelected ? BoutiqueColors.accent : BoutiqueColors.bgSubtle,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: isSelected ? BoutiqueColors.accent : BoutiqueColors.border,
+                              ),
+                            ),
+                            child: Text(
+                              months[i].substring(0, 3),
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                                color: isSelected ? Colors.white : BoutiqueColors.textPrimary,
+                              ),
+                            ),
+                          ),
+                        );
+                      }),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogCtx, false),
+                  child: const Text('Cancel', style: TextStyle(color: BoutiqueColors.textSecondary)),
+                ),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: BoutiqueColors.accent,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                  onPressed: () => Navigator.pop(dialogCtx, true),
+                  child: const Text('Pick Day →', style: TextStyle(color: Colors.white)),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    if (confirmed != true || !ctx.mounted) return null;
+
+    // Step 2: Pick the day within the selected month
+    final firstOfMonth = DateTime(selectedYear, selectedMonth, 1);
+    final lastOfMonth = DateTime(selectedYear, selectedMonth + 1, 0);
+    final clampedInitial = initial.year == selectedYear && initial.month == selectedMonth
+        ? initial
+        : firstOfMonth;
+
+    return showDatePicker(
+      context: ctx,
+      initialDate: clampedInitial,
+      firstDate: firstOfMonth,
+      lastDate: lastOfMonth,
+      initialEntryMode: DatePickerEntryMode.calendarOnly,
+      helpText: '${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][selectedMonth-1]} $selectedYear',
+    );
+  }
+
 
   Future<void> _deleteBill(Map<String, dynamic> bill) async {
     final ok = await showDialog<bool>(
@@ -249,7 +364,7 @@ class _BillHistoryScreenState extends State<BillHistoryScreen> {
                       ? const Center(child: Text('No invoice records found.', style: TextStyle(color: BoutiqueColors.textSecondary)))
                       : ListView.separated(
                           itemCount: _filtered.length,
-                          separatorBuilder: (_, __) => const Divider(height: 1, color: BoutiqueColors.borderLight),
+                          separatorBuilder: (_, _) => const Divider(height: 1, color: BoutiqueColors.borderLight),
                           itemBuilder: (context, idx) {
                             final b = _filtered[idx];
                             return ListTile(
@@ -362,6 +477,43 @@ class _BillDetailDialog extends StatelessWidget {
     await Printing.layoutPdf(onLayout: (_) => bytes);
   }
 
+  Future<void> _handleSavePdf(BuildContext context) async {
+    final invoiceData = SalesInvoiceData(
+      customerName: bill['customerName']?.toString() ?? 'Customer',
+      customerMobile: bill['customerMobile']?.toString() ?? '',
+      customerAddress: '',
+      customerState: '',
+      invoiceNo: bill['billNo']?.toString() ?? 'FA-0001',
+      date: bill['billDate'] != null ? DateFormat('dd/MM/yyyy').format((bill['billDate'] as Timestamp).toDate()) : '',
+      placeOfSupply: '',
+      items: [],
+      totalPcs: 1,
+      totalGrossWt: 0,
+      totalNetWt: 0,
+      totalMetalAmt: 0,
+      totalAmount: (bill['totalPayable'] as num?)?.toDouble() ?? 0,
+      discountAmt: (bill['extraDiscountAmount'] as num?)?.toDouble() ?? 0,
+      taxableAmount: (bill['subtotal'] as num?)?.toDouble() ?? 0,
+      cgstAmt: 0,
+      sgstAmt: 0,
+      igstAmt: 0,
+      roundOff: 0,
+      grossAmount: (bill['totalPayable'] as num?)?.toDouble() ?? 0,
+      receivedAmt: (bill['amountReceived'] as num?)?.toDouble() ?? 0,
+      amountInWords: PdfInvoiceApi.numberToWords((bill['totalPayable'] as num?)?.toDouble() ?? 0),
+      cardDetails: bill['paymentMode']?.toString() ?? '',
+      customerPan: '',
+      narration: '',
+      dueAmount: 0,
+      receiptDetails: '',
+      credits: '',
+    );
+    final bytes = await PdfInvoiceApi.generate(invoiceData);
+    final billNo = bill['billNo']?.toString() ?? 'invoice';
+    // Save/download PDF to local system
+    await Printing.sharePdf(bytes: bytes, filename: '$billNo.pdf');
+  }
+
   @override
   Widget build(BuildContext context) {
     final fmt = DateFormat('dd/MM/yyyy');
@@ -397,8 +549,8 @@ class _BillDetailDialog extends StatelessWidget {
                     ),
                     IconButton(
                       icon: const Icon(Icons.download_outlined, color: BoutiqueColors.accent),
-                      onPressed: () => _handlePrintPdf(context),
-                      tooltip: 'Download PDF',
+                      onPressed: () => _handleSavePdf(context),
+                      tooltip: 'Save PDF to device',
                     ),
                     const SizedBox(width: 8),
                     IconButton(

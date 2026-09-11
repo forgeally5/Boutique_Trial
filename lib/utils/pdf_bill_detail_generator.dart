@@ -56,7 +56,7 @@ class PdfBillDetailGenerator {
             pw.Column(
               crossAxisAlignment: pw.CrossAxisAlignment.center,
               children: [
-                pw.Text('TRILOK JEWELERS', style: pw.TextStyle(fontSize: 20, fontWeight: pw.FontWeight.bold, color: PdfColors.brown900)),
+                pw.Text('FORGEALLY BOUTIQUE', style: pw.TextStyle(fontSize: 20, fontWeight: pw.FontWeight.bold, color: PdfColors.brown900)),
                 pw.Text('OM SRI JEWEL', style: pw.TextStyle(fontSize: 9, letterSpacing: 2, color: PdfColors.brown700)),
                 pw.SizedBox(height: 3),
                 pw.Text('NSR ROAD, SAI BABA COLONY, COIMBATORE - 641001', style: pw.TextStyle(fontSize: 7)),

@@ -534,41 +534,8 @@ class _AdminHomeShellState extends State<AdminHomeShell> {
                         ),
                       ],
 
-                      // Top Bar Search Box
-                      Expanded(
-                        child: Align(
-                          alignment: Alignment.centerLeft,
-                          child: Container(
-                            constraints: const BoxConstraints(maxWidth: 380),
-                            height: 40,
-                            margin: const EdgeInsets.only(left: 8),
-                            child: TextField(
-                              controller: _globalSearchCtrl,
-                              style: const TextStyle(fontSize: 13),
-                              decoration: InputDecoration(
-                                hintText: 'Search inventory, tags, customers...',
-                                hintStyle: const TextStyle(fontSize: 12, color: BoutiqueColors.textMuted),
-                                prefixIcon: const Icon(Icons.search_rounded, size: 18, color: BoutiqueColors.textSecondary),
-                                filled: true,
-                                fillColor: BoutiqueColors.bgSubtle,
-                                contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 12),
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(20),
-                                  borderSide: const BorderSide(color: BoutiqueColors.border),
-                                ),
-                                enabledBorder: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(20),
-                                  borderSide: const BorderSide(color: BoutiqueColors.border),
-                                ),
-                                focusedBorder: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(20),
-                                  borderSide: const BorderSide(color: BoutiqueColors.accent, width: 1.5),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
+                      const Spacer(),
+
 
                       // Header Right Actions
                       Row(
@@ -576,21 +543,7 @@ class _AdminHomeShellState extends State<AdminHomeShell> {
                           ConnectionStatusBadge(state: _state),
                           const SizedBox(width: 14),
 
-                          // Notifications Icon
-                          IconButton(
-                            icon: const Badge(
-                              smallSize: 8,
-                              backgroundColor: BoutiqueColors.accent,
-                              child: Icon(Icons.notifications_none_rounded, color: BoutiqueColors.textSecondary, size: 22),
-                            ),
-                            onPressed: () {
-                              BoutiqueToast.showSuccess(context, 'All system notifications up to date.');
-                            },
-                            tooltip: 'Notifications',
-                          ),
-                          const SizedBox(width: 8),
-
-                          // Profile Dropdown
+                          // Profile / Logout Button
                           Theme(
                             data: Theme.of(context).copyWith(cardColor: BoutiqueColors.bgCard),
                             child: PopupMenuButton<String>(
@@ -612,24 +565,11 @@ class _AdminHomeShellState extends State<AdminHomeShell> {
                                 side: const BorderSide(color: BoutiqueColors.border),
                               ),
                               onSelected: (value) {
-                                if (value == 'change_password') {
-                                  _openChangePassword();
-                                } else if (value == 'logout') {
+                                if (value == 'logout') {
                                   _handleLogout();
                                 }
                               },
                               itemBuilder: (BuildContext context) => [
-                                const PopupMenuItem<String>(
-                                  value: 'change_password',
-                                  child: Row(
-                                    children: [
-                                      Icon(Icons.lock_outline, color: BoutiqueColors.textSecondary, size: 18),
-                                      SizedBox(width: 8),
-                                      Text('Change Password', style: TextStyle(color: BoutiqueColors.textPrimary, fontSize: 13)),
-                                    ],
-                                  ),
-                                ),
-
                                 const PopupMenuItem<String>(
                                   value: 'logout',
                                   child: Row(
@@ -655,7 +595,7 @@ class _AdminHomeShellState extends State<AdminHomeShell> {
                     index: _stackIndex,
                     children: [
                       // Index 0: Inventory
-                      InventoryView(state: _state),
+                      InventoryView(state: _state, globalSearchCtrl: _globalSearchCtrl),
                       // Index 1: Billing
                       BillingView(
                         state: _state,
