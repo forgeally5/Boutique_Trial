@@ -498,15 +498,8 @@ class AdminState extends ChangeNotifier {
 
       for (var clarity in clarities) {
         for (var color in colorRanges) {
-          double rateVal = 0.0;
           final clarityMap = rates.diamondRates[clarity];
-          if (clarityMap is Map) {
-            final val = clarityMap[color];
-            if (val is num) {
-              rateVal = val.toDouble();
-            }
-          }
-          _diamondRates['${clarity}_$color'] = rateVal;
+          _diamondRates['${clarity}_$color'] = clarityMap?[color] ?? 0.0;
         }
       }
 

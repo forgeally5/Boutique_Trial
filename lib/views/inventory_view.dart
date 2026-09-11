@@ -416,7 +416,9 @@ class _InventoryViewState extends State<InventoryView> {
   Widget _buildTableRow(Product p) {
     final isLowStock = p.quantity < 5;
     final matStr = p.material.isNotEmpty ? ' • ${p.material}' : '';
-    return ListTile(
+    return Material(
+      color: Colors.transparent,
+      child: ListTile(
       onTap: () => setState(() => _selectedDrawerProduct = p),
       contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 6),
       leading: Container(
@@ -464,6 +466,7 @@ class _InventoryViewState extends State<InventoryView> {
           ),
         ],
       ),
+    ),
     );
   }
 

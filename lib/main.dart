@@ -5,14 +5,10 @@ import 'package:firebase_core/firebase_core.dart';
 import 'auth/viewmodels/auth_viewmodel.dart';
 import 'firebase_options.dart';
 import 'state/admin_state.dart';
-import 'services/sync_service.dart';
 import 'services/local_db_service.dart';
 import 'views/inventory_view.dart';
 import 'views/billing_view.dart';
 import 'login_page.dart';
-import 'views/master_view.dart';
-import 'views/change_password_dialog.dart';
-import 'views/add_master_view.dart';
 import 'views/widgets/connection_status_badge.dart';
 import 'utils/boutique_theme.dart';
 
@@ -24,7 +20,6 @@ Future<void> main() async {
   );
 
   await LocalDbService().init();
-  SyncService().initialize();
 
   runApp(
     ChangeNotifierProvider<AuthViewModel>(
@@ -162,10 +157,9 @@ class AdminHomeShell extends StatefulWidget {
 
 class _AdminHomeShellState extends State<AdminHomeShell> {
   final AdminState _state = AdminState();
-  // 1: Inventory, 2: Billing, 4: Reports, 5: Settings
+  // 1: Inventory, 2: Billing, 5: Settings
   int _activeTabIndex = 1;
   String _selectedBillingSection = 'A Sales Entry';
-  String _selectedReportTitle = 'A Daily Activity Report';
   final TextEditingController _globalSearchCtrl = TextEditingController();
 
   void _switchTab(int index) {
@@ -208,8 +202,8 @@ class _AdminHomeShellState extends State<AdminHomeShell> {
   }
 
   // Tab index → IndexedStack position mapping
-  // 1=Inventory, 2=Billing, 4=Reports/Master, 5=Settings
-  static const _tabToStackIndex = {1: 0, 2: 1, 4: 2, 5: 3};
+  // 1=Inventory, 2=Billing, 5=Settings
+  static const _tabToStackIndex = {1: 0, 2: 1, 5: 2};
   int get _stackIndex => _tabToStackIndex[_activeTabIndex] ?? 0;
 
   Widget _buildSettingsView() {
@@ -242,21 +236,6 @@ class _AdminHomeShellState extends State<AdminHomeShell> {
                 title: 'Change Password',
                 subtitle: 'Update admin account security password',
                 onTap: _openChangePassword,
-              ),
-              _buildSettingsCard(
-                icon: Icons.create_new_folder_outlined,
-                title: 'Add Master Options',
-                subtitle: 'Create new categories, materials, and units',
-                onTap: _openDropdownOptionsMaster,
-              ),
-              _buildSettingsCard(
-                icon: Icons.sync_rounded,
-                title: 'Sync Database',
-                subtitle: 'Force manual synchronization with Firestore',
-                onTap: () {
-                  SyncService().syncNow();
-                  BoutiqueToast.showSuccess(context, 'Database synchronization initiated');
-                },
               ),
               _buildSettingsCard(
                 icon: Icons.logout_rounded,
@@ -378,22 +357,8 @@ class _AdminHomeShellState extends State<AdminHomeShell> {
   }
 
   void _openChangePassword() {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => ChangeNotifierProvider.value(
-        value: context.read<AuthViewModel>(),
-        child: const ChangePasswordDialog(),
-      ),
-    );
-  }
-
-  void _openDropdownOptionsMaster() {
-    showDialog(
-      context: context,
-      barrierDismissible: true,
-      builder: (_) => AddMasterDialog(adminState: _state),
-    );
+    // Change password can be done through Firebase Auth directly
+    BoutiqueToast.showSuccess(context, 'Please use Firebase Console to reset password.');
   }
 
   @override
@@ -651,8 +616,6 @@ class _AdminHomeShellState extends State<AdminHomeShell> {
                                   _openChangePassword();
                                 } else if (value == 'logout') {
                                   _handleLogout();
-                                } else if (value == 'dropdown_master') {
-                                  _openDropdownOptionsMaster();
                                 }
                               },
                               itemBuilder: (BuildContext context) => [
@@ -666,16 +629,7 @@ class _AdminHomeShellState extends State<AdminHomeShell> {
                                     ],
                                   ),
                                 ),
-                                const PopupMenuItem<String>(
-                                  value: 'dropdown_master',
-                                  child: Row(
-                                    children: [
-                                      Icon(Icons.list_alt_rounded, color: BoutiqueColors.textSecondary, size: 18),
-                                      SizedBox(width: 8),
-                                      Text('Add Master Options', style: TextStyle(color: BoutiqueColors.textPrimary, fontSize: 13)),
-                                    ],
-                                  ),
-                                ),
+
                                 const PopupMenuItem<String>(
                                   value: 'logout',
                                   child: Row(
@@ -710,12 +664,7 @@ class _AdminHomeShellState extends State<AdminHomeShell> {
                           setState(() => _selectedBillingSection = sec);
                         },
                       ),
-                      // Index 2: Master/Reports
-                      MasterView(
-                        adminState: _state,
-                        initialReportTitle: _selectedReportTitle,
-                      ),
-                      // Index 3: Settings
+                      // Index 2: Settings
                       _buildSettingsView(),
                     ],
                   ),
