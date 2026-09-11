@@ -56,10 +56,22 @@ class PdfBillDetailGenerator {
             pw.Column(
               crossAxisAlignment: pw.CrossAxisAlignment.center,
               children: [
-                pw.Text('FORGEALLY BOUTIQUE', style: pw.TextStyle(fontSize: 20, fontWeight: pw.FontWeight.bold, color: PdfColors.brown900)),
-                pw.Text('OM SRI JEWEL', style: pw.TextStyle(fontSize: 9, letterSpacing: 2, color: PdfColors.brown700)),
+                pw.Container(
+                  width: 32,
+                  height: 32,
+                  decoration: const pw.BoxDecoration(
+                    color: PdfColors.brown900,
+                    borderRadius: pw.BorderRadius.all(pw.Radius.circular(6)),
+                  ),
+                  child: pw.Center(
+                    child: pw.Text('F', style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold, color: PdfColors.white)),
+                  ),
+                ),
+                pw.SizedBox(height: 6),
+                pw.Text('FORGEALLY BOUTIQUE', style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold, letterSpacing: 2.5, color: PdfColors.brown900)),
+                pw.Text('BOUTIQUE RETAIL', style: pw.TextStyle(fontSize: 9, letterSpacing: 2, color: PdfColors.brown700)),
                 pw.SizedBox(height: 3),
-                pw.Text('NSR ROAD, SAI BABA COLONY, COIMBATORE - 641001', style: pw.TextStyle(fontSize: 7)),
+                pw.Text('NSR ROAD, SAI BABA COLONY, COIMBATORE - 641001', style: const pw.TextStyle(fontSize: 7)),
                 pw.SizedBox(height: 8),
                 pw.Container(height: 1.5, color: PdfColors.brown900),
                 pw.SizedBox(height: 6),

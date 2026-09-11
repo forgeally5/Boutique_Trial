@@ -175,9 +175,66 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
       }
 
       if (mounted) {
-        BoutiqueToast.showSuccess(context, 'Bill saved successfully!');
+        final billNo = _billNoCtrl.text.trim();
         _resetForm();
         widget.onSaved?.call();
+        await showDialog(
+          context: context,
+          barrierDismissible: true,
+          builder: (ctx) => Dialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            backgroundColor: BoutiqueColors.bgCard,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 36, vertical: 36),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 72,
+                    height: 72,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE8F5E9),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: const Color(0xFF81C784), width: 2),
+                    ),
+                    child: const Icon(Icons.check_circle_rounded, color: Color(0xFF2E7D32), size: 42),
+                  ),
+                  const SizedBox(height: 20),
+                  const Text(
+                    'Bill Saved!',
+                    style: TextStyle(
+                      fontFamily: 'serif',
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                      color: BoutiqueColors.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Bill #$billNo has been saved\nsuccessfully.',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontSize: 14, color: BoutiqueColors.textSecondary, height: 1.5),
+                  ),
+                  const SizedBox(height: 28),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: () => Navigator.of(ctx).pop(),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: BoutiqueColors.accent,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        elevation: 0,
+                      ),
+                      child: const Text('Done', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
       }
     } catch (e) {
       if (mounted) BoutiqueToast.showError(context, 'Error saving bill: $e');

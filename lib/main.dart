@@ -501,18 +501,17 @@ class _AdminHomeShellState extends State<AdminHomeShell> {
           Expanded(
             child: Column(
               children: [
-                // Top Header Bar
-                Container(
-                  height: 70,
-                  padding: const EdgeInsets.symmetric(horizontal: 24),
-                  decoration: const BoxDecoration(
-                    color: BoutiqueColors.bgCard,
-                    border: Border(bottom: BorderSide(color: BoutiqueColors.border, width: 1)),
-                  ),
-                  child: Row(
-                    children: [
-                      // Mobile Nav Drawer Button / Brand
-                      if (!isDesktop) ...[
+                // Top Header Bar (Mobile only)
+                if (!isDesktop)
+                  Container(
+                    height: 56,
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    decoration: const BoxDecoration(
+                      color: BoutiqueColors.bgCard,
+                      border: Border(bottom: BorderSide(color: BoutiqueColors.border, width: 1)),
+                    ),
+                    child: Row(
+                      children: [
                         PopupMenuButton<int>(
                           icon: const Icon(Icons.menu_rounded, color: BoutiqueColors.textPrimary),
                           onSelected: (idx) => _switchTab(idx),
@@ -532,62 +531,11 @@ class _AdminHomeShellState extends State<AdminHomeShell> {
                             color: BoutiqueColors.textPrimary,
                           ),
                         ),
+                        const Spacer(),
+                        ConnectionStatusBadge(state: _state),
                       ],
-
-                      const Spacer(),
-
-
-                      // Header Right Actions
-                      Row(
-                        children: [
-                          ConnectionStatusBadge(state: _state),
-                          const SizedBox(width: 14),
-
-                          // Profile / Logout Button
-                          Theme(
-                            data: Theme.of(context).copyWith(cardColor: BoutiqueColors.bgCard),
-                            child: PopupMenuButton<String>(
-                              icon: Container(
-                                padding: const EdgeInsets.all(4),
-                                decoration: BoxDecoration(
-                                  border: Border.all(color: BoutiqueColors.border),
-                                  shape: BoxShape.circle,
-                                ),
-                                child: const Icon(
-                                  Icons.person_outline_rounded,
-                                  color: BoutiqueColors.textPrimary,
-                                  size: 20,
-                                ),
-                              ),
-                              tooltip: 'User Profile',
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                                side: const BorderSide(color: BoutiqueColors.border),
-                              ),
-                              onSelected: (value) {
-                                if (value == 'logout') {
-                                  _handleLogout();
-                                }
-                              },
-                              itemBuilder: (BuildContext context) => [
-                                const PopupMenuItem<String>(
-                                  value: 'logout',
-                                  child: Row(
-                                    children: [
-                                      Icon(Icons.logout_rounded, color: BoutiqueColors.destructive, size: 18),
-                                      SizedBox(width: 8),
-                                      Text('Logout', style: TextStyle(color: BoutiqueColors.destructive, fontWeight: FontWeight.bold, fontSize: 13)),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
+                    ),
                   ),
-                ),
 
                 // Page Body — IndexedStack keeps all views alive for instant tab switching
                 Expanded(

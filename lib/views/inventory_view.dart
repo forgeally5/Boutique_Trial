@@ -478,13 +478,13 @@ class _InventoryViewState extends State<InventoryView> {
         ],
       ),
       subtitle: Text(
-        '${p.category}$matStr • Qty: ${p.quantity} ${p.unit} • Price: ₹${p.mrp}',
+        '${p.category}$matStr • Qty: ${p.quantity} ${p.unit}',
         style: const TextStyle(fontSize: 12, color: BoutiqueColors.textSecondary),
       ),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text('₹${p.mrp}', style: const TextStyle(fontFamily: 'serif', fontSize: 16, fontWeight: FontWeight.bold, color: BoutiqueColors.textPrimary)),
+          _buildPriceDisplay(p),
           const SizedBox(width: 20),
           IconButton(
             icon: const Icon(Icons.edit_outlined, color: BoutiqueColors.textSecondary, size: 20),
@@ -540,7 +540,7 @@ class _InventoryViewState extends State<InventoryView> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text('₹${p.mrp}', style: const TextStyle(fontFamily: 'serif', fontSize: 16, fontWeight: FontWeight.bold, color: BoutiqueColors.textPrimary)),
+                    _buildPriceDisplay(p),
                     Text('Qty: ${p.quantity}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: BoutiqueColors.textSecondary)),
                   ],
                 ),
@@ -549,6 +549,49 @@ class _InventoryViewState extends State<InventoryView> {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildPriceDisplay(Product p) {
+    final hasDiscount = p.discountValue > 0 && p.finalPrice > 0 && p.finalPrice < p.mrp;
+    if (!hasDiscount) {
+      return Text(
+        '₹${p.mrp.toStringAsFixed(p.mrp.truncateToDouble() == p.mrp ? 0 : 2)}',
+        style: const TextStyle(fontFamily: 'serif', fontSize: 16, fontWeight: FontWeight.bold, color: BoutiqueColors.textPrimary),
+      );
+    }
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          '₹${p.mrp.toStringAsFixed(p.mrp.truncateToDouble() == p.mrp ? 0 : 2)}',
+          style: const TextStyle(
+            fontFamily: 'serif',
+            fontSize: 13,
+            fontWeight: FontWeight.w500,
+            color: BoutiqueColors.textSecondary,
+            decoration: TextDecoration.lineThrough,
+          ),
+        ),
+        const SizedBox(width: 6),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+          decoration: BoxDecoration(
+            color: const Color(0xFFE8F5E9),
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(color: const Color(0xFF81C784), width: 0.8),
+          ),
+          child: Text(
+            '₹${p.finalPrice.toStringAsFixed(p.finalPrice.truncateToDouble() == p.finalPrice ? 0 : 2)}',
+            style: const TextStyle(
+              fontFamily: 'serif',
+              fontSize: 15,
+              fontWeight: FontWeight.bold,
+              color: Color(0xFF2E7D32),
+            ),
+          ),
+        ),
+      ],
     );
   }
 

@@ -3,7 +3,6 @@ import 'dart:typed_data';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:flutter/services.dart' show rootBundle;
 import 'package:printing/printing.dart';
 
 class SalesInvoiceData {
@@ -176,17 +175,7 @@ class PdfInvoiceApi {
       // Fallback to hardcoded defaults
     }
 
-    // 2. Try loading the assets image for the logo
-    pw.MemoryImage? logoImage;
-    if (showLogo) {
-      try {
-        final byteData = await rootBundle.load('assets/logo.png');
-        logoImage = pw.MemoryImage(byteData.buffer.asUint8List());
-      } catch (e) {
-        // Fallback to monogram box if assets fail to load
-      }
-    }
-
+    // 2. Setup theme colors
     final Map<String, PdfColor> themes = {
       'Brown': const PdfColor.fromInt(0xFF3E2723),
       'Navy': const PdfColor.fromInt(0xFF1A237E),
@@ -216,7 +205,7 @@ class PdfInvoiceApi {
       pw.MultiPage(
         pageFormat: PdfPageFormat.a4,
         margin: const pw.EdgeInsets.all(32),
-        header: (context) => _buildHeader(businessName, subtitle, address, gstNo, showLogo, logoImage, tColor),
+        header: (context) => _buildHeader(businessName, subtitle, address, gstNo, tColor),
         footer: (context) => _buildFooter(footerText),
         build: (context) => [
           _buildInvoiceInfo(data, tColor, tLightColor),
@@ -230,7 +219,7 @@ class PdfInvoiceApi {
     return pdf.save();
   }
 
-  static pw.Widget _buildHeader(String businessName, String subtitle, String address, String gstNo, bool showLogo, pw.MemoryImage? logoImage, PdfColor tColor) {
+  static pw.Widget _buildHeader(String businessName, String subtitle, String address, String gstNo, PdfColor tColor) {
     return pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.center,
       children: [
@@ -242,27 +231,28 @@ class PdfInvoiceApi {
           ]
         ),
         pw.SizedBox(height: 4),
-        if (showLogo && logoImage != null)
-          pw.Container(
-            height: 44,
-            child: pw.Image(logoImage, fit: pw.BoxFit.contain),
-          )
-        else if (showLogo)
-          pw.Container(
-            padding: const pw.EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-            decoration: pw.BoxDecoration(
-              border: pw.Border.all(color: tColor, width: 2),
-              borderRadius: const pw.BorderRadius.all(pw.Radius.circular(6)),
-            ),
+        pw.Container(
+          width: 32,
+          height: 32,
+          decoration: pw.BoxDecoration(
+            color: tColor,
+            borderRadius: const pw.BorderRadius.all(pw.Radius.circular(6)),
+          ),
+          child: pw.Center(
             child: pw.Text(
-              businessName.isNotEmpty ? businessName[0].toUpperCase() : 'T',
-              style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold, color: tColor),
+              'F',
+              style: pw.TextStyle(
+                fontSize: 18,
+                fontWeight: pw.FontWeight.bold,
+                color: PdfColors.white,
+              ),
             ),
           ),
+        ),
         pw.SizedBox(height: 6),
-        pw.Text(businessName.toUpperCase(), style: pw.TextStyle(fontSize: 22, fontWeight: pw.FontWeight.bold, letterSpacing: 2, color: tColor)),
+        pw.Text(businessName.toUpperCase(), style: pw.TextStyle(fontSize: 20, fontWeight: pw.FontWeight.bold, letterSpacing: 2.5, color: tColor)),
         if (subtitle.isNotEmpty)
-          pw.Text(subtitle.toUpperCase(), style: pw.TextStyle(fontSize: 10, letterSpacing: 3, color: PdfColors.grey700)),
+          pw.Text(subtitle.toUpperCase(), style: pw.TextStyle(fontSize: 9, letterSpacing: 3, color: PdfColors.grey700)),
         pw.SizedBox(height: 4),
         pw.Text(address, textAlign: pw.TextAlign.center, style: const pw.TextStyle(fontSize: 8, color: PdfColors.black)),
         pw.SizedBox(height: 8),
