@@ -26,7 +26,10 @@ class Product {
 
   // Quantity-based fields
   final int quantity;
+  final int issueQuantity; // units marked as damaged or pending vendor return
   final String unit;
+  
+  int get sellableQuantity => quantity - issueQuantity;
   final double mrp;
   final double sellingPrice;
 
@@ -34,6 +37,8 @@ class Product {
   final double discountValue;   // The discount amount (% or flat ₹)
   final String discountType;    // "%" or "₹"
   final double finalPrice;      // Computed: sellingPrice after discount
+
+  final double gstRate;         // Product level GST rate (e.g. 0.0, 5.0)
 
   // Flags
   final bool isFestivalStock;
@@ -58,12 +63,14 @@ class Product {
     this.ratePerGram = 0.0,
     this.makingCharges = 0.0,
     this.quantity = 0,
+    this.issueQuantity = 0,
     this.unit = 'piece',
     this.mrp = 0.0,
     this.sellingPrice = 0.0,
     this.discountValue = 0.0,
     this.discountType = '%',
     this.finalPrice = 0.0,
+    this.gstRate = 0.0,
     this.isFestivalStock = false,
     this.rawJson,
   });
@@ -84,12 +91,14 @@ class Product {
     double? ratePerGram,
     double? makingCharges,
     int? quantity,
+    int? issueQuantity,
     String? unit,
     double? mrp,
     double? sellingPrice,
     double? discountValue,
     String? discountType,
     double? finalPrice,
+    double? gstRate,
     bool? isFestivalStock,
     Map<String, dynamic>? rawJson,
   }) {
@@ -109,12 +118,14 @@ class Product {
       ratePerGram: ratePerGram ?? this.ratePerGram,
       makingCharges: makingCharges ?? this.makingCharges,
       quantity: quantity ?? this.quantity,
+      issueQuantity: issueQuantity ?? this.issueQuantity,
       unit: unit ?? this.unit,
       mrp: mrp ?? this.mrp,
       sellingPrice: sellingPrice ?? this.sellingPrice,
       discountValue: discountValue ?? this.discountValue,
       discountType: discountType ?? this.discountType,
       finalPrice: finalPrice ?? this.finalPrice,
+      gstRate: gstRate ?? this.gstRate,
       isFestivalStock: isFestivalStock ?? this.isFestivalStock,
       rawJson: rawJson ?? this.rawJson,
     );
@@ -137,12 +148,14 @@ class Product {
       'ratePerGram': ratePerGram,
       'makingCharges': makingCharges,
       'quantity': quantity,
+      'issueQuantity': issueQuantity,
       'unit': unit,
       'mrp': mrp,
       'sellingPrice': sellingPrice,
       'discountValue': discountValue,
       'discountType': discountType,
       'finalPrice': finalPrice,
+      'gstRate': gstRate,
       'isFestivalStock': isFestivalStock,
     };
   }
@@ -175,12 +188,14 @@ class Product {
       ratePerGram: (json['ratePerGram'] as num?)?.toDouble() ?? 0.0,
       makingCharges: (json['makingCharges'] as num?)?.toDouble() ?? 0.0,
       quantity: (json['quantity'] as num?)?.toInt() ?? 0,
+      issueQuantity: (json['issueQuantity'] as num?)?.toInt() ?? 0,
       unit: json['unit'] as String? ?? 'piece',
       mrp: (json['mrp'] as num?)?.toDouble() ?? 0.0,
       sellingPrice: sp,
       discountValue: dv,
       discountType: dt,
       finalPrice: fp,
+      gstRate: (json['gstRate'] as num?)?.toDouble() ?? 0.0,
       isFestivalStock: json['isFestivalStock'] as bool? ?? false,
       rawJson: json,
     );

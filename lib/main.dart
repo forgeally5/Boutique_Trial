@@ -8,6 +8,7 @@ import 'state/admin_state.dart';
 import 'services/local_db_service.dart';
 import 'views/inventory_view.dart';
 import 'views/billing_view.dart';
+import 'views/reports_view.dart';
 import 'login_page.dart';
 import 'views/widgets/connection_status_badge.dart';
 import 'utils/boutique_theme.dart';
@@ -157,7 +158,7 @@ class AdminHomeShell extends StatefulWidget {
 
 class _AdminHomeShellState extends State<AdminHomeShell> {
   final AdminState _state = AdminState();
-  // 1: Inventory, 2: Billing, 5: Settings
+  // 1: Inventory, 2: Billing, 3: Reports, 5: Settings
   int _activeTabIndex = 1;
   String _selectedBillingSection = 'A Sales Entry';
   final TextEditingController _globalSearchCtrl = TextEditingController();
@@ -202,8 +203,8 @@ class _AdminHomeShellState extends State<AdminHomeShell> {
   }
 
   // Tab index → IndexedStack position mapping
-  // 1=Inventory, 2=Billing, 5=Settings
-  static const _tabToStackIndex = {1: 0, 2: 1, 5: 2};
+  // 1=Inventory, 2=Billing, 3=Reports, 5=Settings
+  static const _tabToStackIndex = {1: 0, 2: 1, 3: 2, 5: 3};
   int get _stackIndex => _tabToStackIndex[_activeTabIndex] ?? 0;
 
   Widget _buildSettingsView() {
@@ -557,6 +558,7 @@ class _AdminHomeShellState extends State<AdminHomeShell> {
                       children: [
                         _buildNavItem(1, Icons.inventory_2_outlined, 'Inventory'),
                         _buildNavItem(2, Icons.point_of_sale_rounded, 'Billing / POS'),
+                        _buildNavItem(3, Icons.analytics_outlined, 'Reports'),
                         _buildNavItem(5, Icons.settings_outlined, 'Settings'),
                       ],
                     ),
@@ -632,6 +634,7 @@ class _AdminHomeShellState extends State<AdminHomeShell> {
                           itemBuilder: (ctx) => [
                             const PopupMenuItem(value: 1, child: Text('Inventory')),
                             const PopupMenuItem(value: 2, child: Text('Billing / POS')),
+                            const PopupMenuItem(value: 3, child: Text('Reports')),
                             const PopupMenuItem(value: 5, child: Text('Settings')),
                           ],
                         ),
@@ -653,8 +656,10 @@ class _AdminHomeShellState extends State<AdminHomeShell> {
 
                 // Page Body — IndexedStack keeps all views alive for instant tab switching
                 Expanded(
-                  child: IndexedStack(
-                    index: _stackIndex,
+                  child: ChangeNotifierProvider<AdminState>.value(
+                    value: _state,
+                    child: IndexedStack(
+                      index: _stackIndex,
                     children: [
                       // Index 0: Inventory
                       InventoryView(state: _state, globalSearchCtrl: _globalSearchCtrl),
@@ -666,10 +671,13 @@ class _AdminHomeShellState extends State<AdminHomeShell> {
                           setState(() => _selectedBillingSection = sec);
                         },
                       ),
-                      // Index 2: Settings
+                      // Index 2: Reports
+                      const ReportsView(),
+                      // Index 3: Settings
                       _buildSettingsView(),
                     ],
                   ),
+                ),
                 ),
               ],
             ),

@@ -32,8 +32,14 @@ class BillRow {
     return discountValue.clamp(0, grossAmount);
   }
 
-  /// Final line amount after item discount
+  /// Final line amount after item discount but BEFORE GST
   double get lineAmount => (grossAmount - itemDiscountAmount).clamp(0, double.infinity);
+
+  /// GST Rate from Product
+  double get gstRate => product?.gstRate ?? 0.0;
+
+  /// Line GST amount
+  double get lineGstAmount => lineAmount * (gstRate / 100);
 
   /// Serialise for Firestore
   Map<String, dynamic> toMap() => {
@@ -48,6 +54,8 @@ class BillRow {
     'discountType': discountType,
     'itemDiscountAmount': itemDiscountAmount,
     'lineAmount': lineAmount,
+    'gstRate': gstRate,
+    'lineGstAmount': lineGstAmount,
   };
 
   /// Whether this row has enough data to be counted as valid

@@ -7,6 +7,7 @@ import '../utils/connectivity_helper.dart';
 import '../models/product.dart';
 import '../models/live_rate.dart';
 import '../models/item.dart';
+import '../models/vendor_issue.dart';
 
 import '../services/live_rate_service.dart';
 import 'dart:convert';
@@ -855,7 +856,99 @@ class AdminState extends ChangeNotifier {
         debugPrint("Failed to fetch from Cloudinary: ${response.body}");
       }
     } catch (e) {
-      debugPrint("Error syncing images: $e");
+        debugPrint("Error syncing images: $e");
+    }
+  }
+
+  // --- Vendor Issues Logic ---
+
+  Future<void> logVendorIssue(VendorIssue issue) async {
+    // Save to vendor_issues collection
+    final docRef = _firestore.collection('vendor_issues').doc();
+    final newIssue = issue.copyWith(id: docRef.id);
+    await docRef.set(newIssue.toJson());
+
+    // Update product stock logic
+    final product = lookupProduct(issue.tagId);
+    if (product != null) {
+      final newIssueQty = product.issueQuantity + issue.quantity;
+      final newStatus = 'Damaged/Defective'; // Update status when an issue is logged
+      
+      final updatedProduct = product.copyWith(
+        issueQuantity: newIssueQty,
+        status: newStatus,
+      );
+      await updateProduct(updatedProduct);
+    }
+  }
+
+  Future<void> updateVendorIssueAction(String issueId, String tagId, String newAction) async {
+    // First, fetch the issue to see the current quantity
+    final issueDoc = await _firestore.collection('vendor_issues').doc(issueId).get();
+    if (!issueDoc.exists) return;
+
+    final issueData = VendorIssue.fromJson(issueDoc.data()!, id: issueId);
+    final previousAction = issueData.actionTaken;
+
+    // Update the issue in firestore
+    await _firestore.collection('vendor_issues').doc(issueId).update({
+      'actionTaken': newAction,
+    });
+
+    // Determine stock updates
+    final product = lookupProduct(tagId);
+    if (product != null) {
+      Product? updatedProduct;
+
+      // Check if we are resolving the issue
+      if (newAction == 'Replacement Received' && previousAction != 'Replacement Received') {
+        // Decrease issue quantity, effectively restoring sellable stock
+        int newIssueQty = product.issueQuantity - issueData.quantity;
+        if (newIssueQty < 0) newIssueQty = 0;
+        
+        String newStatus = product.status;
+        if (newIssueQty == 0 && product.status == 'Damaged/Defective') {
+           newStatus = 'In Stock';
+        }
+
+        updatedProduct = product.copyWith(
+          issueQuantity: newIssueQty,
+          status: newStatus,
+        );
+      } else if ((newAction == 'Returned to Vendor' || newAction == 'Discarded') && 
+                 (previousAction != 'Returned to Vendor' && previousAction != 'Discarded')) {
+        // Units are permanently removed. Decrease total quantity AND issue quantity.
+        int newQty = product.quantity - issueData.quantity;
+        if (newQty < 0) newQty = 0;
+
+        int newIssueQty = product.issueQuantity - issueData.quantity;
+        if (newIssueQty < 0) newIssueQty = 0;
+        
+        String newStatus = product.status;
+        if (newAction == 'Returned to Vendor') {
+          newStatus = 'Pending Return';
+        }
+
+        if (newIssueQty == 0 && newStatus == 'Damaged/Defective') {
+           newStatus = newQty > 0 ? 'In Stock' : 'Sold Out';
+        }
+
+        updatedProduct = product.copyWith(
+          quantity: newQty,
+          issueQuantity: newIssueQty,
+          status: newStatus,
+        );
+      } else if (newAction == 'Damaged/Defective' && previousAction == 'Replacement Received') {
+         // edge case if they revert the action back to pending
+         updatedProduct = product.copyWith(
+           issueQuantity: product.issueQuantity + issueData.quantity,
+           status: 'Damaged/Defective'
+         );
+      }
+
+      if (updatedProduct != null) {
+        await updateProduct(updatedProduct);
+      }
     }
   }
 }

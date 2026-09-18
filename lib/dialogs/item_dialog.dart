@@ -35,6 +35,7 @@ class _ItemDialogState extends State<ItemDialog> {
   late TextEditingController _mrpCtrl;
   late TextEditingController _sellingPriceCtrl;
   late TextEditingController _discountCtrl;
+  late TextEditingController _gstRateCtrl;
 
   String _discountType = '%'; // "%" or "₹"
   String _category = 'Idols';
@@ -42,6 +43,7 @@ class _ItemDialogState extends State<ItemDialog> {
   String _material = 'Brass';
   String _status = 'In Stock';
   String _unit = 'Piece';
+  double _gstRate = 0.0;
   bool _isFestivalStock = false;
 
   // Validation touched flags
@@ -68,7 +70,7 @@ class _ItemDialogState extends State<ItemDialog> {
   final List<String> _materials = [
     'Brass', 'Silver', 'Panchaloha', 'Wood', 'Clay', 'Marble', 'Plastic/Steel', 'N/A'
   ];
-  final List<String> _statuses = ['In Stock', 'Sold Out'];
+  final List<String> _statuses = ['In Stock', 'Sold Out', 'Damaged/Defective', 'Pending Return'];
   final List<String> _units = ['Piece', 'Set', 'Pair', 'Box', 'Packet'];
 
   String _autoGenerateTagId() {
@@ -230,6 +232,7 @@ class _ItemDialogState extends State<ItemDialog> {
     _mrpCtrl = TextEditingController(text: p != null && p.mrp > 0 ? p.mrp.toString() : '');
     _sellingPriceCtrl = TextEditingController(text: p != null && p.sellingPrice > 0 ? p.sellingPrice.toString() : '');
     _discountCtrl = TextEditingController(text: p != null && p.discountValue > 0 ? p.discountValue.toString() : '');
+    _gstRateCtrl = TextEditingController(text: p != null && p.gstRate > 0 ? (p.gstRate == p.gstRate.toInt() ? p.gstRate.toInt().toString() : p.gstRate.toString()) : '0');
 
     if (p != null) {
       _category = p.category.isNotEmpty ? p.category : 'Others';
@@ -242,6 +245,7 @@ class _ItemDialogState extends State<ItemDialog> {
         orElse: () => 'Piece',
       );
       _unit = normUnit;
+      _gstRate = p.gstRate;
       _isFestivalStock = p.isFestivalStock;
       _discountType = p.discountType.isNotEmpty ? p.discountType : '%';
     } else {
@@ -266,6 +270,7 @@ class _ItemDialogState extends State<ItemDialog> {
     _mrpCtrl.dispose();
     _sellingPriceCtrl.dispose();
     _discountCtrl.dispose();
+    _gstRateCtrl.dispose();
     super.dispose();
   }
 
@@ -376,6 +381,7 @@ class _ItemDialogState extends State<ItemDialog> {
       discountValue: _discountAmount,
       discountType: _discountType,
       finalPrice: _finalPrice,
+      gstRate: double.tryParse(_gstRateCtrl.text) ?? 0.0,
       isFestivalStock: _isFestivalStock,
     );
 
@@ -597,6 +603,33 @@ class _ItemDialogState extends State<ItemDialog> {
                           setState(() => _sellingPriceTouched = true);
                         },
                       )),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Expanded(
+                              child: _field(
+                                label: 'GST Rate (%)',
+                                controller: _gstRateCtrl,
+                                isNum: true,
+                                hint: '0',
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            PopupMenuButton<String>(
+                              icon: const Icon(Icons.arrow_drop_down, color: _brown),
+                              tooltip: 'Common GST Rates',
+                              onSelected: (v) {
+                                _gstRateCtrl.text = v;
+                              },
+                              itemBuilder: (context) => ['0', '5', '12', '18', '28']
+                                  .map((r) => PopupMenuItem(value: r, child: Text('$r%')))
+                                  .toList(),
+                            ),
+                          ],
+                        ),
+                      ),
                     ]),
                     const SizedBox(height: 16),
 

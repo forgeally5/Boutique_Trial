@@ -31,8 +31,6 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
   // Summary controllers — managed separately so only summary panel rebuilds
   final _extraDiscountCtrl = TextEditingController(text: '0');
   String _extraDiscountType = '₹';
-  bool _gstEnabled = false;
-  final _taxPercentCtrl = TextEditingController(text: '5');
 
   String _paymentMode = 'Cash';
 
@@ -70,7 +68,6 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
     _customerNameCtrl.dispose();
     _customerMobileCtrl.dispose();
     _extraDiscountCtrl.dispose();
-    _taxPercentCtrl.dispose();
     super.dispose();
   }
 
@@ -99,6 +96,7 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
   // ── Calculation Helpers ───────────────────────────────────────────────────
 
   double get _subtotal => _rows.fold(0, (s, r) => s + r.lineAmount);
+  double get _totalGst => _rows.fold(0, (s, r) => s + r.lineGstAmount);
 
   double _extraDiscountAmount(double subtotal) {
     final v = double.tryParse(_extraDiscountCtrl.text) ?? 0;
@@ -137,8 +135,7 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
       final subtotal = _subtotal;
       final discAmt = _extraDiscountAmount(subtotal);
       final discounted = (subtotal - discAmt).clamp(0.0, double.infinity);
-      final taxPct = _gstEnabled ? (double.tryParse(_taxPercentCtrl.text) ?? 0) : 0.0;
-      final taxAmt = discounted * taxPct / 100;
+      final taxAmt = _totalGst;
       final total = (discounted + taxAmt).clamp(0.0, double.infinity);
 
       final billData = {
@@ -152,8 +149,6 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
         'extraDiscountType': _extraDiscountType,
         'extraDiscountValue': double.tryParse(_extraDiscountCtrl.text) ?? 0,
         'extraDiscountAmount': discAmt,
-        'gstEnabled': _gstEnabled,
-        'taxPercent': taxPct,
         'taxAmount': taxAmt,
         'totalPayable': total,
         'paymentMode': _paymentMode,
@@ -252,7 +247,6 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
       _rows.clear();
       _rows.add(BillRow());
       _extraDiscountCtrl.text = '0';
-      _gstEnabled = false;
       _paymentMode = 'Cash';
       _attemptedSave = false;
     });
@@ -273,8 +267,7 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
     final subtotal = _subtotal;
     final discAmt = _extraDiscountAmount(subtotal);
     final discounted = (subtotal - discAmt).clamp(0.0, double.infinity);
-    final taxPct = _gstEnabled ? (double.tryParse(_taxPercentCtrl.text) ?? 0) : 0.0;
-    final taxAmt = discounted * taxPct / 100;
+    final taxAmt = _totalGst;
     final total = (discounted + taxAmt).clamp(0.0, double.infinity);
 
     pdf.addPage(
@@ -356,10 +349,12 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
                 final r = e.value;
                 final discStr = r.discountValue > 0 ? '${r.discountValue.toStringAsFixed(2)} ${r.discountType}' : '—';
                 final qtyStr = '${r.qty.toInt()} ${r.unitLabel}';
+                final itemName = r.product?.name ?? '';
+                final nameText = r.gstRate > 0 ? '$itemName\n(GST: ${r.gstRate}%)' : itemName;
                 return pw.TableRow(
                   children: [
                     _pdfCell(i.toString()),
-                    _pdfCell(r.product?.name ?? '', align: pw.Alignment.centerLeft),
+                    _pdfCell(nameText, align: pw.Alignment.centerLeft),
                     _pdfCell(qtyStr),
                     _pdfCell('₹${r.price.toStringAsFixed(2)}'),
                     _pdfCell(discStr),
@@ -381,7 +376,7 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
                     if (discAmt > 0)
                       _pdfTotalRow('Extra Discount', '− ₹${discAmt.toStringAsFixed(2)}', tColor),
                     if (taxAmt > 0)
-                      _pdfTotalRow('Tax (${_taxPercentCtrl.text}%)', '+ ₹${taxAmt.toStringAsFixed(2)}', tColor),
+                      _pdfTotalRow('Total GST', '+ ₹${taxAmt.toStringAsFixed(2)}', tColor),
                     pw.Container(height: 1, color: tColor),
                     pw.Container(
                       padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 5),
@@ -489,13 +484,10 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
                   rows: _rows,
                   rowVersion: _rowVersion,
                   extraDiscountCtrl: _extraDiscountCtrl,
-                  taxPercentCtrl: _taxPercentCtrl,
                   extraDiscountType: _extraDiscountType,
-                  gstEnabled: _gstEnabled,
                   isSaving: _isSaving,
                   hasValidRows: _hasValidRows,
                   onDiscountTypeChanged: (t) => setState(() => _extraDiscountType = t),
-                  onGstChanged: (v) => setState(() => _gstEnabled = v),
                   onSave: _saveBill,
                   onDownload: _downloadInvoice,
                 ),
@@ -686,8 +678,15 @@ class _BillRowWidgetState extends State<_BillRowWidget> {
               products: widget.products,
               selected: row.product,
               onSelected: (p) {
+                if (p.sellableQuantity <= 0) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Item is out of stock or damaged.'), backgroundColor: Colors.red),
+                  );
+                  return;
+                }
                 setState(() {
                   row.product = p;
+                  if (row.qty > p.sellableQuantity) row.qty = p.sellableQuantity.toDouble();
                   row.price = p.finalPrice > 0 ? p.finalPrice : p.mrp;
                   row.discountValue = p.discountValue;
                   row.discountType = p.discountType;
@@ -717,14 +716,16 @@ class _BillRowWidgetState extends State<_BillRowWidget> {
                         }
                       : null,
                 ),
-                Text('${row.qty.toInt()}',
+                Text('Qty: ${row.qty.toInt()} ${row.unitLabel}',
                     style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                 IconButton(
                   icon: const Icon(Icons.add, size: 14, color: BoutiqueColors.accent),
-                  onPressed: () {
-                    setState(() => row.qty += 1);
-                    widget.onChanged();
-                  },
+                  onPressed: (row.product != null && row.qty < row.product!.sellableQuantity)
+                      ? () {
+                          setState(() => row.qty += 1);
+                          widget.onChanged();
+                        }
+                      : null,
                 ),
               ],
             ),
@@ -814,7 +815,7 @@ class _ProductAutocomplete extends StatelessWidget {
                             overflow: TextOverflow.ellipsis,
                           ),
                           Text(
-                            '₹${p.mrp}  •  ${p.category}  •  Qty: ${p.quantity}',
+                            '₹${p.mrp}  •  ${p.category}  •  Qty: ${p.sellableQuantity}',
                             style: const TextStyle(fontSize: 11, color: BoutiqueColors.textSecondary),
                           ),
                         ],
@@ -851,13 +852,10 @@ class _BillSummaryPanel extends StatefulWidget {
   final List<BillRow> rows;
   final ValueNotifier<int> rowVersion;
   final TextEditingController extraDiscountCtrl;
-  final TextEditingController taxPercentCtrl;
   final String extraDiscountType;
-  final bool gstEnabled;
   final bool isSaving;
   final bool hasValidRows;
   final ValueChanged<String> onDiscountTypeChanged;
-  final ValueChanged<bool> onGstChanged;
   final VoidCallback onSave;
   final VoidCallback onDownload;
 
@@ -865,13 +863,10 @@ class _BillSummaryPanel extends StatefulWidget {
     required this.rows,
     required this.rowVersion,
     required this.extraDiscountCtrl,
-    required this.taxPercentCtrl,
     required this.extraDiscountType,
-    required this.gstEnabled,
     required this.isSaving,
     required this.hasValidRows,
     required this.onDiscountTypeChanged,
-    required this.onGstChanged,
     required this.onSave,
     required this.onDownload,
   });
@@ -886,7 +881,7 @@ class _BillSummaryPanelState extends State<_BillSummaryPanel> {
     // AnimatedBuilder listens to discount/tax controllers AND rowVersion
     // so subtotal recalculates on product select, qty change, or discount/tax edits
     return AnimatedBuilder(
-      animation: Listenable.merge([widget.extraDiscountCtrl, widget.taxPercentCtrl, widget.rowVersion]),
+      animation: Listenable.merge([widget.extraDiscountCtrl, widget.rowVersion]),
       builder: (context, _) {
         final subtotal = widget.rows.fold<double>(0, (s, r) => s + r.lineAmount);
         final discV = double.tryParse(widget.extraDiscountCtrl.text) ?? 0;
@@ -894,8 +889,8 @@ class _BillSummaryPanelState extends State<_BillSummaryPanel> {
             ? (subtotal * discV / 100).clamp(0, subtotal)
             : discV.clamp(0, subtotal);
         final discounted = (subtotal - discAmt).clamp(0.0, double.infinity);
-        final taxPct = widget.gstEnabled ? (double.tryParse(widget.taxPercentCtrl.text) ?? 0) : 0.0;
-        final taxAmt = discounted * taxPct / 100;
+        
+        final taxAmt = widget.rows.fold<double>(0, (s, r) => s + r.lineGstAmount);
         final total = (discounted + taxAmt).clamp(0.0, double.infinity);
 
         return Column(
@@ -940,40 +935,9 @@ class _BillSummaryPanelState extends State<_BillSummaryPanel> {
               const SizedBox(height: 4),
               _summaryRow('Discount Applied', '− ₹${discAmt.toStringAsFixed(2)}'),
             ],
-            const SizedBox(height: 12),
-
-            // GST Switch
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text('Apply GST Tax', style: TextStyle(fontSize: 13, color: BoutiqueColors.textSecondary)),
-                Switch(
-                  value: widget.gstEnabled,
-                  activeThumbColor: BoutiqueColors.accent,
-                  onChanged: widget.onGstChanged,
-                ),
-              ],
-            ),
-            if (widget.gstEnabled) ...[
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  const Text('Tax %', style: TextStyle(fontSize: 12, color: BoutiqueColors.textSecondary)),
-                  const Spacer(),
-                  SizedBox(
-                    width: 90,
-                    height: 38,
-                    child: TextField(
-                      controller: widget.taxPercentCtrl,
-                      keyboardType: TextInputType.number,
-                      style: const TextStyle(fontSize: 13),
-                      decoration: BoutiqueInputDecoration.field(hintText: '5'),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 4),
-              _summaryRow('Tax (${widget.taxPercentCtrl.text}%)', '+ ₹${taxAmt.toStringAsFixed(2)}'),
+            if (taxAmt > 0) ...[
+              const SizedBox(height: 12),
+              _summaryRow('Total GST', '+ ₹${taxAmt.toStringAsFixed(2)}'),
             ],
             const Divider(height: 28, color: BoutiqueColors.border),
 
