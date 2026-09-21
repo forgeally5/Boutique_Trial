@@ -226,6 +226,180 @@ pw.Widget _buildSummaryBox(
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// UNIFIED ISSUE REPORT PDF (Customer Returns + Vendor Issues combined)
+// ═══════════════════════════════════════════════════════════════════════════
+Future<Uint8List> generateUnifiedIssueReportPdf({
+  required List<Map<String, dynamic>> rows,
+  required DateTime dateFrom,
+  required DateTime dateTo,
+}) async {
+  final pdf = pw.Document();
+  final boldFont = await _boldFont();
+  final regularFont = await _regularFont();
+
+  final subtitle =
+      'Period: ${_dateFmt.format(dateFrom)} → ${_dateFmt.format(dateTo)}';
+
+  int totalQty = 0;
+  double totalRefund = 0;
+  int customerCount = 0;
+  int vendorCount = 0;
+
+  for (final r in rows) {
+    totalRefund += (r['refundAmount'] as num?)?.toDouble() ?? 0;
+    totalQty += (r['qty'] as num?)?.toInt() ?? 0;
+    if (r['_type'] == 'Customer Return') {
+      customerCount++;
+    } else {
+      vendorCount++;
+    }
+  }
+
+  const columns = [
+    'S.No', 'Date', 'Type', 'Product',
+    'Customer / Vendor', 'Qty', 'Issue / Reason', 'Refund (₹)', 'Status'
+  ];
+  const flexes = [1, 2, 2, 4, 3, 1, 3, 2, 2];
+
+  // Colours for type badges
+  const kCustomerBlue = PdfColor.fromInt(0xFF1565C0);
+  const kVendorAmber = PdfColor.fromInt(0xFFE65100);
+  const kCustomerBlueBg = PdfColor.fromInt(0xFFE3F2FD);
+  const kVendorAmberBg = PdfColor.fromInt(0xFFFFF3E0);
+
+  pdf.addPage(
+    pw.MultiPage(
+      pageFormat: PdfPageFormat.a4.landscape,
+      margin: const pw.EdgeInsets.all(24),
+      build: (context) => [
+        _buildPdfHeader(
+          reportTitle: 'ISSUE REPORT — All Returns & Vendor Issues',
+          subtitle: subtitle,
+          boldFont: boldFont,
+          regularFont: regularFont,
+        ),
+        pw.SizedBox(height: 12),
+        pw.Container(
+          decoration: pw.BoxDecoration(
+            border: pw.Border.all(color: _kBorderColor),
+            borderRadius: const pw.BorderRadius.all(pw.Radius.circular(4)),
+          ),
+          child: pw.Column(
+            children: [
+              _buildTableHeader(columns, flexes, boldFont),
+              ...List.generate(rows.length, (i) {
+                final r = rows[i];
+                final isVendor = r['_type'] == 'Vendor Issue';
+                final typeLabel = isVendor ? 'Vendor Issue' : 'Customer Return';
+                final typeBg = isVendor ? kVendorAmberBg : kCustomerBlueBg;
+                final typeColor = isVendor ? kVendorAmber : kCustomerBlue;
+
+                return pw.Container(
+                  color: i.isOdd ? _kRowAlt : PdfColors.white,
+                  padding: const pw.EdgeInsets.symmetric(
+                      horizontal: 8, vertical: 5),
+                  child: pw.Row(
+                    children: [
+                      pw.Expanded(
+                          flex: flexes[0],
+                          child: pw.Text('${i + 1}',
+                              style: pw.TextStyle(
+                                  font: regularFont,
+                                  fontSize: 7.5,
+                                  color: _kTextDark))),
+                      pw.Expanded(
+                          flex: flexes[1],
+                          child: pw.Text(r['date']?.toString() ?? '—',
+                              style: pw.TextStyle(
+                                  font: regularFont,
+                                  fontSize: 7.5,
+                                  color: _kTextDark))),
+                      pw.Expanded(
+                        flex: flexes[2],
+                        child: pw.Container(
+                          padding: const pw.EdgeInsets.symmetric(
+                              horizontal: 4, vertical: 2),
+                          decoration: pw.BoxDecoration(
+                            color: typeBg,
+                            borderRadius:
+                                const pw.BorderRadius.all(pw.Radius.circular(3)),
+                          ),
+                          child: pw.Text(typeLabel,
+                              style: pw.TextStyle(
+                                  font: boldFont,
+                                  fontSize: 7,
+                                  color: typeColor)),
+                        ),
+                      ),
+                      pw.Expanded(
+                          flex: flexes[3],
+                          child: pw.Text(r['productName']?.toString() ?? '—',
+                              style: pw.TextStyle(
+                                  font: boldFont,
+                                  fontSize: 7.5,
+                                  color: _kTextDark))),
+                      pw.Expanded(
+                          flex: flexes[4],
+                          child: pw.Text(
+                              r['counterpart']?.toString() ?? '—',
+                              style: pw.TextStyle(
+                                  font: regularFont,
+                                  fontSize: 7.5,
+                                  color: _kTextDark))),
+                      pw.Expanded(
+                          flex: flexes[5],
+                          child: pw.Text(r['qty']?.toString() ?? '0',
+                              style: pw.TextStyle(
+                                  font: boldFont,
+                                  fontSize: 7.5,
+                                  color: _kTextDark))),
+                      pw.Expanded(
+                          flex: flexes[6],
+                          child: pw.Text(
+                              r['issueReason']?.toString() ?? '—',
+                              style: pw.TextStyle(
+                                  font: regularFont,
+                                  fontSize: 7.5,
+                                  color: _kTextDark))),
+                      pw.Expanded(
+                          flex: flexes[7],
+                          child: pw.Text(
+                              '₹${_numFmt.format((r['refundAmount'] as num?)?.toDouble() ?? 0)}',
+                              style: pw.TextStyle(
+                                  font: boldFont,
+                                  fontSize: 7.5,
+                                  color: _kBurgundyPdf))),
+                      pw.Expanded(
+                          flex: flexes[8],
+                          child: pw.Text(r['status']?.toString() ?? '—',
+                              style: pw.TextStyle(
+                                  font: regularFont,
+                                  fontSize: 7.5,
+                                  color: _kTextMid))),
+                    ],
+                  ),
+                );
+              }),
+            ],
+          ),
+        ),
+        _buildSummaryBox({
+          'Total Issues': '${rows.length}',
+          'Customer Returns': '$customerCount',
+          'Vendor Issues': '$vendorCount',
+          'Total Qty Affected': '$totalQty',
+          'Total Refund': '₹${_numFmt.format(totalRefund)}',
+        }, boldFont, regularFont),
+        pw.SizedBox(height: 8),
+        _buildFooter(regularFont),
+      ],
+    ),
+  );
+
+  return pdf.save();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // ISSUE REPORT PDF
 // ═══════════════════════════════════════════════════════════════════════════
 Future<Uint8List> generateIssueReportPdf({
