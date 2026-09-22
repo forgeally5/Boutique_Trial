@@ -33,7 +33,26 @@ class _VendorIssueDialogState extends State<VendorIssueDialog> {
   ];
 
   @override
+  void initState() {
+    super.initState();
+    _qtyCtrl.addListener(_onQtyChanged);
+  }
+
+  void _onQtyChanged() {
+    if (_selectedProduct != null) {
+      final q = int.tryParse(_qtyCtrl.text) ?? 0;
+      final unitPrice = _selectedProduct!.sellingPrice > 0 ? _selectedProduct!.sellingPrice : _selectedProduct!.mrp;
+      final calcRefund = q * unitPrice;
+      if (calcRefund > 0) {
+        _refundCtrl.text = calcRefund.toStringAsFixed(2);
+      }
+      setState(() {});
+    }
+  }
+
+  @override
   void dispose() {
+    _qtyCtrl.removeListener(_onQtyChanged);
     _qtyCtrl.dispose();
     _notesCtrl.dispose();
     _refundCtrl.dispose();
@@ -114,6 +133,7 @@ class _VendorIssueDialogState extends State<VendorIssueDialog> {
         setState(() {
           _selectedProduct = p;
         });
+        _onQtyChanged();
       },
       fieldViewBuilder: (context, textCtrl, focusNode, onSubmit) {
         return TextFormField(
@@ -139,9 +159,10 @@ class _VendorIssueDialogState extends State<VendorIssueDialog> {
                 itemCount: options.length,
                 itemBuilder: (ctx, i) {
                   final p = options.elementAt(i);
+                  final unitPrice = p.sellingPrice > 0 ? p.sellingPrice : p.mrp;
                   return ListTile(
                     title: Text('${p.tagId} - ${p.name}'),
-                    subtitle: Text('Total Qty: ${p.quantity} | Sellable: ${p.sellableQuantity}'),
+                    subtitle: Text('Stock: ${p.quantity} | ₹${unitPrice.toStringAsFixed(2)} / pc'),
                     onTap: () => onSelected(p),
                   );
                 }
@@ -155,6 +176,12 @@ class _VendorIssueDialogState extends State<VendorIssueDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final curQty = int.tryParse(_qtyCtrl.text) ?? 0;
+    final curUnitPrice = _selectedProduct != null
+        ? (_selectedProduct!.sellingPrice > 0 ? _selectedProduct!.sellingPrice : _selectedProduct!.mrp)
+        : 0.0;
+    final estRefund = curQty * curUnitPrice;
+
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Container(
@@ -172,12 +199,57 @@ class _VendorIssueDialogState extends State<VendorIssueDialog> {
               _buildProductSearch(),
               const SizedBox(height: 16),
 
-              if (_selectedProduct != null)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 16),
-                  child: Text('Available for issue: ${_selectedProduct!.quantity} (Sellable: ${_selectedProduct!.sellableQuantity})',
-                      style: const TextStyle(fontSize: 12, color: BoutiqueColors.accent)),
+              if (_selectedProduct != null) ...[
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: BoutiqueColors.accentSoft,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: BoutiqueColors.accent.withValues(alpha: 0.2)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Row(
+                            children: [
+                              const Icon(Icons.inventory_2_outlined, size: 16, color: BoutiqueColors.accent),
+                              const SizedBox(width: 6),
+                              Text(
+                                'Available Stock: ${_selectedProduct!.quantity} ${_selectedProduct!.unit}',
+                                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: BoutiqueColors.accent),
+                              ),
+                            ],
+                          ),
+                          Row(
+                            children: [
+                              const Icon(Icons.sell_outlined, size: 16, color: BoutiqueColors.textPrimary),
+                              const SizedBox(width: 6),
+                              Text(
+                                'Price / pc: ₹${NumberFormat('#,##,##0.00', 'en_IN').format(curUnitPrice)}',
+                                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: BoutiqueColors.textPrimary),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                      if (curQty > 0) ...[
+                        const SizedBox(height: 6),
+                        const Divider(height: 1, color: BoutiqueColors.border),
+                        const SizedBox(height: 6),
+                        Text(
+                          'Estimated Return: $curQty × ₹${NumberFormat('#,##,##0.00', 'en_IN').format(curUnitPrice)} = ₹${NumberFormat('#,##,##0.00', 'en_IN').format(estRefund)}',
+                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF15803D)),
+                        ),
+                      ],
+                    ],
+                  ),
                 ),
+                const SizedBox(height: 16),
+              ],
 
               // Qty Affected (full width)
               TextFormField(

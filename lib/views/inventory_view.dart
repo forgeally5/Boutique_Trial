@@ -72,16 +72,24 @@ class _InventoryViewState extends State<InventoryView> {
           p.tagId.toLowerCase().contains(_searchQuery);
       final matchesCategory =
           _selectedCategory == 'All Categories' || p.category == _selectedCategory;
-      final matchesStatus =
-          _selectedStatus == 'All Statuses' || p.status == _selectedStatus;
+      final matchesStatus = _selectedStatus == 'All Statuses' ||
+          (_selectedStatus == 'Out of Stock'
+              ? (p.quantity <= 0 || p.status == 'Out of Stock' || p.status == 'Sold Out')
+              : (_selectedStatus == 'Low Stock'
+                  ? (p.quantity > 0 && p.quantity < 5)
+                  : (_selectedStatus == 'In Stock'
+                      ? (p.quantity > 0 && p.status != 'Sold Out' && p.status != 'Out of Stock')
+                      : p.status == _selectedStatus)));
       return matchesSearch && matchesCategory && matchesStatus;
     }).toList();
-    return _cachedFilteredList.where((p) => !_filterLowStockOnly || p.quantity < 5).toList();
+    return _cachedFilteredList.where((p) => !_filterLowStockOnly || (p.quantity > 0 && p.quantity < 5)).toList();
   }
 
   final List<String> _statuses = [
     'All Statuses',
     'In Stock',
+    'Low Stock',
+    'Out of Stock',
     'Sold Out',
   ];
 
@@ -500,7 +508,8 @@ class _InventoryViewState extends State<InventoryView> {
   }
 
   Widget _buildTableRow(Product p) {
-    final isLowStock = p.quantity < 5;
+    final isOutOfStock = p.quantity <= 0;
+    final isLowStock = p.quantity > 0 && p.quantity < 5;
     final matStr = p.material.isNotEmpty ? ' • ${p.material}' : '';
     return Material(
       color: Colors.transparent,
@@ -523,7 +532,17 @@ class _InventoryViewState extends State<InventoryView> {
           Text(p.tagId, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: BoutiqueColors.accent)),
           const SizedBox(width: 10),
           Text(p.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: BoutiqueColors.textPrimary)),
-          if (isLowStock) ...[
+          if (isOutOfStock) ...[
+            const SizedBox(width: 10),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFEBEE),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: const Text('Out of Stock', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFFD32F2F))),
+            ),
+          ] else if (isLowStock) ...[
             const SizedBox(width: 10),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
@@ -557,7 +576,8 @@ class _InventoryViewState extends State<InventoryView> {
   }
 
   Widget _buildGridCard(Product p) {
-    final isLowStock = p.quantity < 5;
+    final isOutOfStock = p.quantity <= 0;
+    final isLowStock = p.quantity > 0 && p.quantity < 5;
     return InkWell(
       onTap: () => setState(() => _selectedDrawerProduct = p),
       borderRadius: BorderRadius.circular(12),
@@ -576,7 +596,16 @@ class _InventoryViewState extends State<InventoryView> {
                   decoration: BoxDecoration(color: BoutiqueColors.accentSoft, borderRadius: BorderRadius.circular(6)),
                   child: Text(p.tagId, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: BoutiqueColors.accent)),
                 ),
-                if (isLowStock)
+                if (isOutOfStock)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFEBEE),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: const Text('Out of Stock', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFFD32F2F))),
+                  )
+                else if (isLowStock)
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
                     decoration: BoxDecoration(color: BoutiqueColors.lowStockBg, borderRadius: BorderRadius.circular(4)),

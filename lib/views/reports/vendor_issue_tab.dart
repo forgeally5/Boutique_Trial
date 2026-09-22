@@ -63,8 +63,11 @@ class _VendorIssueTabState extends State<VendorIssueTab> {
         
         DateTime? dt;
         final dr = data['dateReported'];
-        if (dr is Timestamp) dt = dr.toDate();
-        else if (dr is String) dt = DateTime.tryParse(dr);
+        if (dr is Timestamp) {
+          dt = dr.toDate();
+        } else if (dr is String) {
+          dt = DateTime.tryParse(dr);
+        }
 
         if (dt != null) {
           if (dt.isAfter(fromDt.subtract(const Duration(seconds: 1))) &&
@@ -126,12 +129,12 @@ class _VendorIssueTabState extends State<VendorIssueTab> {
 
   Future<void> _updateAction(String issueId, String tagId, String currentAction) async {
     String? selectedAction = currentAction;
-    await showDialog(
+    final newAction = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Update Action Taken'),
         content: DropdownButtonFormField<String>(
-          value: selectedAction,
+          initialValue: selectedAction,
           items: _actions.where((a) => a != 'All').map((a) => DropdownMenuItem(value: a, child: Text(a))).toList(),
           onChanged: (v) => selectedAction = v,
           decoration: BoutiqueInputDecoration.field(labelText: 'Action', hintText: ''),
@@ -146,13 +149,12 @@ class _VendorIssueTabState extends State<VendorIssueTab> {
           )
         ],
       )
-    ).then((newAction) async {
-      if (newAction != null && newAction != currentAction) {
-        final state = context.read<AdminState>();
-        await state.updateVendorIssueAction(issueId, tagId, newAction);
-        _load();
-      }
-    });
+    );
+    if (newAction != null && newAction != currentAction && mounted) {
+      final state = context.read<AdminState>();
+      await state.updateVendorIssueAction(issueId, tagId, newAction);
+      _load();
+    }
   }
 
   int get _totalIssues => _filtered.length;
@@ -277,7 +279,7 @@ class _VendorIssueTabState extends State<VendorIssueTab> {
                           Expanded(
                             child: ListView.separated(
                               itemCount: _filtered.length,
-                              separatorBuilder: (_, __) => const Divider(height: 1, color: BoutiqueColors.borderLight),
+                              separatorBuilder: (_, _) => const Divider(height: 1, color: BoutiqueColors.borderLight),
                               itemBuilder: (ctx, i) => _tableRow(_filtered[i], i),
                             ),
                           ),

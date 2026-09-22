@@ -531,6 +531,7 @@ class AdminState extends ChangeNotifier {
   int get availableProductsCount =>
       _products.where((p) => p.status != 'Sold Out' && p.status != 'Discontinued' && p.quantity > 0).length;
   int get lowStockCount => _products.where((p) => p.isLowStock).length;
+  int get outOfStockCount => _products.where((p) => p.isOutOfStock).length;
   int get totalCategoriesUsed =>
       _products.map((p) => p.category).where((c) => c.isNotEmpty).toSet().length;
 
@@ -868,13 +869,24 @@ class AdminState extends ChangeNotifier {
     final newIssue = issue.copyWith(id: docRef.id);
     await docRef.set(newIssue.toJson());
 
-    // Update product stock logic
+    // Update product stock logic - deduct issue quantity from stock immediately
     final product = lookupProduct(issue.tagId);
     if (product != null) {
+      final newQty = (product.quantity - issue.quantity).clamp(0, 999999);
       final newIssueQty = product.issueQuantity + issue.quantity;
-      final newStatus = 'Damaged/Defective'; // Update status when an issue is logged
+      
+      // Determine status of remaining good stock
+      String newStatus;
+      if (newQty == 0) {
+        newStatus = 'Out of Stock';
+      } else if (newQty < 5) {
+        newStatus = 'Low Stock';
+      } else {
+        newStatus = 'In Stock';
+      }
       
       final updatedProduct = product.copyWith(
+        quantity: newQty,
         issueQuantity: newIssueQty,
         status: newStatus,
       );
@@ -889,6 +901,7 @@ class AdminState extends ChangeNotifier {
 
     final issueData = VendorIssue.fromJson(issueDoc.data()!, id: issueId);
     final previousAction = issueData.actionTaken;
+    if (previousAction == newAction) return;
 
     // Update the issue in firestore
     await _firestore.collection('vendor_issues').doc(issueId).update({
@@ -898,57 +911,43 @@ class AdminState extends ChangeNotifier {
     // Determine stock updates
     final product = lookupProduct(tagId);
     if (product != null) {
-      Product? updatedProduct;
+      int newQty = product.quantity;
+      int newIssueQty = product.issueQuantity;
 
-      // Check if we are resolving the issue
+      // Check if we are resolving the issue with replacement
       if (newAction == 'Replacement Received' && previousAction != 'Replacement Received') {
-        // Decrease issue quantity, effectively restoring sellable stock
-        int newIssueQty = product.issueQuantity - issueData.quantity;
-        if (newIssueQty < 0) newIssueQty = 0;
-        
-        String newStatus = product.status;
-        if (newIssueQty == 0 && product.status == 'Damaged/Defective') {
-           newStatus = 'In Stock';
-        }
-
-        updatedProduct = product.copyWith(
-          issueQuantity: newIssueQty,
-          status: newStatus,
-        );
-      } else if ((newAction == 'Returned to Vendor' || newAction == 'Discarded') && 
-                 (previousAction != 'Returned to Vendor' && previousAction != 'Discarded')) {
-        // Units are permanently removed. Decrease total quantity AND issue quantity.
-        int newQty = product.quantity - issueData.quantity;
-        if (newQty < 0) newQty = 0;
-
-        int newIssueQty = product.issueQuantity - issueData.quantity;
-        if (newIssueQty < 0) newIssueQty = 0;
-        
-        String newStatus = product.status;
-        if (newAction == 'Returned to Vendor') {
-          newStatus = 'Pending Return';
-        }
-
-        if (newIssueQty == 0 && newStatus == 'Damaged/Defective') {
-           newStatus = newQty > 0 ? 'In Stock' : 'Sold Out';
-        }
-
-        updatedProduct = product.copyWith(
-          quantity: newQty,
-          issueQuantity: newIssueQty,
-          status: newStatus,
-        );
-      } else if (newAction == 'Damaged/Defective' && previousAction == 'Replacement Received') {
-         // edge case if they revert the action back to pending
-         updatedProduct = product.copyWith(
-           issueQuantity: product.issueQuantity + issueData.quantity,
-           status: 'Damaged/Defective'
-         );
+        // Replacement arrived: restore stock and clear issue quantity
+        newQty += issueData.quantity;
+        newIssueQty = (newIssueQty - issueData.quantity).clamp(0, 999999);
+      } else if (previousAction == 'Replacement Received' && newAction != 'Replacement Received') {
+        // Reverted from replacement: deduct stock back
+        newQty = (newQty - issueData.quantity).clamp(0, 999999);
+        newIssueQty += issueData.quantity;
+      } else if ((newAction == 'Returned to Vendor' || newAction == 'Refund Received' || newAction == 'Discarded') &&
+                 (previousAction == 'Pending' || previousAction == 'Damaged/Defective')) {
+        // Since quantity was already deducted at issue logging, just clear the pending issue quantity
+        newIssueQty = (newIssueQty - issueData.quantity).clamp(0, 999999);
+      } else if ((newAction == 'Pending' || newAction == 'Damaged/Defective') &&
+                 (previousAction == 'Returned to Vendor' || previousAction == 'Refund Received' || previousAction == 'Discarded')) {
+        // Reverted to pending: restore to issue quantity
+        newIssueQty += issueData.quantity;
       }
 
-      if (updatedProduct != null) {
-        await updateProduct(updatedProduct);
+      String newStatus;
+      if (newQty == 0) {
+        newStatus = 'Out of Stock';
+      } else if (newQty < 5) {
+        newStatus = 'Low Stock';
+      } else {
+        newStatus = 'In Stock';
       }
+
+      final updatedProduct = product.copyWith(
+        quantity: newQty,
+        issueQuantity: newIssueQty,
+        status: newStatus,
+      );
+      await updateProduct(updatedProduct);
     }
   }
 }

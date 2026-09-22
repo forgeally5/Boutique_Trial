@@ -208,7 +208,7 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
               height: 360,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                border: Border.all(color: Colors.white.withOpacity(0.06), width: 40),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.06), width: 40),
               ),
             ),
           ),
@@ -220,7 +220,7 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
               height: 450,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                border: Border.all(color: BoutiqueColors.gold.withOpacity(0.12), width: 1.5),
+                border: Border.all(color: BoutiqueColors.gold.withValues(alpha: 0.12), width: 1.5),
               ),
             ),
           ),
@@ -236,7 +236,7 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                       decoration: BoxDecoration(
-                        border: Border.all(color: BoutiqueColors.gold.withOpacity(0.6), width: 1.5),
+                        border: Border.all(color: BoutiqueColors.gold.withValues(alpha: 0.6), width: 1.5),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: const Text(
@@ -259,7 +259,7 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
                       decoration: BoxDecoration(
-                        color: BoutiqueColors.gold.withOpacity(0.2),
+                        color: BoutiqueColors.gold.withValues(alpha: 0.2),
                         borderRadius: BorderRadius.circular(20),
                       ),
                       child: const Text(
@@ -289,7 +289,7 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
                       style: TextStyle(
                         fontFamily: 'sans-serif',
                         fontSize: 15,
-                        color: Colors.white.withOpacity(0.8),
+                        color: Colors.white.withValues(alpha: 0.8),
                         height: 1.6,
                       ),
                     ),
@@ -298,13 +298,13 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
                 // Footer details
                 Row(
                   children: [
-                    Icon(Icons.shield_outlined, color: Colors.white.withOpacity(0.6), size: 16),
+                    Icon(Icons.shield_outlined, color: Colors.white.withValues(alpha: 0.6), size: 16),
                     const SizedBox(width: 8),
                     Text(
                       'Secure Cloud Sync & Local Storage Active',
                       style: TextStyle(
                         fontSize: 12,
-                        color: Colors.white.withOpacity(0.6),
+                        color: Colors.white.withValues(alpha: 0.6),
                         letterSpacing: 0.5,
                       ),
                     ),
@@ -446,7 +446,7 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
           style: ElevatedButton.styleFrom(
             backgroundColor: BoutiqueColors.accent,
             foregroundColor: Colors.white,
-            disabledBackgroundColor: BoutiqueColors.accent.withOpacity(0.6),
+            disabledBackgroundColor: BoutiqueColors.accent.withValues(alpha: 0.6),
             padding: const EdgeInsets.symmetric(vertical: 18),
             elevation: 0,
             shape: RoundedRectangleBorder(

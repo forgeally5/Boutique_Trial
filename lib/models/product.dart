@@ -45,7 +45,8 @@ class Product {
 
   final Map<String, dynamic>? rawJson;
 
-  bool get isLowStock => pricingType == 'Quantity-Based' && quantity < 5;
+  bool get isLowStock => pricingType == 'Quantity-Based' && quantity > 0 && quantity < 5;
+  bool get isOutOfStock => pricingType == 'Quantity-Based' && quantity <= 0;
 
   Product({
     required this.tagId,

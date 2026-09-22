@@ -144,7 +144,9 @@ class _IndividualSalesTabState extends State<_IndividualSalesTab> {
         if (ts == null) continue;
         final dt = ts.toDate();
         if (dt.isBefore(fromDt.subtract(const Duration(seconds: 1))) ||
-            dt.isAfter(toDt.add(const Duration(seconds: 1)))) continue;
+            dt.isAfter(toDt.add(const Duration(seconds: 1)))) {
+          continue;
+        }
 
         final items = (data['items'] as List?) ?? [];
         for (final item in items) {
@@ -201,9 +203,13 @@ class _IndividualSalesTabState extends State<_IndividualSalesTab> {
           }
         }
         if (_paymentFilter != 'All' &&
-            r['paymentMode'] != _paymentFilter) return false;
+            r['paymentMode'] != _paymentFilter) {
+          return false;
+        }
         if (_categoryFilter != 'All' &&
-            r['category'] != _categoryFilter) return false;
+            r['category'] != _categoryFilter) {
+          return false;
+        }
         return true;
       }).toList();
     });
@@ -400,7 +406,7 @@ class _IndividualSalesTabState extends State<_IndividualSalesTab> {
                             Expanded(
                               child: ListView.separated(
                                 itemCount: _filtered.length,
-                                separatorBuilder: (_, __) => const Divider(
+                                separatorBuilder: (_, _) => const Divider(
                                     height: 1,
                                     color: BoutiqueColors.borderLight),
                                 itemBuilder: (ctx, i) =>
@@ -637,7 +643,9 @@ class _TotalSalesTabState extends State<_TotalSalesTab> {
         if (ts == null) continue;
         final dt = ts.toDate();
         if (dt.isBefore(fromDt.subtract(const Duration(seconds: 1))) ||
-            dt.isAfter(toDt.add(const Duration(seconds: 1)))) continue;
+            dt.isAfter(toDt.add(const Duration(seconds: 1)))) {
+          continue;
+        }
 
         rows.add({
           'billNo': data['billNo'] ?? '—',
@@ -686,7 +694,9 @@ class _TotalSalesTabState extends State<_TotalSalesTab> {
           }
         }
         if (_paymentFilter != 'All' &&
-            r['paymentMode'] != _paymentFilter) return false;
+            r['paymentMode'] != _paymentFilter) {
+          return false;
+        }
         return true;
       }).toList();
     });
@@ -871,7 +881,7 @@ class _TotalSalesTabState extends State<_TotalSalesTab> {
                             Expanded(
                               child: ListView.separated(
                                 itemCount: _filtered.length,
-                                separatorBuilder: (_, __) => const Divider(
+                                separatorBuilder: (_, _) => const Divider(
                                     height: 1,
                                     color: BoutiqueColors.borderLight),
                                 itemBuilder: (ctx, i) =>

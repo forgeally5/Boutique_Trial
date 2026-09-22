@@ -294,7 +294,7 @@ class _CustomerReturnTabState extends State<CustomerReturnTab> {
                             Expanded(
                               child: ListView.separated(
                                 itemCount: _filtered.length,
-                                separatorBuilder: (_, __) => const Divider(
+                                separatorBuilder: (_, _) => const Divider(
                                     height: 1,
                                     color: BoutiqueColors.borderLight),
                                 itemBuilder: (ctx, i) =>

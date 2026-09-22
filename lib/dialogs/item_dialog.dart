@@ -43,7 +43,6 @@ class _ItemDialogState extends State<ItemDialog> {
   String _material = 'Brass';
   String _status = 'In Stock';
   String _unit = 'Piece';
-  double _gstRate = 0.0;
   bool _isFestivalStock = false;
 
   // Validation touched flags
@@ -178,7 +177,7 @@ class _ItemDialogState extends State<ItemDialog> {
                           ? const Center(child: Text('No items in list'))
                           : ListView.separated(
                               itemCount: currentItems.length,
-                              separatorBuilder: (_, __) => const Divider(height: 1),
+                              separatorBuilder: (_, _) => const Divider(height: 1),
                               itemBuilder: (ctx, i) {
                                 final item = currentItems[i];
                                 return ListTile(
@@ -245,7 +244,6 @@ class _ItemDialogState extends State<ItemDialog> {
         orElse: () => 'Piece',
       );
       _unit = normUnit;
-      _gstRate = p.gstRate;
       _isFestivalStock = p.isFestivalStock;
       _discountType = p.discountType.isNotEmpty ? p.discountType : '%';
     } else {
@@ -945,7 +943,7 @@ class _ItemDialogState extends State<ItemDialog> {
         ),
         const SizedBox(height: 5),
         DropdownButtonFormField<String>(
-          value: items.contains(value) ? value : items.first,
+          initialValue: items.contains(value) ? value : items.first,
           decoration: InputDecoration(
             filled: true,
             fillColor: Colors.white,
@@ -986,7 +984,7 @@ class _ItemDialogState extends State<ItemDialog> {
         ),
         const SizedBox(height: 5),
         DropdownButtonFormField<String>(
-          value: items.contains(value) ? value : items.first,
+          initialValue: items.contains(value) ? value : items.first,
           decoration: InputDecoration(
             filled: true,
             fillColor: Colors.white,

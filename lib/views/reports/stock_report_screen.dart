@@ -25,7 +25,7 @@ class _StockReportScreenState extends State<StockReportScreen> {
   List<Map<String, dynamic>> _filtered = [];
   List<String> _categories = ['All'];
 
-  final _statusOptions = ['All', 'In Stock', 'Low Stock', 'Out of Stock'];
+  final _statusOptions = ['All', 'In Stock', 'Low Stock', 'Out of Stock', 'Damaged/Defective'];
   final _pricingOptions = ['All', 'Quantity-Based', 'Weight-Based'];
 
   @override
@@ -55,18 +55,35 @@ class _StockReportScreenState extends State<StockReportScreen> {
         data['_docId'] = doc.id;
 
         final qty = (data['quantity'] as num?)?.toInt() ?? 0;
+        final issueQty = (data['issueQuantity'] as num?)?.toInt() ?? 0;
         final sp = (data['sellingPrice'] as num?)?.toDouble() ?? 0;
-
-        // Derive status
-        String status = data['status']?.toString() ?? 'In Stock';
-        if (qty == 0) status = 'Out of Stock';
-        if (qty > 0 && qty < 5) status = 'Low Stock';
-        data['status'] = status;
-        data['stockValue'] = qty * sp;
-
         final cat = data['category']?.toString() ?? 'Uncategorized';
         catSet.add(cat);
-        rows.add(data);
+
+        // 1. Good / Sellable Stock Row
+        String status;
+        if (qty == 0) {
+          status = 'Out of Stock';
+        } else if (qty > 0 && qty < 5) {
+          status = 'Low Stock';
+        } else {
+          status = 'In Stock';
+        }
+
+        final goodStock = Map<String, dynamic>.from(data);
+        goodStock['status'] = status;
+        goodStock['stockValue'] = qty * sp;
+        rows.add(goodStock);
+
+        // 2. Defective Stock Row (displayed separately if any pcs are defective/damaged)
+        if (issueQty > 0) {
+          final defectiveStock = Map<String, dynamic>.from(data);
+          defectiveStock['name'] = '${data['name']} (Defective)';
+          defectiveStock['quantity'] = issueQty;
+          defectiveStock['status'] = 'Damaged/Defective';
+          defectiveStock['stockValue'] = issueQty * sp;
+          rows.add(defectiveStock);
+        }
       }
 
       final cats = ['All', ...catSet.toList()..sort()];
@@ -316,7 +333,7 @@ class _StockReportScreenState extends State<StockReportScreen> {
                             Expanded(
                               child: ListView.separated(
                                 itemCount: _filtered.length,
-                                separatorBuilder: (_, __) => const Divider(
+                                separatorBuilder: (_, _) => const Divider(
                                     height: 1,
                                     color: BoutiqueColors.borderLight),
                                 itemBuilder: (ctx, i) =>
@@ -385,6 +402,12 @@ class _StockReportScreenState extends State<StockReportScreen> {
       case 'Out of Stock':
         statusColor = BoutiqueColors.destructive;
         statusBg = BoutiqueColors.destructiveBg;
+        break;
+      case 'Damaged/Defective':
+      case 'Damaged':
+      case 'Defective':
+        statusColor = const Color(0xFFC0392B);
+        statusBg = const Color(0xFFFFEBEE);
         break;
       default:
         statusColor = BoutiqueColors.success;

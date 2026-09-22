@@ -233,6 +233,12 @@ class _AdminHomeShellState extends State<AdminHomeShell> {
             runSpacing: 20,
             children: [
               _buildSettingsCard(
+                icon: Icons.lock_reset_rounded,
+                title: 'Change Password',
+                subtitle: 'Update your admin login password',
+                onTap: _openChangePassword,
+              ),
+              _buildSettingsCard(
                 icon: Icons.logout_rounded,
                 title: 'Logout Admin',
                 subtitle: 'Sign out of current boutique session',
@@ -260,7 +266,7 @@ class _AdminHomeShellState extends State<AdminHomeShell> {
         width: 320,
         padding: const EdgeInsets.all(24),
         decoration: BoutiqueDecoration.card(
-          borderColor: isDestructive ? BoutiqueColors.destructive.withOpacity(0.3) : BoutiqueColors.border,
+          borderColor: isDestructive ? BoutiqueColors.destructive.withValues(alpha: 0.3) : BoutiqueColors.border,
         ),
         child: Row(
           children: [
@@ -789,7 +795,7 @@ class _DotSpinnerPainter extends CustomPainter {
       final opacity = t * t;
 
       final dotPaint = Paint()
-        ..color = BoutiqueColors.accent.withOpacity(opacity.clamp(0.0, 1.0));
+        ..color = BoutiqueColors.accent.withValues(alpha: opacity.clamp(0.0, 1.0));
       canvas.drawCircle(pos, dotRadius, dotPaint);
     }
   }
