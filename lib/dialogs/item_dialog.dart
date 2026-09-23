@@ -36,6 +36,7 @@ class _ItemDialogState extends State<ItemDialog> {
   late TextEditingController _sellingPriceCtrl;
   late TextEditingController _discountCtrl;
   late TextEditingController _gstRateCtrl;
+  late TextEditingController _reservedForCtrl;
 
   String _discountType = '%'; // "%" or "₹"
   String _category = 'Idols';
@@ -43,7 +44,7 @@ class _ItemDialogState extends State<ItemDialog> {
   String _material = 'Brass';
   String _status = 'In Stock';
   String _unit = 'Piece';
-  bool _isFestivalStock = false;
+  bool _isReserved = false;
 
   // Validation touched flags
   bool _tagIdTouched = false;
@@ -73,7 +74,7 @@ class _ItemDialogState extends State<ItemDialog> {
   final List<String> _units = ['Piece', 'Set', 'Pair', 'Box', 'Packet'];
 
   String _autoGenerateTagId() {
-    int maxVal = 1000;
+    int maxVal = 0;
     for (final tag in widget.existingTagIds) {
       final match = RegExp(r'\d+').firstMatch(tag);
       if (match != null) {
@@ -81,7 +82,20 @@ class _ItemDialogState extends State<ItemDialog> {
         if (val > maxVal) maxVal = val;
       }
     }
-    return 'FA-${maxVal + 1}';
+    return 'RM-${(maxVal + 1).toString().padLeft(3, '0')}';
+  }
+
+  String _itemName = '';
+
+  List<String> get _availableItemNames {
+    final list = List<String>.from(widget.adminState.itemNames);
+    if (_itemName.isNotEmpty && !list.contains(_itemName)) {
+      list.insert(0, _itemName);
+    }
+    if (_nameCtrl.text.trim().isNotEmpty && !list.contains(_nameCtrl.text.trim())) {
+      list.insert(0, _nameCtrl.text.trim());
+    }
+    return list.isNotEmpty ? list : ['Ganesh Idol', 'Lakshmi Idol', 'Diya / Vilakku'];
   }
 
   List<String> get _availableCategories {
@@ -99,6 +113,57 @@ class _ItemDialogState extends State<ItemDialog> {
     return list.isNotEmpty ? list : _units;
   }
 
+  void _showEditItemPrompt(
+    BuildContext parentContext,
+    String type,
+    String currentValue,
+    Future<void> Function(String) onSave,
+  ) {
+    final editCtrl = TextEditingController(text: currentValue);
+    showDialog(
+      context: parentContext,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            const Icon(Icons.edit_outlined, color: _brown),
+            const SizedBox(width: 8),
+            Text('Edit $type', style: const TextStyle(fontFamily: 'serif', color: _brown, fontWeight: FontWeight.bold)),
+          ],
+        ),
+        content: TextField(
+          controller: editCtrl,
+          autofocus: true,
+          decoration: InputDecoration(
+            labelText: '$type Name',
+            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: _brown,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            onPressed: () async {
+              final val = editCtrl.text.trim();
+              if (val.isNotEmpty && val != currentValue) {
+                Navigator.pop(ctx);
+                await onSave(val);
+              }
+            },
+            child: const Text('Update', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _showManageMasterListDialog(String type) {
     final ctrl = TextEditingController();
     showDialog(
@@ -111,6 +176,8 @@ class _ItemDialogState extends State<ItemDialog> {
               currentItems = widget.adminState.categories.where((c) => c != 'All Categories').toList();
             } else if (type == 'Material') {
               currentItems = widget.adminState.materials;
+            } else if (type == 'Item Name') {
+              currentItems = widget.adminState.itemNames;
             } else {
               currentItems = widget.adminState.units;
             }
@@ -125,8 +192,8 @@ class _ItemDialogState extends State<ItemDialog> {
                 ],
               ),
               content: SizedBox(
-                width: 380,
-                height: 400,
+                width: 400,
+                height: 420,
                 child: Column(
                   children: [
                     Row(
@@ -139,6 +206,29 @@ class _ItemDialogState extends State<ItemDialog> {
                               contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                               border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                             ),
+                            onSubmitted: (val) {
+                              final text = val.trim();
+                              if (text.isNotEmpty) {
+                                if (type == 'Category') {
+                                  widget.adminState.addCategory(text);
+                                  setState(() => _category = text);
+                                } else if (type == 'Material') {
+                                  widget.adminState.addMaterial(text);
+                                  setState(() => _material = text);
+                                } else if (type == 'Item Name') {
+                                  widget.adminState.addItemName(text);
+                                  setState(() {
+                                    _itemName = text;
+                                    _nameCtrl.text = text;
+                                  });
+                                } else if (type == 'Unit') {
+                                  widget.adminState.addUnit(text);
+                                  setState(() => _unit = text);
+                                }
+                                ctrl.clear();
+                                setDialogState(() {});
+                              }
+                            },
                           ),
                         ),
                         const SizedBox(width: 8),
@@ -157,6 +247,12 @@ class _ItemDialogState extends State<ItemDialog> {
                               } else if (type == 'Material') {
                                 widget.adminState.addMaterial(val);
                                 setState(() => _material = val);
+                              } else if (type == 'Item Name') {
+                                widget.adminState.addItemName(val);
+                                setState(() {
+                                  _itemName = val;
+                                  _nameCtrl.text = val;
+                                });
                               } else if (type == 'Unit') {
                                 widget.adminState.addUnit(val);
                                 setState(() => _unit = val);
@@ -183,19 +279,89 @@ class _ItemDialogState extends State<ItemDialog> {
                                 return ListTile(
                                   dense: true,
                                   title: Text(item, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
-                                  trailing: IconButton(
-                                    icon: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 20),
-                                    onPressed: () async {
-                                      if (type == 'Category') {
-                                        await widget.adminState.deleteCategory(item);
-                                      } else if (type == 'Material') {
-                                        await widget.adminState.deleteMaterial(item);
-                                      } else if (type == 'Unit') {
-                                        await widget.adminState.deleteUnit(item);
-                                      }
-                                      setDialogState(() {});
-                                      setState(() {});
-                                    },
+                                  trailing: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      IconButton(
+                                        icon: const Icon(Icons.edit_outlined, color: _lightBrown, size: 20),
+                                        tooltip: 'Edit $type',
+                                        onPressed: () => _showEditItemPrompt(context, type, item, (newVal) async {
+                                          if (type == 'Category') {
+                                            await widget.adminState.renameCategory(item, newVal);
+                                            if (_category == item) setState(() => _category = newVal);
+                                          } else if (type == 'Material') {
+                                            await widget.adminState.renameMaterial(item, newVal);
+                                            if (_material == item) setState(() => _material = newVal);
+                                          } else if (type == 'Item Name') {
+                                            await widget.adminState.renameItemName(item, newVal);
+                                            if (_itemName == item) {
+                                              setState(() {
+                                                _itemName = newVal;
+                                                _nameCtrl.text = newVal;
+                                              });
+                                            }
+                                          } else if (type == 'Unit') {
+                                            await widget.adminState.renameUnit(item, newVal);
+                                            if (_unit == item) setState(() => _unit = newVal);
+                                          }
+                                          setDialogState(() {});
+                                          setState(() {});
+                                        }),
+                                      ),
+                                      IconButton(
+                                        icon: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 20),
+                                        tooltip: 'Delete $type',
+                                        onPressed: () async {
+                                          final confirm = await showDialog<bool>(
+                                            context: context,
+                                            builder: (c) => AlertDialog(
+                                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                                              title: Text('Delete $type', style: const TextStyle(fontFamily: 'serif', color: _brown, fontWeight: FontWeight.bold)),
+                                              content: Text('Are you sure you want to remove "$item" from $type list?'),
+                                              actions: [
+                                                TextButton(
+                                                  onPressed: () => Navigator.pop(c, false),
+                                                  child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
+                                                ),
+                                                ElevatedButton(
+                                                  style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
+                                                  onPressed: () => Navigator.pop(c, true),
+                                                  child: const Text('Delete', style: TextStyle(color: Colors.white)),
+                                                ),
+                                              ],
+                                            ),
+                                          );
+                                          if (confirm == true) {
+                                            if (type == 'Category') {
+                                              await widget.adminState.deleteCategory(item);
+                                              if (_category == item) {
+                                                setState(() => _category = _availableCategories.isNotEmpty ? _availableCategories.first : '');
+                                              }
+                                            } else if (type == 'Material') {
+                                              await widget.adminState.deleteMaterial(item);
+                                              if (_material == item) {
+                                                setState(() => _material = _availableMaterials.isNotEmpty ? _availableMaterials.first : '');
+                                              }
+                                            } else if (type == 'Item Name') {
+                                              await widget.adminState.deleteItemName(item);
+                                              if (_itemName == item) {
+                                                setState(() {
+                                                  _itemName = _availableItemNames.isNotEmpty ? _availableItemNames.first : '';
+                                                  _nameCtrl.text = _itemName;
+                                                });
+                                              }
+                                            } else if (type == 'Unit') {
+                                              await widget.adminState.deleteUnit(item);
+                                              if (_unit == item) {
+                                                setState(() => _unit = _availableUnits.isNotEmpty ? _availableUnits.first : '');
+                                              }
+                                            }
+                                            setDialogState(() {});
+                                            setState(() {});
+                                          }
+                                        },
+                                      ),
+                                    ],
                                   ),
                                 );
                               },
@@ -217,6 +383,10 @@ class _ItemDialogState extends State<ItemDialog> {
     );
   }
 
+  void _onAdminStateChanged() {
+    if (mounted) setState(() {});
+  }
+
   @override
   void initState() {
     super.initState();
@@ -232,6 +402,16 @@ class _ItemDialogState extends State<ItemDialog> {
     _sellingPriceCtrl = TextEditingController(text: p != null && p.sellingPrice > 0 ? p.sellingPrice.toString() : '');
     _discountCtrl = TextEditingController(text: p != null && p.discountValue > 0 ? p.discountValue.toString() : '');
     _gstRateCtrl = TextEditingController(text: p != null && p.gstRate > 0 ? (p.gstRate == p.gstRate.toInt() ? p.gstRate.toInt().toString() : p.gstRate.toString()) : '0');
+    _reservedForCtrl = TextEditingController(text: p != null ? p.reservedFor : '');
+
+    if (p != null && p.name.isNotEmpty) {
+      _itemName = p.name;
+    } else {
+      if (_availableItemNames.isNotEmpty) {
+        _itemName = _availableItemNames.first;
+        _nameCtrl.text = _itemName;
+      }
+    }
 
     if (p != null) {
       _category = p.category.isNotEmpty ? p.category : 'Others';
@@ -244,7 +424,7 @@ class _ItemDialogState extends State<ItemDialog> {
         orElse: () => 'Piece',
       );
       _unit = normUnit;
-      _isFestivalStock = p.isFestivalStock;
+      _isReserved = p.isReserved;
       _discountType = p.discountType.isNotEmpty ? p.discountType : '%';
     } else {
       if (_availableCategories.isNotEmpty) {
@@ -252,13 +432,12 @@ class _ItemDialogState extends State<ItemDialog> {
       }
     }
 
-    // Note: price/discount listeners removed — the final price preview
-    // uses AnimatedBuilder to listen directly to these controllers so only
-    // that small widget rebuilds on keystroke, not the entire dialog.
+    widget.adminState.addListener(_onAdminStateChanged);
   }
 
   @override
   void dispose() {
+    widget.adminState.removeListener(_onAdminStateChanged);
     _tagIdCtrl.dispose();
     _nameCtrl.dispose();
     _sizeCtrl.dispose();
@@ -269,6 +448,7 @@ class _ItemDialogState extends State<ItemDialog> {
     _sellingPriceCtrl.dispose();
     _discountCtrl.dispose();
     _gstRateCtrl.dispose();
+    _reservedForCtrl.dispose();
     super.dispose();
   }
 
@@ -380,7 +560,8 @@ class _ItemDialogState extends State<ItemDialog> {
       discountType: _discountType,
       finalPrice: _finalPrice,
       gstRate: double.tryParse(_gstRateCtrl.text) ?? 0.0,
-      isFestivalStock: _isFestivalStock,
+      isReserved: _isReserved,
+      reservedFor: _isReserved ? _reservedForCtrl.text.trim() : '',
     );
 
     try {
@@ -461,12 +642,33 @@ class _ItemDialogState extends State<ItemDialog> {
                       ),
                       const SizedBox(width: 16),
                       Expanded(
-                        child: _field(
-                          label: 'Item Name *',
-                          controller: _nameCtrl,
-                          error: _nameError(),
-                          hint: 'e.g. Ganesh Idol',
-                          onChanged: (_) => setState(() => _nameTouched = true),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Expanded(
+                              child: _dropdownWithError(
+                                label: 'Item Name *',
+                                value: _availableItemNames.contains(_itemName)
+                                    ? _itemName
+                                    : (_availableItemNames.isNotEmpty ? _availableItemNames.first : ''),
+                                items: _availableItemNames,
+                                error: _nameError(),
+                                onChanged: (v) => setState(() {
+                                  if (v != null) {
+                                    _itemName = v;
+                                    _nameCtrl.text = v;
+                                    _nameTouched = true;
+                                  }
+                                }),
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            IconButton(
+                              onPressed: () => _showManageMasterListDialog('Item Name'),
+                              icon: const Icon(Icons.settings_outlined, color: _brown),
+                              tooltip: 'Manage Item Names',
+                            ),
+                          ],
                         ),
                       ),
                     ]),
@@ -619,11 +821,19 @@ class _ItemDialogState extends State<ItemDialog> {
                               icon: const Icon(Icons.arrow_drop_down, color: _brown),
                               tooltip: 'Common GST Rates',
                               onSelected: (v) {
-                                _gstRateCtrl.text = v;
+                                if (v == 'Custom') {
+                                  _gstRateCtrl.clear();
+                                } else {
+                                  _gstRateCtrl.text = v;
+                                }
                               },
-                              itemBuilder: (context) => ['0', '5', '12', '18', '28']
-                                  .map((r) => PopupMenuItem(value: r, child: Text('$r%')))
-                                  .toList(),
+                              itemBuilder: (context) {
+                                final items = ['0', '5', '12', '18', '28']
+                                    .map((r) => PopupMenuItem(value: r, child: Text('$r%')))
+                                    .toList();
+                                items.add(const PopupMenuItem(value: 'Custom', child: Text('Custom')));
+                                return items;
+                              },
                             ),
                           ],
                         ),
@@ -737,34 +947,37 @@ class _ItemDialogState extends State<ItemDialog> {
                     ),
                     const SizedBox(height: 12),
                     GestureDetector(
-                      onTap: () => setState(() => _isFestivalStock = !_isFestivalStock),
+                      onTap: () => setState(() => _isReserved = !_isReserved),
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                         decoration: BoxDecoration(
-                          color: _isFestivalStock ? const Color(0xFFFFF3E0) : Colors.white,
+                          color: _isReserved ? const Color(0xFFE8F5E9) : Colors.white,
                           borderRadius: BorderRadius.circular(8),
                           border: Border.all(
-                            color: _isFestivalStock ? Colors.orange : _border,
+                            color: _isReserved ? Colors.green : _border,
                           ),
                         ),
                         child: Row(children: [
                           Icon(
-                            _isFestivalStock ? Icons.check_box : Icons.check_box_outline_blank,
-                            color: _isFestivalStock ? Colors.orange : _lightBrown,
+                            _isReserved ? Icons.check_box : Icons.check_box_outline_blank,
+                            color: _isReserved ? Colors.green : _lightBrown,
                           ),
                           const SizedBox(width: 10),
                           const Text(
-                            'Festival Special Stock',
+                            'Reserved for Customer',
                             style: TextStyle(fontWeight: FontWeight.w600, color: _brown),
-                          ),
-                          const SizedBox(width: 8),
-                          const Text(
-                            '(marks item for festival season)',
-                            style: TextStyle(fontSize: 12, color: _lightBrown),
                           ),
                         ]),
                       ),
                     ),
+                    if (_isReserved) ...[
+                      const SizedBox(height: 12),
+                      _field(
+                        label: 'Customer Details (Name/Number)',
+                        controller: _reservedForCtrl,
+                        hint: 'e.g. John Doe - 9876543210',
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -943,7 +1156,9 @@ class _ItemDialogState extends State<ItemDialog> {
         ),
         const SizedBox(height: 5),
         DropdownButtonFormField<String>(
-          initialValue: items.contains(value) ? value : items.first,
+          key: ValueKey(value),
+          initialValue: items.contains(value) ? value : (items.isNotEmpty ? items.first : null),
+          isExpanded: true,
           decoration: InputDecoration(
             filled: true,
             fillColor: Colors.white,
@@ -957,7 +1172,7 @@ class _ItemDialogState extends State<ItemDialog> {
               borderSide: const BorderSide(color: _brown, width: 1.5),
             ),
           ),
-          items: items.map((i) => DropdownMenuItem(value: i, child: Text(i))).toList(),
+          items: items.map((i) => DropdownMenuItem(value: i, child: Text(i, overflow: TextOverflow.ellipsis))).toList(),
           onChanged: onChanged,
           style: const TextStyle(color: _brown, fontSize: 14),
         ),
@@ -984,7 +1199,9 @@ class _ItemDialogState extends State<ItemDialog> {
         ),
         const SizedBox(height: 5),
         DropdownButtonFormField<String>(
-          initialValue: items.contains(value) ? value : items.first,
+          key: ValueKey(value),
+          initialValue: items.contains(value) ? value : (items.isNotEmpty ? items.first : null),
+          isExpanded: true,
           decoration: InputDecoration(
             filled: true,
             fillColor: Colors.white,
@@ -998,7 +1215,7 @@ class _ItemDialogState extends State<ItemDialog> {
               borderSide: BorderSide(color: error != null ? _errorColor : _brown, width: 1.5),
             ),
           ),
-          items: items.map((i) => DropdownMenuItem(value: i, child: Text(i))).toList(),
+          items: items.map((i) => DropdownMenuItem(value: i, child: Text(i, overflow: TextOverflow.ellipsis))).toList(),
           onChanged: onChanged,
           style: const TextStyle(color: _brown, fontSize: 14),
         ),

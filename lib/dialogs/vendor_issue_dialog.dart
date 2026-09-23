@@ -28,10 +28,6 @@ class _VendorIssueDialogState extends State<VendorIssueDialog> {
 
   bool _isSaving = false;
 
-  final List<String> _issueTypes = [
-    'Damaged', 'Defective', 'Wrong Item Sent', 'Quality Issue', 'Broken in Transit', 'Other'
-  ];
-
   @override
   void initState() {
     super.initState();
@@ -266,14 +262,40 @@ class _VendorIssueDialogState extends State<VendorIssueDialog> {
               ),
               const SizedBox(height: 16),
 
-              // Issue Type (full width)
-              DropdownButtonFormField<String>(
-                decoration: BoutiqueInputDecoration.field(labelText: 'Issue Type', hintText: ''),
-                initialValue: _issueType,
-                isExpanded: true,
-                items: _issueTypes.map((t) => DropdownMenuItem(value: t, child: Text(t, style: const TextStyle(fontSize: 13), overflow: TextOverflow.ellipsis))).toList(),
-                onChanged: (v) => setState(() => _issueType = v),
-                validator: (v) => v == null ? 'Required' : null,
+              // Issue Type
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: DropdownButtonFormField<String>(
+                      decoration: BoutiqueInputDecoration.field(labelText: 'Issue Type', hintText: ''),
+                      value: widget.state.issueTypes.contains(_issueType) ? _issueType : null,
+                      isExpanded: true,
+                      items: widget.state.issueTypes.map((t) => DropdownMenuItem(value: t, child: Text(t, style: const TextStyle(fontSize: 13), overflow: TextOverflow.ellipsis))).toList(),
+                      onChanged: (v) => setState(() => _issueType = v),
+                      validator: (v) => v == null ? 'Required' : null,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8.0),
+                    child: IconButton(
+                      icon: const Icon(Icons.settings_outlined, color: BoutiqueColors.accent),
+                      tooltip: 'Manage Issue Types',
+                      onPressed: () async {
+                        await showDialog(
+                          context: context,
+                          builder: (ctx) => _ManageIssueTypesDialog(state: widget.state),
+                        );
+                        setState(() {
+                          if (!widget.state.issueTypes.contains(_issueType)) {
+                            _issueType = null;
+                          }
+                        });
+                      },
+                    ),
+                  )
+                ],
               ),
               const SizedBox(height: 16),
 
@@ -326,6 +348,97 @@ class _VendorIssueDialogState extends State<VendorIssueDialog> {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _ManageIssueTypesDialog extends StatefulWidget {
+  final AdminState state;
+  const _ManageIssueTypesDialog({required this.state});
+  @override
+  State<_ManageIssueTypesDialog> createState() => _ManageIssueTypesDialogState();
+}
+
+class _ManageIssueTypesDialogState extends State<_ManageIssueTypesDialog> {
+  late List<String> _types;
+  @override
+  void initState() {
+    super.initState();
+    _types = List<String>.from(widget.state.issueTypes);
+  }
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Manage Issue Types', style: TextStyle(color: BoutiqueColors.textPrimary)),
+      content: SizedBox(
+        width: 350,
+        height: 400,
+        child: Column(
+          children: [
+            Expanded(
+              child: ListView.builder(
+                itemCount: _types.length,
+                itemBuilder: (ctx, i) => Card(
+                  elevation: 0,
+                  color: BoutiqueColors.bgCard,
+                  child: ListTile(
+                    title: Text(_types[i]),
+                    trailing: IconButton(
+                      icon: const Icon(Icons.delete_outline, color: Colors.red),
+                      onPressed: () => setState(() => _types.removeAt(i)),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(backgroundColor: BoutiqueColors.accent, foregroundColor: Colors.white),
+              onPressed: () async {
+                final newType = await _promptNewType(context);
+                if (newType != null && newType.isNotEmpty && !_types.contains(newType)) {
+                  setState(() => _types.add(newType));
+                }
+              },
+              icon: const Icon(Icons.add),
+              label: const Text('Add Type'),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+        ElevatedButton(
+          style: ElevatedButton.styleFrom(backgroundColor: BoutiqueColors.accent, foregroundColor: Colors.white),
+          onPressed: () async {
+            await widget.state.updateIssueTypes(_types);
+            if (mounted) Navigator.pop(context);
+          },
+          child: const Text('Save'),
+        ),
+      ],
+    );
+  }
+
+  Future<String?> _promptNewType(BuildContext context) {
+    final ctrl = TextEditingController();
+    return showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('New Issue Type'),
+        content: TextFormField(
+          controller: ctrl,
+          decoration: BoutiqueInputDecoration.field(hintText: 'Type Name', labelText: 'Name'),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: BoutiqueColors.accent, foregroundColor: Colors.white),
+            onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+            child: const Text('Add'),
+          ),
+        ],
+      )
     );
   }
 }

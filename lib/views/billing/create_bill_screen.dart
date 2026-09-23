@@ -8,6 +8,7 @@ import '../../state/admin_state.dart';
 import '../../models/product.dart';
 import 'bill_row_model.dart';
 import '../../utils/boutique_theme.dart';
+import '../../utils/boutique_pdf_generator.dart';
 
 class CreateBillScreen extends StatefulWidget {
   final AdminState state;
@@ -25,12 +26,20 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
   DateTime _billDate = DateTime.now();
   final _customerNameCtrl = TextEditingController();
   final _customerMobileCtrl = TextEditingController();
+  final _customerAddressCtrl = TextEditingController();
+  bool _showExtraCustomerDetails = false;
+  final List<Map<String, TextEditingController>> _customFields = [];
 
   final List<BillRow> _rows = [BillRow()];
 
   // Summary controllers — managed separately so only summary panel rebuilds
   final _extraDiscountCtrl = TextEditingController(text: '0');
   String _extraDiscountType = '₹';
+
+  final _gstCtrl = TextEditingController(text: '0');
+  String _gstType = 'No GST';
+
+  final _adjustmentCtrl = TextEditingController(text: '');
 
   String _paymentMode = 'Cash';
 
@@ -43,13 +52,51 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
   // Cached product list — read from state once, not on every rebuild
   List<Product> _cachedProducts = [];
 
+  List<String> _knownCustomers = [];
+
   @override
   void initState() {
     super.initState();
     _cachedProducts = widget.state.products;
     _fetchNextBillNo();
+    _fetchCustomerNames();
     // Listen to AdminState for product list updates ONLY — no full-form rebuild
     widget.state.addListener(_onStateProductsUpdate);
+    _gstCtrl.addListener(_onGstChanged);
+  }
+
+  Future<void> _fetchCustomerNames() async {
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection('bills')
+          .orderBy('billDate', descending: true)
+          .limit(200)
+          .get();
+      final names = <String>{};
+      for (final doc in snap.docs) {
+        final name = doc.data()['customerName']?.toString().trim();
+        if (name != null && name.isNotEmpty && name.toLowerCase() != 'walk-in' && name.toLowerCase() != 'walk-in customer') {
+          names.add(name);
+        }
+      }
+      if (mounted) setState(() => _knownCustomers = names.toList()..sort());
+    } catch (_) {}
+  }
+
+  void _onGstChanged() {
+    final val = _gstCtrl.text.trim();
+    String expectedType = 'Custom';
+    if (val == '0' || val.isEmpty) expectedType = 'No GST';
+    else if (val == '5' || val == '5.0') expectedType = '5%';
+    else if (val == '12' || val == '12.0') expectedType = '12%';
+    else if (val == '18' || val == '18.0') expectedType = '18%';
+    else if (val == '28' || val == '28.0') expectedType = '28%';
+
+    if (_gstType != expectedType) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() => _gstType = expectedType);
+      });
+    }
   }
 
   void _onStateProductsUpdate() {
@@ -67,7 +114,13 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
     _billNoCtrl.dispose();
     _customerNameCtrl.dispose();
     _customerMobileCtrl.dispose();
+    _customerAddressCtrl.dispose();
+    for (var f in _customFields) {
+      f['key']?.dispose();
+      f['value']?.dispose();
+    }
     _extraDiscountCtrl.dispose();
+    _gstCtrl.dispose();
     super.dispose();
   }
 
@@ -87,16 +140,15 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
           nextNum = (int.tryParse(match.group(0)!) ?? 0) + 1;
         }
       }
-      if (mounted) _billNoCtrl.text = 'FA-${nextNum.toString().padLeft(4, '0')}';
+      if (mounted) _billNoCtrl.text = 'SB-${nextNum.toString().padLeft(3, '0')}';
     } catch (_) {
-      if (mounted) _billNoCtrl.text = 'FA-0001';
+      if (mounted) _billNoCtrl.text = 'SB-001';
     }
   }
 
   // ── Calculation Helpers ───────────────────────────────────────────────────
 
   double get _subtotal => _rows.fold(0, (s, r) => s + r.lineAmount);
-  double get _totalGst => _rows.fold(0, (s, r) => s + r.lineGstAmount);
 
   double _extraDiscountAmount(double subtotal) {
     final v = double.tryParse(_extraDiscountCtrl.text) ?? 0;
@@ -122,7 +174,7 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
     return true;
   }
 
-  Future<void> _saveBill() async {
+  Future<void> _saveBill(bool isSplit, String singleMode, List<Map<String, dynamic>> splitPayments) async {
     setState(() => _attemptedSave = true);
     if (!_canSave) {
       BoutiqueToast.showError(context, 'Please fill in all required fields correctly.');
@@ -135,8 +187,12 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
       final subtotal = _subtotal;
       final discAmt = _extraDiscountAmount(subtotal);
       final discounted = (subtotal - discAmt).clamp(0.0, double.infinity);
-      final taxAmt = _totalGst;
-      final total = (discounted + taxAmt).clamp(0.0, double.infinity);
+      final gstPercent = double.tryParse(_gstCtrl.text) ?? 0.0;
+      final taxAmt = (subtotal * (gstPercent / 100)).clamp(0.0, double.infinity);
+      final computedTotal = (discounted + taxAmt).clamp(0.0, double.infinity);
+      final manualTotal = double.tryParse(_adjustmentCtrl.text);
+      final adjustment = manualTotal != null ? manualTotal - computedTotal : 0.0;
+      final totalPayable = (computedTotal + adjustment).clamp(0.0, double.infinity);
 
       final billData = {
         'billNo': _billNoCtrl.text.trim(),
@@ -144,15 +200,24 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
         'billDate': Timestamp.fromDate(_billDate),
         'customerName': _customerNameCtrl.text.trim(),
         'customerMobile': _customerMobileCtrl.text.trim(),
+        'customerAddress': _customerAddressCtrl.text.trim(),
+        'customCustomerDetails': {
+          for (var field in _customFields)
+            if (field['key']!.text.trim().isNotEmpty)
+              field['key']!.text.trim(): field['value']!.text.trim()
+        },
         'items': validRows.map((r) => r.toMap()).toList(),
         'subtotal': subtotal,
         'extraDiscountType': _extraDiscountType,
         'extraDiscountValue': double.tryParse(_extraDiscountCtrl.text) ?? 0,
         'extraDiscountAmount': discAmt,
+        'gstPercent': gstPercent,
         'taxAmount': taxAmt,
-        'totalPayable': total,
-        'paymentMode': _paymentMode,
-        'amountReceived': total,
+        'adjustmentAmount': adjustment,
+        'totalPayable': totalPayable,
+        'paymentMode': isSplit ? 'Split Payment' : singleMode,
+        'payments': isSplit ? splitPayments : [{'mode': singleMode, 'amount': totalPayable}],
+        'amountReceived': totalPayable,
         'balanceReturned': 0.0,
         'createdAt': FieldValue.serverTimestamp(),
       };
@@ -247,7 +312,9 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
       _rows.clear();
       _rows.add(BillRow());
       _extraDiscountCtrl.text = '0';
-      _paymentMode = 'Cash';
+      _gstCtrl.text = '0';
+      _gstType = 'No GST';
+      _adjustmentCtrl.text = '';
       _attemptedSave = false;
     });
   }
@@ -256,159 +323,30 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
     final validRows = _rows.where((r) => r.isValid).toList();
     if (validRows.isEmpty) return;
 
-    final fmt = DateFormat('dd/MM/yyyy');
-    final pdf = pw.Document();
-    final fontRegular = await PdfGoogleFonts.robotoRegular();
-    final fontBold = await PdfGoogleFonts.robotoBold();
-    const tColor = PdfColor.fromInt(0xFF5E1729);
-    const tLight = PdfColor.fromInt(0xFFF9F6F0);
-    const greenColor = PdfColor.fromInt(0xFF2E7D32);
-
     final subtotal = _subtotal;
     final discAmt = _extraDiscountAmount(subtotal);
     final discounted = (subtotal - discAmt).clamp(0.0, double.infinity);
-    final taxAmt = _totalGst;
-    final total = (discounted + taxAmt).clamp(0.0, double.infinity);
+    final gstPercent = double.tryParse(_gstCtrl.text) ?? 0.0;
+    final taxAmt = (subtotal * (gstPercent / 100)).clamp(0.0, double.infinity);
+    final computedTotal = (discounted + taxAmt).clamp(0.0, double.infinity);
+    final manualTotal = double.tryParse(_adjustmentCtrl.text);
+    final adjustment = manualTotal != null ? manualTotal - computedTotal : 0.0;
+    final totalPayable = (computedTotal + adjustment).clamp(0.0, double.infinity);
 
-    pdf.addPage(
-      pw.MultiPage(
-        pageFormat: PdfPageFormat.a4,
-        margin: const pw.EdgeInsets.all(32),
-        theme: pw.ThemeData.withFont(base: fontRegular, bold: fontBold),
-        build: (ctx) => [
-          pw.Column(
-            crossAxisAlignment: pw.CrossAxisAlignment.center,
-            children: [
-              pw.Text('FORGEALLY BOUTIQUE - TAX INVOICE',
-                  style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold, color: tColor)),
-              pw.SizedBox(height: 4),
-              pw.Container(height: 1.5, color: tColor),
-              pw.SizedBox(height: 10),
-            ],
-          ),
-          pw.Row(
-            crossAxisAlignment: pw.CrossAxisAlignment.start,
-            children: [
-              pw.Expanded(
-                child: pw.Column(
-                  crossAxisAlignment: pw.CrossAxisAlignment.start,
-                  children: [
-                    pw.Text('Bill To', style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold, color: tColor)),
-                    pw.SizedBox(height: 3),
-                    pw.Text(
-                      _customerNameCtrl.text.trim().isEmpty ? 'Walk-in Customer' : _customerNameCtrl.text.trim(),
-                      style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold),
-                    ),
-                    if (_customerMobileCtrl.text.trim().isNotEmpty)
-                      pw.Text(_customerMobileCtrl.text.trim(), style: const pw.TextStyle(fontSize: 9)),
-                  ],
-                ),
-              ),
-              pw.SizedBox(width: 20),
-              pw.Column(
-                crossAxisAlignment: pw.CrossAxisAlignment.end,
-                children: [
-                  pw.RichText(text: pw.TextSpan(children: [
-                    pw.TextSpan(text: 'Invoice No: ', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 9)),
-                    pw.TextSpan(text: _billNoCtrl.text.trim(), style: const pw.TextStyle(fontSize: 9)),
-                  ])),
-                  pw.SizedBox(height: 3),
-                  pw.RichText(text: pw.TextSpan(children: [
-                    pw.TextSpan(text: 'Date: ', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 9)),
-                    pw.TextSpan(text: fmt.format(_billDate), style: const pw.TextStyle(fontSize: 9)),
-                  ])),
-                ],
-              ),
-            ],
-          ),
-          pw.SizedBox(height: 12),
-          pw.Table(
-            border: pw.TableBorder.all(color: tColor, width: 0.5),
-            columnWidths: {
-              0: const pw.FlexColumnWidth(0.5),
-              1: const pw.FlexColumnWidth(4),
-              2: const pw.FlexColumnWidth(1),
-              3: const pw.FlexColumnWidth(1.5),
-              4: const pw.FlexColumnWidth(1.5),
-              5: const pw.FlexColumnWidth(1.5),
-            },
-            children: [
-              pw.TableRow(
-                decoration: pw.BoxDecoration(color: tColor),
-                children: [
-                  _pdfCell('#', bold: true, isHeader: true),
-                  _pdfCell('Item', bold: true, isHeader: true, align: pw.Alignment.centerLeft),
-                  _pdfCell('Qty', bold: true, isHeader: true),
-                  _pdfCell('Price (₹)', bold: true, isHeader: true),
-                  _pdfCell('Discount', bold: true, isHeader: true),
-                  _pdfCell('Amount (₹)', bold: true, isHeader: true),
-                ],
-              ),
-              ...validRows.asMap().entries.map((e) {
-                final i = e.key + 1;
-                final r = e.value;
-                final discStr = r.discountValue > 0 ? '${r.discountValue.toStringAsFixed(2)} ${r.discountType}' : '—';
-                final qtyStr = '${r.qty.toInt()} ${r.unitLabel}';
-                final itemName = r.product?.name ?? '';
-                final nameText = r.gstRate > 0 ? '$itemName\n(GST: ${r.gstRate}%)' : itemName;
-                return pw.TableRow(
-                  children: [
-                    _pdfCell(i.toString()),
-                    _pdfCell(nameText, align: pw.Alignment.centerLeft),
-                    _pdfCell(qtyStr),
-                    _pdfCell('₹${r.price.toStringAsFixed(2)}'),
-                    _pdfCell(discStr),
-                    _pdfCell('₹${r.lineAmount.toStringAsFixed(2)}'),
-                  ],
-                );
-              }),
-            ],
-          ),
-          pw.SizedBox(height: 12),
-          pw.Row(
-            mainAxisAlignment: pw.MainAxisAlignment.end,
-            children: [
-              pw.Container(
-                width: 220,
-                child: pw.Column(
-                  children: [
-                    _pdfTotalRow('Subtotal', '₹${subtotal.toStringAsFixed(2)}', tColor),
-                    if (discAmt > 0)
-                      _pdfTotalRow('Extra Discount', '− ₹${discAmt.toStringAsFixed(2)}', tColor),
-                    if (taxAmt > 0)
-                      _pdfTotalRow('Total GST', '+ ₹${taxAmt.toStringAsFixed(2)}', tColor),
-                    pw.Container(height: 1, color: tColor),
-                    pw.Container(
-                      padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 5),
-                      color: tLight,
-                      child: pw.Row(
-                        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                        children: [
-                          pw.Text('TOTAL PAYABLE', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 11, color: tColor)),
-                          pw.Text('₹${total.toStringAsFixed(2)}', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 13, color: tColor)),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          pw.SizedBox(height: 24),
-          pw.Container(height: 0.5, color: tColor),
-          pw.SizedBox(height: 6),
-          pw.Row(
-            mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-            children: [
-              pw.Text('Thank you for shopping with ForgeAlly Boutique!', style: pw.TextStyle(fontSize: 9, color: greenColor, fontWeight: pw.FontWeight.bold)),
-              pw.Text('This is a computer generated invoice.', style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey)),
-            ],
-          ),
-        ],
-      ),
-    );
+    final billData = {
+      'billNo': _billNoCtrl.text.trim(),
+      'billDate': Timestamp.fromDate(_billDate),
+      'customerName': _customerNameCtrl.text.trim(),
+      'customerMobile': _customerMobileCtrl.text.trim(),
+      'items': validRows.map((r) => r.toMap()).toList(),
+      'subtotal': subtotal,
+      'extraDiscountAmount': discAmt,
+      'taxAmount': taxAmt,
+      'adjustmentAmount': adjustment,
+      'totalPayable': totalPayable,
+    };
 
-    final bytes = await pdf.save();
+    final bytes = await BoutiquePdfGenerator.generate(billData);
     await Printing.layoutPdf(onLayout: (_) async => bytes);
   }
 
@@ -485,10 +423,23 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
                   rowVersion: _rowVersion,
                   extraDiscountCtrl: _extraDiscountCtrl,
                   extraDiscountType: _extraDiscountType,
+                  gstCtrl: _gstCtrl,
+                  gstType: _gstType,
+                  adjustmentCtrl: _adjustmentCtrl,
                   isSaving: _isSaving,
                   hasValidRows: _hasValidRows,
                   onDiscountTypeChanged: (t) => setState(() => _extraDiscountType = t),
-                  onSave: _saveBill,
+                  onGstTypeChanged: (t) {
+                    setState(() {
+                      _gstType = t;
+                      if (t == 'No GST') _gstCtrl.text = '0';
+                      else if (t == '5%') _gstCtrl.text = '5';
+                      else if (t == '12%') _gstCtrl.text = '12';
+                      else if (t == '18%') _gstCtrl.text = '18';
+                      else if (t == '28%') _gstCtrl.text = '28';
+                    });
+                  },
+                  onSave: (isSplit, singleMode, splitPayments) => _saveBill(isSplit, singleMode, splitPayments),
                   onDownload: _downloadInvoice,
                 ),
               ),
@@ -506,8 +457,18 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Customer & Invoice Details',
-              style: TextStyle(fontFamily: 'serif', fontSize: 18, fontWeight: FontWeight.bold, color: BoutiqueColors.textPrimary)),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text('Customer & Invoice Details',
+                  style: TextStyle(fontFamily: 'serif', fontSize: 18, fontWeight: FontWeight.bold, color: BoutiqueColors.textPrimary)),
+              TextButton.icon(
+                onPressed: () => setState(() => _showExtraCustomerDetails = !_showExtraCustomerDetails),
+                icon: Icon(_showExtraCustomerDetails ? Icons.expand_less : Icons.add, size: 18, color: BoutiqueColors.accent),
+                label: Text(_showExtraCustomerDetails ? 'Hide Extra Details' : 'Add Customer Details', style: const TextStyle(color: BoutiqueColors.accent, fontSize: 13)),
+              ),
+            ],
+          ),
           const SizedBox(height: 16),
           Row(
             children: [
@@ -547,13 +508,64 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
           const SizedBox(height: 16),
           Row(
             children: [
-              // Customer name — no setState, TextField manages its own text
+              // Customer name autocomplete
               Expanded(
-                child: TextField(
-                  controller: _customerNameCtrl,
-                  style: const TextStyle(fontSize: 13),
-                  decoration: BoutiqueInputDecoration.field(
-                      hintText: 'Walk-in Customer', labelText: 'Customer Name'),
+                child: RawAutocomplete<String>(
+                  textEditingController: _customerNameCtrl,
+                  focusNode: FocusNode(),
+                  optionsBuilder: (TextEditingValue textEditingValue) {
+                    if (textEditingValue.text.isEmpty) {
+                      return const Iterable<String>.empty();
+                    }
+                    final query = textEditingValue.text.toLowerCase();
+                    return _knownCustomers.where((name) =>
+                        name.toLowerCase().contains(query));
+                  },
+                  fieldViewBuilder: (BuildContext context,
+                      TextEditingController textEditingController,
+                      FocusNode focusNode,
+                      VoidCallback onFieldSubmitted) {
+                    return TextField(
+                      controller: textEditingController,
+                      focusNode: focusNode,
+                      style: const TextStyle(fontSize: 13),
+                      decoration: BoutiqueInputDecoration.field(
+                          hintText: 'Walk-in Customer', labelText: 'Customer Name'),
+                      onSubmitted: (String value) {
+                        onFieldSubmitted();
+                      },
+                    );
+                  },
+                  optionsViewBuilder: (BuildContext context,
+                      AutocompleteOnSelected<String> onSelected,
+                      Iterable<String> options) {
+                    return Align(
+                      alignment: Alignment.topLeft,
+                      child: Material(
+                        elevation: 4.0,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8)),
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxHeight: 200, maxWidth: 300),
+                          child: ListView.builder(
+                            padding: EdgeInsets.zero,
+                            shrinkWrap: true,
+                            itemCount: options.length,
+                            itemBuilder: (BuildContext context, int index) {
+                              final option = options.elementAt(index);
+                              return InkWell(
+                                onTap: () => onSelected(option),
+                                child: Padding(
+                                  padding: const EdgeInsets.all(12.0),
+                                  child: Text(option, style: const TextStyle(fontSize: 13)),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      ),
+                    );
+                  },
                 ),
               ),
               const SizedBox(width: 16),
@@ -572,6 +584,74 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
               ),
             ],
           ),
+          if (_showExtraCustomerDetails) ...[
+            const SizedBox(height: 16),
+            TextField(
+              controller: _customerAddressCtrl,
+              maxLines: 2,
+              style: const TextStyle(fontSize: 13),
+              decoration: BoutiqueInputDecoration.field(
+                hintText: 'Full Address',
+                labelText: 'Address',
+              ),
+            ),
+            const SizedBox(height: 16),
+            for (int i = 0; i < _customFields.length; i++)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8.0),
+                child: Row(
+                  children: [
+                    Expanded(
+                      flex: 1,
+                      child: TextField(
+                        controller: _customFields[i]['key'],
+                        style: const TextStyle(fontSize: 13),
+                        decoration: BoutiqueInputDecoration.field(
+                          hintText: 'Field Name (e.g. Email)',
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      flex: 2,
+                      child: TextField(
+                        controller: _customFields[i]['value'],
+                        style: const TextStyle(fontSize: 13),
+                        decoration: BoutiqueInputDecoration.field(
+                          hintText: 'Value',
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.remove_circle_outline, color: BoutiqueColors.destructive),
+                      onPressed: () {
+                        final removed = _customFields.removeAt(i);
+                        removed['key']?.dispose();
+                        removed['value']?.dispose();
+                        setState(() {});
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: () => setState(() {
+                  _customFields.add({
+                    'key': TextEditingController(),
+                    'value': TextEditingController(),
+                  });
+                }),
+                icon: const Icon(Icons.add_circle_outline, size: 18),
+                label: const Text('Add Custom Field'),
+                style: TextButton.styleFrom(
+                  foregroundColor: BoutiqueColors.accent,
+                  padding: EdgeInsets.zero,
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -809,13 +889,36 @@ class _ProductAutocomplete extends StatelessWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            '${p.tagId} - ${p.name}',
-                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: BoutiqueColors.textPrimary),
-                            overflow: TextOverflow.ellipsis,
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  '${p.tagId} - ${p.name}',
+                                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: BoutiqueColors.textPrimary),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                decoration: BoxDecoration(
+                                  color: p.sellableQuantity > 0 ? BoutiqueColors.accent.withOpacity(0.1) : Colors.red.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: Text(
+                                  'Stock: ${p.sellableQuantity.toInt()}',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                    color: p.sellableQuantity > 0 ? BoutiqueColors.accent : Colors.red,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
+                          const SizedBox(height: 2),
                           Text(
-                            '₹${p.mrp}  •  ${p.category}  •  Qty: ${p.sellableQuantity}',
+                            '₹${p.mrp}  •  ${p.category}',
                             style: const TextStyle(fontSize: 11, color: BoutiqueColors.textSecondary),
                           ),
                         ],
@@ -853,10 +956,14 @@ class _BillSummaryPanel extends StatefulWidget {
   final ValueNotifier<int> rowVersion;
   final TextEditingController extraDiscountCtrl;
   final String extraDiscountType;
+  final TextEditingController gstCtrl;
+  final String gstType;
+  final TextEditingController adjustmentCtrl;
   final bool isSaving;
   final bool hasValidRows;
   final ValueChanged<String> onDiscountTypeChanged;
-  final VoidCallback onSave;
+  final ValueChanged<String> onGstTypeChanged;
+  final void Function(bool isSplit, String singleMode, List<Map<String, dynamic>> splitPayments) onSave;
   final VoidCallback onDownload;
 
   const _BillSummaryPanel({
@@ -864,9 +971,13 @@ class _BillSummaryPanel extends StatefulWidget {
     required this.rowVersion,
     required this.extraDiscountCtrl,
     required this.extraDiscountType,
+    required this.gstCtrl,
+    required this.gstType,
+    required this.adjustmentCtrl,
     required this.isSaving,
     required this.hasValidRows,
     required this.onDiscountTypeChanged,
+    required this.onGstTypeChanged,
     required this.onSave,
     required this.onDownload,
   });
@@ -876,12 +987,25 @@ class _BillSummaryPanel extends StatefulWidget {
 }
 
 class _BillSummaryPanelState extends State<_BillSummaryPanel> {
+  bool _isSplitPayment = false;
+  String _singlePaymentMode = 'Cash';
+  final List<Map<String, dynamic>> _splitPayments = [{'mode': 'Cash', 'amountCtrl': TextEditingController(text: '0')}];
+  final List<String> _paymentModes = ['Cash', 'GPay', 'Bank Transfer', 'Card', 'UPI', 'Other'];
+
+  @override
+  void dispose() {
+    for (var p in _splitPayments) {
+      (p['amountCtrl'] as TextEditingController).dispose();
+    }
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
-    // AnimatedBuilder listens to discount/tax controllers AND rowVersion
+    // AnimatedBuilder listens to discount/tax/adjustment controllers AND rowVersion
     // so subtotal recalculates on product select, qty change, or discount/tax edits
     return AnimatedBuilder(
-      animation: Listenable.merge([widget.extraDiscountCtrl, widget.rowVersion]),
+      animation: Listenable.merge([widget.extraDiscountCtrl, widget.gstCtrl, widget.adjustmentCtrl, widget.rowVersion]),
       builder: (context, _) {
         final subtotal = widget.rows.fold<double>(0, (s, r) => s + r.lineAmount);
         final discV = double.tryParse(widget.extraDiscountCtrl.text) ?? 0;
@@ -890,8 +1014,20 @@ class _BillSummaryPanelState extends State<_BillSummaryPanel> {
             : discV.clamp(0, subtotal);
         final discounted = (subtotal - discAmt).clamp(0.0, double.infinity);
         
-        final taxAmt = widget.rows.fold<double>(0, (s, r) => s + r.lineGstAmount);
-        final total = (discounted + taxAmt).clamp(0.0, double.infinity);
+        final gstPercent = double.tryParse(widget.gstCtrl.text) ?? 0.0;
+        final taxAmt = (subtotal * (gstPercent / 100)).clamp(0.0, double.infinity);
+        final computedTotal = (discounted + taxAmt).clamp(0.0, double.infinity);
+        final manualTotal = double.tryParse(widget.adjustmentCtrl.text);
+        final adjustment = manualTotal != null ? manualTotal - computedTotal : 0.0;
+        final total = (computedTotal + adjustment).clamp(0.0, double.infinity);
+
+        double allocated = 0;
+        if (_isSplitPayment) {
+          for (var p in _splitPayments) {
+            allocated += double.tryParse((p['amountCtrl'] as TextEditingController).text) ?? 0;
+          }
+        }
+        double remaining = total - allocated;
 
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -931,13 +1067,70 @@ class _BillSummaryPanelState extends State<_BillSummaryPanel> {
                 ),
               ],
             ),
+            const SizedBox(height: 12),
+
+            // GST
+            Row(
+              children: [
+                const Text('GST', style: TextStyle(fontSize: 13, color: BoutiqueColors.textSecondary)),
+                const SizedBox(width: 8),
+                DropdownButton<String>(
+                  value: widget.gstType,
+                  underline: const SizedBox(),
+                  isDense: true,
+                  items: const [
+                    DropdownMenuItem(value: 'No GST', child: Text('No GST')),
+                    DropdownMenuItem(value: '5%', child: Text('5%')),
+                    DropdownMenuItem(value: '12%', child: Text('12%')),
+                    DropdownMenuItem(value: '18%', child: Text('18%')),
+                    DropdownMenuItem(value: '28%', child: Text('28%')),
+                    DropdownMenuItem(value: 'Custom', child: Text('Custom')),
+                  ],
+                  onChanged: (v) { if (v != null) widget.onGstTypeChanged(v); },
+                ),
+                const Spacer(),
+                SizedBox(
+                  width: 90,
+                  height: 38,
+                  child: TextField(
+                    controller: widget.gstCtrl,
+                    keyboardType: TextInputType.number,
+                    style: const TextStyle(fontSize: 13),
+                    decoration: BoutiqueInputDecoration.field(hintText: '0'),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+
+            // Adjustment Override
+            Row(
+              children: [
+                const Text('Override Total', style: TextStyle(fontSize: 13, color: BoutiqueColors.textSecondary)),
+                const Spacer(),
+                SizedBox(
+                  width: 90,
+                  height: 38,
+                  child: TextField(
+                    controller: widget.adjustmentCtrl,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    style: const TextStyle(fontSize: 13),
+                    decoration: BoutiqueInputDecoration.field(hintText: 'e.g. 100'),
+                  ),
+                ),
+              ],
+            ),
             if (discAmt > 0) ...[
-              const SizedBox(height: 4),
+              const SizedBox(height: 12),
               _summaryRow('Discount Applied', '− ₹${discAmt.toStringAsFixed(2)}'),
             ],
             if (taxAmt > 0) ...[
               const SizedBox(height: 12),
               _summaryRow('Total GST', '+ ₹${taxAmt.toStringAsFixed(2)}'),
+            ],
+            if (adjustment != 0) ...[
+              const SizedBox(height: 12),
+              _summaryRow('Adjustment', '${adjustment >= 0 ? '+' : ''} ₹${adjustment.toStringAsFixed(2)}'),
             ],
             const Divider(height: 28, color: BoutiqueColors.border),
 
@@ -952,9 +1145,159 @@ class _BillSummaryPanelState extends State<_BillSummaryPanel> {
               ],
             ),
             const SizedBox(height: 24),
+            
+            const Text('Payment Details',
+                style: TextStyle(fontFamily: 'serif', fontSize: 16, fontWeight: FontWeight.bold, color: BoutiqueColors.textPrimary)),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: RadioListTile<bool>(
+                    value: false,
+                    groupValue: _isSplitPayment,
+                    title: const Text('Single', style: TextStyle(fontSize: 13)),
+                    contentPadding: EdgeInsets.zero,
+                    dense: true,
+                    onChanged: (v) => setState(() => _isSplitPayment = v!),
+                  ),
+                ),
+                Expanded(
+                  child: RadioListTile<bool>(
+                    value: true,
+                    groupValue: _isSplitPayment,
+                    title: const Text('Split', style: TextStyle(fontSize: 13)),
+                    contentPadding: EdgeInsets.zero,
+                    dense: true,
+                    onChanged: (v) => setState(() => _isSplitPayment = v!),
+                  ),
+                ),
+              ],
+            ),
+            if (!_isSplitPayment) ...[
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                decoration: BoxDecoration(
+                  color: BoutiqueColors.bgSubtle,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: BoutiqueColors.border),
+                ),
+                child: DropdownButton<String>(
+                  value: _singlePaymentMode,
+                  isExpanded: true,
+                  underline: const SizedBox(),
+                  items: [
+                    for (final m in _paymentModes)
+                      DropdownMenuItem<String>(value: m, child: Text(m))
+                  ],
+                  onChanged: (v) { if (v != null) setState(() => _singlePaymentMode = v); },
+                ),
+              ),
+            ] else ...[
+              const SizedBox(height: 8),
+              for (int idx = 0; idx < _splitPayments.length; idx++)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        flex: 3,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          decoration: BoxDecoration(
+                            color: BoutiqueColors.bgSubtle,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: BoutiqueColors.border),
+                          ),
+                          child: DropdownButton<String>(
+                            value: _splitPayments[idx]['mode'],
+                            isExpanded: true,
+                            underline: const SizedBox(),
+                            items: [
+                              for (final m in _paymentModes)
+                                DropdownMenuItem<String>(value: m, child: Text(m, style: const TextStyle(fontSize: 13)))
+                            ],
+                            onChanged: (v) { if (v != null) setState(() => _splitPayments[idx]['mode'] = v); },
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        flex: 2,
+                        child: SizedBox(
+                          height: 42,
+                          child: TextField(
+                            controller: _splitPayments[idx]['amountCtrl'],
+                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                            style: const TextStyle(fontSize: 13),
+                            onChanged: (_) => setState(() {}),
+                            decoration: BoutiqueInputDecoration.field(hintText: 'Amount'),
+                          ),
+                        ),
+                      ),
+                      if (_splitPayments.length > 1)
+                        IconButton(
+                          icon: const Icon(Icons.remove_circle_outline, color: BoutiqueColors.destructive, size: 20),
+                          onPressed: () {
+                            (_splitPayments[idx]['amountCtrl'] as TextEditingController).dispose();
+                            setState(() => _splitPayments.removeAt(idx));
+                          },
+                        ),
+                    ],
+                  ),
+                ),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  onPressed: () {
+                    setState(() => _splitPayments.add({'mode': 'Cash', 'amountCtrl': TextEditingController(text: '0')}));
+                  },
+                  icon: const Icon(Icons.add, size: 16),
+                  label: const Text('Add Payment Mode', style: TextStyle(fontSize: 12)),
+                  style: TextButton.styleFrom(
+                    foregroundColor: BoutiqueColors.accent,
+                    padding: EdgeInsets.zero,
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text('Remaining:', style: TextStyle(fontSize: 13, color: BoutiqueColors.textSecondary)),
+                  Text('₹${remaining.toStringAsFixed(2)}', 
+                    style: TextStyle(
+                      fontSize: 13, 
+                      fontWeight: FontWeight.bold, 
+                      color: remaining.abs() < 0.01 ? Colors.green : BoutiqueColors.destructive
+                    )
+                  ),
+                ],
+              ),
+            ],
+            const SizedBox(height: 24),
 
             ElevatedButton.icon(
-              onPressed: widget.isSaving ? null : widget.onSave,
+              onPressed: widget.isSaving ? null : () {
+                if (_isSplitPayment && remaining.abs() >= 0.01) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Please allocate the exact remaining amount (₹${remaining.toStringAsFixed(2)})'), backgroundColor: Colors.red),
+                  );
+                  return;
+                }
+                
+                final List<Map<String, dynamic>> parsedSplitPayments = [
+                  for (final e in _splitPayments)
+                    {
+                      'mode': e['mode'],
+                      'amount': double.tryParse((e['amountCtrl'] as TextEditingController).text) ?? 0.0
+                    }
+                ];
+                
+                widget.onSave(_isSplitPayment, _singlePaymentMode, parsedSplitPayments);
+              },
               style: ElevatedButton.styleFrom(
                 backgroundColor: BoutiqueColors.accent,
                 foregroundColor: Colors.white,

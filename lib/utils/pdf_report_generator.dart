@@ -257,9 +257,9 @@ Future<Uint8List> generateUnifiedIssueReportPdf({
 
   const columns = [
     'S.No', 'Date', 'Type', 'Product',
-    'Customer / Vendor', 'Qty', 'Issue / Reason', 'Refund (₹)', 'Status'
+    'Qty', 'Issue / Reason', 'Refund (₹)', 'Status'
   ];
-  const flexes = [1, 2, 2, 4, 3, 1, 3, 2, 2];
+  const flexes = [1, 2, 2, 4, 1, 3, 2, 2];
 
   // Colours for type badges
   const kCustomerBlue = PdfColor.fromInt(0xFF1565C0);
@@ -340,21 +340,13 @@ Future<Uint8List> generateUnifiedIssueReportPdf({
                                   color: _kTextDark))),
                       pw.Expanded(
                           flex: flexes[4],
-                          child: pw.Text(
-                              r['counterpart']?.toString() ?? '—',
-                              style: pw.TextStyle(
-                                  font: regularFont,
-                                  fontSize: 7.5,
-                                  color: _kTextDark))),
-                      pw.Expanded(
-                          flex: flexes[5],
                           child: pw.Text(r['qty']?.toString() ?? '0',
                               style: pw.TextStyle(
                                   font: boldFont,
                                   fontSize: 7.5,
                                   color: _kTextDark))),
                       pw.Expanded(
-                          flex: flexes[6],
+                          flex: flexes[5],
                           child: pw.Text(
                               r['issueReason']?.toString() ?? '—',
                               style: pw.TextStyle(
@@ -362,7 +354,7 @@ Future<Uint8List> generateUnifiedIssueReportPdf({
                                   fontSize: 7.5,
                                   color: _kTextDark))),
                       pw.Expanded(
-                          flex: flexes[7],
+                          flex: flexes[6],
                           child: pw.Text(
                               '₹${_numFmt.format((r['refundAmount'] as num?)?.toDouble() ?? 0)}',
                               style: pw.TextStyle(
@@ -370,7 +362,7 @@ Future<Uint8List> generateUnifiedIssueReportPdf({
                                   fontSize: 7.5,
                                   color: _kBurgundyPdf))),
                       pw.Expanded(
-                          flex: flexes[8],
+                          flex: flexes[7],
                           child: pw.Text(r['status']?.toString() ?? '—',
                               style: pw.TextStyle(
                                   font: regularFont,
@@ -756,6 +748,88 @@ pw.Widget _buildFooter(pw.Font regularFont) {
       ],
     ),
   );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PRODUCT-WISE SALES SUMMARY PDF
+// ═══════════════════════════════════════════════════════════════════════════
+Future<Uint8List> generateProductWisePdf({
+  required List<Map<String, dynamic>> rows,
+  required DateTime dateFrom,
+  required DateTime dateTo,
+}) async {
+  final pdf = pw.Document();
+  final boldFont = await _boldFont();
+  final regularFont = await _regularFont();
+
+  final subtitle = 'Period: ${_dateFmt.format(dateFrom)} → ${_dateFmt.format(dateTo)}';
+
+  int totalQty = 0;
+  double totalRevenue = 0;
+  double totalDiscount = 0;
+
+  for (final r in rows) {
+    totalQty += (r['qty'] as int?) ?? 0;
+    totalRevenue += (r['revenue'] as num?)?.toDouble() ?? 0;
+    totalDiscount += (r['discount'] as num?)?.toDouble() ?? 0;
+  }
+
+  const columns = [
+    'S.No', 'Tag ID', 'Product', 'Category',
+    'Qty Sold', 'Revenue (₹)', 'Discount (₹)', 'Avg Price (₹)', 'Orders'
+  ];
+  const flexes = [1, 2, 4, 2, 2, 2, 2, 2, 1];
+
+  pdf.addPage(
+    pw.MultiPage(
+      pageFormat: PdfPageFormat.a4.landscape,
+      margin: const pw.EdgeInsets.all(24),
+      build: (context) => [
+        _buildPdfHeader(
+          reportTitle: 'SALES REPORT — Product-wise Summary',
+          subtitle: subtitle,
+          boldFont: boldFont,
+          regularFont: regularFont,
+        ),
+        pw.SizedBox(height: 12),
+        pw.Container(
+          decoration: pw.BoxDecoration(
+            border: pw.Border.all(color: _kBorderColor),
+            borderRadius: const pw.BorderRadius.all(pw.Radius.circular(4)),
+          ),
+          child: pw.Column(
+            children: [
+              _buildTableHeader(columns, flexes, boldFont),
+              ...List.generate(rows.length, (i) {
+                final r = rows[i];
+                return _buildTableRow([
+                  '${i + 1}',
+                  r['tagId']?.toString() ?? '—',
+                  r['productName']?.toString() ?? '—',
+                  r['category']?.toString() ?? '—',
+                  r['qty']?.toString() ?? '0',
+                  '₹${_numFmt.format((r['revenue'] as num?)?.toDouble() ?? 0)}',
+                  '₹${_numFmt.format((r['discount'] as num?)?.toDouble() ?? 0)}',
+                  '₹${_numFmt.format((r['avgPrice'] as num?)?.toDouble() ?? 0)}',
+                  r['orders']?.toString() ?? '0',
+                ], flexes, regularFont, i.isOdd);
+              }),
+            ],
+          ),
+        ),
+        _buildSummaryBox({
+          'Unique Products': '${rows.length}',
+          'Total Qty Sold': '$totalQty',
+          'Total Revenue': '₹${_numFmt.format(totalRevenue)}',
+          'Total Discount': '₹${_numFmt.format(totalDiscount)}',
+        }, boldFont, regularFont),
+        pw.SizedBox(height: 8),
+        _buildFooter(regularFont),
+      ],
+    ),
+  );
+
+  return pdf.save();
 }
 
 // ─── Font Helpers ────────────────────────────────────────────────────────────

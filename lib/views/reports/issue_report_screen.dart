@@ -3,10 +3,12 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'package:printing/printing.dart';
 import 'package:provider/provider.dart';
+import '../../dialogs/vendor_issue_dialog.dart';
+import '../../dialogs/customer_return_dialog.dart';
+import '../../models/vendor_issue.dart';
+import '../../utils/pdf_report_generator.dart';
 import '../../state/admin_state.dart';
 import '../../utils/boutique_theme.dart';
-import '../../utils/pdf_report_generator.dart';
-import '../../dialogs/vendor_issue_dialog.dart';
 
 class IssueReportScreen extends StatefulWidget {
   const IssueReportScreen({super.key});
@@ -390,23 +392,61 @@ class _IssueReportScreenState extends State<IssueReportScreen> {
             ),
           ),
           const SizedBox(width: 12),
-          // Add Issue
-          ElevatedButton.icon(
-            style: ElevatedButton.styleFrom(
-                backgroundColor: BoutiqueColors.accent,
-                foregroundColor: Colors.white,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 14)),
-            icon: const Icon(Icons.add, size: 18),
-            label: const Text('Add Issue'),
-            onPressed: () async {
-              final res = await showDialog(
-                context: context,
-                builder: (ctx) =>
-                    VendorIssueDialog(state: context.read<AdminState>()),
-              );
-              if (res == true) _load();
+          // Add Issue / Return
+          PopupMenuButton<String>(
+            tooltip: 'Log an issue or return',
+            position: PopupMenuPosition.under,
+            onSelected: (value) async {
+              if (value == 'vendor') {
+                final res = await showDialog(
+                  context: context,
+                  builder: (ctx) => VendorIssueDialog(state: context.read<AdminState>()),
+                );
+                if (res == true) _load();
+              } else if (value == 'customer') {
+                final res = await showDialog(
+                  context: context,
+                  builder: (ctx) => CustomerReturnDialog(state: context.read<AdminState>()),
+                );
+                if (res == true) _load();
+              }
             },
+            itemBuilder: (ctx) => [
+              const PopupMenuItem(
+                value: 'customer',
+                child: Row(
+                  children: [
+                    Icon(Icons.assignment_return_rounded, size: 18, color: BoutiqueColors.textPrimary),
+                    SizedBox(width: 8),
+                    Text('Log Customer Return'),
+                  ],
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'vendor',
+                child: Row(
+                  children: [
+                    Icon(Icons.local_shipping_outlined, size: 18, color: BoutiqueColors.textPrimary),
+                    SizedBox(width: 8),
+                    Text('Log Vendor Issue'),
+                  ],
+                ),
+              ),
+            ],
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              decoration: BoxDecoration(
+                color: BoutiqueColors.accent,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.add, size: 18, color: Colors.white),
+                  SizedBox(width: 6),
+                  Text('Log Issue / Return', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 13)),
+                ],
+              ),
+            ),
           ),
           const SizedBox(width: 8),
           // Refresh
@@ -452,10 +492,10 @@ class _IssueReportScreenState extends State<IssueReportScreen> {
   // ── Table Header ───────────────────────────────────────────────────────────
   Widget _tableHeader() {
     const cols = [
-      'Date', 'Type', 'Product', 'Customer / Vendor',
+      'Date', 'Product',
       'Qty', 'Issue / Reason', 'Refund (₹)', 'Status / Action', ''
     ];
-    const flexes = [2, 2, 4, 3, 1, 3, 2, 2, 1];
+    const flexes = [2, 4, 1, 3, 2, 2, 1];
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       decoration: const BoxDecoration(
@@ -516,41 +556,10 @@ class _IssueReportScreenState extends State<IssueReportScreen> {
         children: [
           // Date
           Expanded(flex: 2, child: _cell(r['date']?.toString() ?? '—')),
-          // Type badge
-          Expanded(
-            flex: 2,
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: isVendor
-                      ? const Color(0xFFFFF3E0) // amber-ish
-                      : const Color(0xFFE3F2FD), // blue-ish
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Text(
-                  isVendor ? 'Vendor Issue' : 'Customer Return',
-                  style: TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.bold,
-                    color: isVendor
-                        ? const Color(0xFFE65100)
-                        : const Color(0xFF1565C0),
-                  ),
-                ),
-              ),
-            ),
-          ),
           // Product
           Expanded(
               flex: 4,
               child: _cell(r['productName']?.toString() ?? '—', bold: true)),
-          // Customer / Vendor
-          Expanded(
-              flex: 3,
-              child: _cell(r['counterpart']?.toString() ?? '—')),
           // Qty
           Expanded(
               flex: 1,

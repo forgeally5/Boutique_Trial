@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'package:printing/printing.dart';
+import 'package:pdf/pdf.dart';
 import '../../state/admin_state.dart';
 import '../../utils/boutique_theme.dart';
+import '../../utils/boutique_pdf_generator.dart';
 import '../../utils/pdf_invoice_api.dart';
 
 class BillHistoryScreen extends StatefulWidget {
@@ -272,6 +274,18 @@ class _BillHistoryScreenState extends State<BillHistoryScreen> {
     }
   }
 
+  Future<void> _printInvoice(Map<String, dynamic> bill) async {
+    try {
+      final bytes = await BoutiquePdfGenerator.generate(bill);
+      await Printing.layoutPdf(
+        onLayout: (PdfPageFormat format) async => bytes,
+        name: 'Invoice_${bill['billNo'] ?? 'Unknown'}',
+      );
+    } catch (e) {
+      if (mounted) BoutiqueToast.showError(context, 'Failed to print invoice: $e');
+    }
+  }
+
   void _viewBill(Map<String, dynamic> bill) {
     showDialog(
       context: context,
@@ -443,75 +457,24 @@ class _BillDetailDialog extends StatelessWidget {
   const _BillDetailDialog({required this.bill});
 
   Future<void> _handlePrintPdf(BuildContext context) async {
-    final invoiceData = SalesInvoiceData(
-      customerName: bill['customerName']?.toString() ?? 'Customer',
-      customerMobile: bill['customerMobile']?.toString() ?? '',
-      customerAddress: '',
-      customerState: '',
-      invoiceNo: bill['billNo']?.toString() ?? 'FA-0001',
-      date: bill['billDate'] != null ? DateFormat('dd/MM/yyyy').format((bill['billDate'] as Timestamp).toDate()) : '',
-      placeOfSupply: '',
-      items: [],
-      totalPcs: 1,
-      totalGrossWt: 0,
-      totalNetWt: 0,
-      totalMetalAmt: 0,
-      totalAmount: (bill['totalPayable'] as num?)?.toDouble() ?? 0,
-      discountAmt: (bill['extraDiscountAmount'] as num?)?.toDouble() ?? 0,
-      taxableAmount: (bill['subtotal'] as num?)?.toDouble() ?? 0,
-      cgstAmt: 0,
-      sgstAmt: 0,
-      igstAmt: 0,
-      roundOff: 0,
-      grossAmount: (bill['totalPayable'] as num?)?.toDouble() ?? 0,
-      receivedAmt: (bill['amountReceived'] as num?)?.toDouble() ?? 0,
-      amountInWords: PdfInvoiceApi.numberToWords((bill['totalPayable'] as num?)?.toDouble() ?? 0),
-      cardDetails: bill['paymentMode']?.toString() ?? '',
-      customerPan: '',
-      narration: '',
-      dueAmount: 0,
-      receiptDetails: '',
-      credits: '',
-    );
-    final bytes = await PdfInvoiceApi.generate(invoiceData);
-    await Printing.layoutPdf(onLayout: (_) => bytes);
+    try {
+      final bytes = await BoutiquePdfGenerator.generate(bill);
+      await Printing.layoutPdf(onLayout: (_) async => bytes);
+    } catch (e) {
+      if (context.mounted) BoutiqueToast.showError(context, 'Failed to print invoice: $e');
+    }
   }
 
   Future<void> _handleSavePdf(BuildContext context) async {
-    final invoiceData = SalesInvoiceData(
-      customerName: bill['customerName']?.toString() ?? 'Customer',
-      customerMobile: bill['customerMobile']?.toString() ?? '',
-      customerAddress: '',
-      customerState: '',
-      invoiceNo: bill['billNo']?.toString() ?? 'FA-0001',
-      date: bill['billDate'] != null ? DateFormat('dd/MM/yyyy').format((bill['billDate'] as Timestamp).toDate()) : '',
-      placeOfSupply: '',
-      items: [],
-      totalPcs: 1,
-      totalGrossWt: 0,
-      totalNetWt: 0,
-      totalMetalAmt: 0,
-      totalAmount: (bill['totalPayable'] as num?)?.toDouble() ?? 0,
-      discountAmt: (bill['extraDiscountAmount'] as num?)?.toDouble() ?? 0,
-      taxableAmount: (bill['subtotal'] as num?)?.toDouble() ?? 0,
-      cgstAmt: 0,
-      sgstAmt: 0,
-      igstAmt: 0,
-      roundOff: 0,
-      grossAmount: (bill['totalPayable'] as num?)?.toDouble() ?? 0,
-      receivedAmt: (bill['amountReceived'] as num?)?.toDouble() ?? 0,
-      amountInWords: PdfInvoiceApi.numberToWords((bill['totalPayable'] as num?)?.toDouble() ?? 0),
-      cardDetails: bill['paymentMode']?.toString() ?? '',
-      customerPan: '',
-      narration: '',
-      dueAmount: 0,
-      receiptDetails: '',
-      credits: '',
-    );
-    final bytes = await PdfInvoiceApi.generate(invoiceData);
-    final billNo = bill['billNo']?.toString() ?? 'invoice';
-    // Save/download PDF to local system
-    await Printing.sharePdf(bytes: bytes, filename: '$billNo.pdf');
+    try {
+      final bytes = await BoutiquePdfGenerator.generate(bill);
+      await Printing.sharePdf(
+        bytes: bytes,
+        filename: 'Invoice_${bill['billNo'] ?? 'Unknown'}.pdf',
+      );
+    } catch (e) {
+      if (context.mounted) BoutiqueToast.showError(context, 'Failed to download invoice: $e');
+    }
   }
 
   @override

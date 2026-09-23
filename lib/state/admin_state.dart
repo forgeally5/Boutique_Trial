@@ -133,6 +133,39 @@ class AdminState extends ChangeNotifier {
   String get selectedCategory => _selectedCategory;
   String get selectedStatus => _selectedStatus;
 
+  List<String> _issueTypes = [
+    'Damaged', 'Defective', 'Wrong Item Sent', 'Quality Issue', 'Broken in Transit', 'Other'
+  ];
+  List<String> get issueTypes => _issueTypes;
+
+  Future<void> fetchIssueTypes() async {
+    try {
+      final doc = await _firestore.collection('settings').doc('vendor_issue_types').get();
+      if (doc.exists && doc.data()!.containsKey('types')) {
+        _issueTypes = List<String>.from(doc.data()!['types']);
+      } else {
+        await _firestore.collection('settings').doc('vendor_issue_types').set({
+          'types': _issueTypes,
+        }, SetOptions(merge: true));
+      }
+      notifyListeners();
+    } catch (e) {
+      debugPrint("Error fetching issue types: $e");
+    }
+  }
+
+  Future<void> updateIssueTypes(List<String> newTypes) async {
+    try {
+      await _firestore.collection('settings').doc('vendor_issue_types').set({
+        'types': newTypes,
+      }, SetOptions(merge: true));
+      _issueTypes = newTypes;
+      notifyListeners();
+    } catch (e) {
+      debugPrint("Error updating issue types: $e");
+    }
+  }
+
   void updateStatus(String status) {
     _selectedStatus = status;
     notifyListeners();
@@ -182,6 +215,7 @@ class AdminState extends ChangeNotifier {
     _listenToLiveRates();
     fetchProducts();
     fetchMetalGroups();
+    fetchIssueTypes();
     _initConnectivityListener();
   }
 
@@ -277,15 +311,39 @@ class AdminState extends ChangeNotifier {
   final List<String> _dynamicCategories = [];
   final List<String> _dynamicMaterials = [];
   final List<String> _dynamicUnits = [];
+  final List<String> _dynamicItemNames = [];
 
   final Set<String> _deletedCategories = {};
   final Set<String> _deletedMaterials = {};
   final Set<String> _deletedUnits = {};
+  final Set<String> _deletedItemNames = {};
 
   final List<String> _defaultMaterials = [
     'Brass', 'Silver', 'Panchaloha', 'Wood', 'Clay', 'Marble', 'Plastic/Steel', 'N/A'
   ];
   final List<String> _defaultUnits = ['Piece', 'Set', 'Pair', 'Box', 'Packet'];
+  final List<String> _defaultItemNames = [
+    'Ganesh Idol',
+    'Lakshmi Idol',
+    'Saraswati Idol',
+    'Murugan Idol',
+    'Krishna Idol',
+    'Shiva Parvathi Idol',
+    'Hanuman Idol',
+    'Diya / Vilakku',
+    'Kamatchi Vilakku',
+    'Annam Vilakku',
+    'Pooja Thali Set',
+    'Agarbathi Stand',
+    'Dhoop / Sambrani Stand',
+    'Bell / Ghanti',
+    'Kalasam',
+    'Chowki / Peeta',
+    'Panchapatra Udharani',
+    'Photo Frame',
+    'Hanging Diya',
+    'Kumkum Box',
+  ];
 
   List<String> get categories {
     final set = <String>{
@@ -315,6 +373,17 @@ class AdminState extends ChangeNotifier {
     return set.where((u) => !_deletedUnits.contains(u)).toList();
   }
 
+  List<String> get itemNames {
+    final set = <String>{
+      ..._defaultItemNames,
+      ..._dynamicItemNames,
+      ..._products.map((p) => p.name.trim()).where((n) => n.isNotEmpty)
+    };
+    final list = set.where((n) => !_deletedItemNames.contains(n)).toList();
+    list.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    return list;
+  }
+
   void addCategory(String newCat) {
     final trimmed = newCat.trim();
     if (trimmed.isNotEmpty) {
@@ -327,6 +396,30 @@ class AdminState extends ChangeNotifier {
       }
       notifyListeners();
     }
+  }
+
+  Future<void> renameCategory(String oldCat, String newCat) async {
+    final oldTrimmed = oldCat.trim();
+    final newTrimmed = newCat.trim();
+    if (newTrimmed.isEmpty || oldTrimmed == newTrimmed) return;
+
+    _deletedCategories.remove(newTrimmed);
+    _deletedCategories.add(oldTrimmed);
+    _dynamicCategories.remove(oldTrimmed);
+    if (!_dynamicCategories.contains(newTrimmed)) {
+      _dynamicCategories.add(newTrimmed);
+    }
+    notifyListeners();
+
+    try {
+      final snap = await _firestore.collection('categories').where('name', isEqualTo: oldTrimmed).get();
+      for (var doc in snap.docs) {
+        await doc.reference.update({'name': newTrimmed});
+      }
+      if (snap.docs.isEmpty) {
+        await _firestore.collection('categories').add({'name': newTrimmed, 'createdAt': FieldValue.serverTimestamp()});
+      }
+    } catch (_) {}
   }
 
   Future<void> deleteCategory(String cat) async {
@@ -356,6 +449,30 @@ class AdminState extends ChangeNotifier {
     }
   }
 
+  Future<void> renameMaterial(String oldMat, String newMat) async {
+    final oldTrimmed = oldMat.trim();
+    final newTrimmed = newMat.trim();
+    if (newTrimmed.isEmpty || oldTrimmed == newTrimmed) return;
+
+    _deletedMaterials.remove(newTrimmed);
+    _deletedMaterials.add(oldTrimmed);
+    _dynamicMaterials.remove(oldTrimmed);
+    if (!_dynamicMaterials.contains(newTrimmed)) {
+      _dynamicMaterials.add(newTrimmed);
+    }
+    notifyListeners();
+
+    try {
+      final snap = await _firestore.collection('materials').where('name', isEqualTo: oldTrimmed).get();
+      for (var doc in snap.docs) {
+        await doc.reference.update({'name': newTrimmed});
+      }
+      if (snap.docs.isEmpty) {
+        await _firestore.collection('materials').add({'name': newTrimmed, 'createdAt': FieldValue.serverTimestamp()});
+      }
+    } catch (_) {}
+  }
+
   Future<void> deleteMaterial(String mat) async {
     final trimmed = mat.trim();
     _dynamicMaterials.remove(trimmed);
@@ -383,6 +500,30 @@ class AdminState extends ChangeNotifier {
     }
   }
 
+  Future<void> renameUnit(String oldUnit, String newUnit) async {
+    final oldTrimmed = oldUnit.trim();
+    final newTrimmed = newUnit.trim();
+    if (newTrimmed.isEmpty || oldTrimmed == newTrimmed) return;
+
+    _deletedUnits.remove(newTrimmed);
+    _deletedUnits.add(oldTrimmed);
+    _dynamicUnits.remove(oldTrimmed);
+    if (!_dynamicUnits.contains(newTrimmed)) {
+      _dynamicUnits.add(newTrimmed);
+    }
+    notifyListeners();
+
+    try {
+      final snap = await _firestore.collection('units').where('name', isEqualTo: oldTrimmed).get();
+      for (var doc in snap.docs) {
+        await doc.reference.update({'name': newTrimmed});
+      }
+      if (snap.docs.isEmpty) {
+        await _firestore.collection('units').add({'name': newTrimmed, 'createdAt': FieldValue.serverTimestamp()});
+      }
+    } catch (_) {}
+  }
+
   Future<void> deleteUnit(String unit) async {
     final trimmed = unit.trim();
     _dynamicUnits.remove(trimmed);
@@ -390,6 +531,57 @@ class AdminState extends ChangeNotifier {
     notifyListeners();
     try {
       final snap = await _firestore.collection('units').where('name', isEqualTo: trimmed).get();
+      for (var doc in snap.docs) {
+        await doc.reference.delete();
+      }
+    } catch (_) {}
+  }
+
+  void addItemName(String newName) {
+    final trimmed = newName.trim();
+    if (trimmed.isNotEmpty) {
+      _deletedItemNames.remove(trimmed);
+      if (!_dynamicItemNames.contains(trimmed)) {
+        _dynamicItemNames.add(trimmed);
+        try {
+          _firestore.collection('item_names').add({'name': trimmed, 'createdAt': FieldValue.serverTimestamp()});
+        } catch (_) {}
+      }
+      notifyListeners();
+    }
+  }
+
+  Future<void> renameItemName(String oldName, String newName) async {
+    final oldTrimmed = oldName.trim();
+    final newTrimmed = newName.trim();
+    if (newTrimmed.isEmpty || oldTrimmed == newTrimmed) return;
+
+    _deletedItemNames.remove(newTrimmed);
+    _deletedItemNames.add(oldTrimmed);
+    _dynamicItemNames.remove(oldTrimmed);
+    if (!_dynamicItemNames.contains(newTrimmed)) {
+      _dynamicItemNames.add(newTrimmed);
+    }
+    notifyListeners();
+
+    try {
+      final snap = await _firestore.collection('item_names').where('name', isEqualTo: oldTrimmed).get();
+      for (var doc in snap.docs) {
+        await doc.reference.update({'name': newTrimmed});
+      }
+      if (snap.docs.isEmpty) {
+        await _firestore.collection('item_names').add({'name': newTrimmed, 'createdAt': FieldValue.serverTimestamp()});
+      }
+    } catch (_) {}
+  }
+
+  Future<void> deleteItemName(String name) async {
+    final trimmed = name.trim();
+    _dynamicItemNames.remove(trimmed);
+    _deletedItemNames.add(trimmed);
+    notifyListeners();
+    try {
+      final snap = await _firestore.collection('item_names').where('name', isEqualTo: trimmed).get();
       for (var doc in snap.docs) {
         await doc.reference.delete();
       }
@@ -428,6 +620,17 @@ class AdminState extends ChangeNotifier {
           final name = doc.data()['name']?.toString() ?? '';
           if (name.isNotEmpty && !_dynamicUnits.contains(name) && !_deletedUnits.contains(name)) {
             _dynamicUnits.add(name);
+          }
+        }
+        _debouncedNotify();
+      });
+
+      // Fetch item names
+      _firestore.collection('item_names').snapshots().listen((snap) {
+        for (var doc in snap.docs) {
+          final name = doc.data()['name']?.toString() ?? '';
+          if (name.isNotEmpty && !_dynamicItemNames.contains(name) && !_deletedItemNames.contains(name)) {
+            _dynamicItemNames.add(name);
           }
         }
         _debouncedNotify();
@@ -864,10 +1067,27 @@ class AdminState extends ChangeNotifier {
   // --- Vendor Issues Logic ---
 
   Future<void> logVendorIssue(VendorIssue issue) async {
-    // Save to vendor_issues collection
-    final docRef = _firestore.collection('vendor_issues').doc();
+    String nextId = 'VI-001';
+    try {
+      final snap = await _firestore.collection('vendor_issues').orderBy('createdAt', descending: true).limit(1).get();
+      if (snap.docs.isNotEmpty) {
+        final lastId = snap.docs.first.id;
+        final match = RegExp(r'\d+').firstMatch(lastId);
+        if (match != null) {
+          final val = int.tryParse(match.group(0)!) ?? 0;
+          nextId = 'VI-${(val + 1).toString().padLeft(3, '0')}';
+        }
+      }
+    } catch (e) {
+      debugPrint("Error generating issue ID: $e");
+    }
+
+    final docRef = _firestore.collection('vendor_issues').doc(nextId);
     final newIssue = issue.copyWith(id: docRef.id);
-    await docRef.set(newIssue.toJson());
+    await docRef.set({
+      ...newIssue.toJson(),
+      'createdAt': FieldValue.serverTimestamp(),
+    });
 
     // Update product stock logic - deduct issue quantity from stock immediately
     final product = lookupProduct(issue.tagId);
@@ -948,6 +1168,88 @@ class AdminState extends ChangeNotifier {
         status: newStatus,
       );
       await updateProduct(updatedProduct);
+    }
+  }
+
+  Future<void> processCustomerReturn({
+    required String originalBillNo,
+    required String customerName,
+    required String customerMobile,
+    required String returnReason,
+    required double totalRefund,
+    required String paymentMode,
+    required List<Map<String, dynamic>> items,
+  }) async {
+    String nextId = 'RT-001';
+    try {
+      final snap = await _firestore.collection('bills')
+          .orderBy('createdAt', descending: true)
+          .limit(100)
+          .get();
+      final returnBills = snap.docs.where((d) => d.data()['billType'] == 'Return').toList();
+      if (returnBills.isNotEmpty) {
+        final lastId = returnBills.first.data()['billNo'] as String? ?? '';
+        final match = RegExp(r'\d+').firstMatch(lastId);
+        if (match != null) {
+          final val = int.tryParse(match.group(0)!) ?? 0;
+          nextId = 'RT-${(val + 1).toString().padLeft(3, '0')}';
+        }
+      }
+    } catch (e) {
+      debugPrint("Error generating return bill no: $e");
+    }
+
+    final billData = {
+      'billNo': nextId,
+      'originalBillNo': originalBillNo,
+      'billType': 'Return',
+      'customerName': customerName,
+      'customerMobile': customerMobile,
+      'billDate': FieldValue.serverTimestamp(),
+      'createdAt': FieldValue.serverTimestamp(),
+      'items': items,
+      'totalPayable': totalRefund,
+      'returnReason': returnReason,
+      'returnStatus': 'Processed',
+      'paymentMode': paymentMode,
+    };
+
+    await _firestore.collection('bills').add(billData);
+
+    for (final item in items) {
+      final tagId = item['tagId'];
+      final qty = (item['qty'] as num).toInt();
+      final condition = item['condition'] as String;
+
+      final product = lookupProduct(tagId);
+      if (product != null) {
+        final newQty = product.quantity + qty;
+        String newStatus;
+        if (newQty == 0) newStatus = 'Out of Stock';
+        else if (newQty < 5) newStatus = 'Low Stock';
+        else newStatus = 'In Stock';
+        
+        await updateProduct(product.copyWith(
+          quantity: newQty,
+          status: newStatus,
+        ));
+        
+        if (condition == 'Defective') {
+          final issue = VendorIssue(
+             id: '',
+             tagId: product.tagId,
+             productName: product.name,
+             vendor: product.vendor,
+             quantity: qty,
+             issueType: 'Customer Defect Return',
+             actionTaken: 'Pending',
+             dateReported: DateTime.now(),
+             notes: 'Returned by customer (Bill: $originalBillNo). Reason: $returnReason',
+             refundAmount: 0.0,
+          );
+          await logVendorIssue(issue);
+        }
+      }
     }
   }
 }

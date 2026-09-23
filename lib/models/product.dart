@@ -42,6 +42,8 @@ class Product {
 
   // Flags
   final bool isFestivalStock;
+  final bool isReserved;
+  final String reservedFor;
 
   final Map<String, dynamic>? rawJson;
 
@@ -73,6 +75,8 @@ class Product {
     this.finalPrice = 0.0,
     this.gstRate = 0.0,
     this.isFestivalStock = false,
+    this.isReserved = false,
+    this.reservedFor = '',
     this.rawJson,
   });
 
@@ -101,6 +105,8 @@ class Product {
     double? finalPrice,
     double? gstRate,
     bool? isFestivalStock,
+    bool? isReserved,
+    String? reservedFor,
     Map<String, dynamic>? rawJson,
   }) {
     return Product(
@@ -128,6 +134,8 @@ class Product {
       finalPrice: finalPrice ?? this.finalPrice,
       gstRate: gstRate ?? this.gstRate,
       isFestivalStock: isFestivalStock ?? this.isFestivalStock,
+      isReserved: isReserved ?? this.isReserved,
+      reservedFor: reservedFor ?? this.reservedFor,
       rawJson: rawJson ?? this.rawJson,
     );
   }
@@ -158,6 +166,8 @@ class Product {
       'finalPrice': finalPrice,
       'gstRate': gstRate,
       'isFestivalStock': isFestivalStock,
+      'isReserved': isReserved,
+      'reservedFor': reservedFor,
     };
   }
 
@@ -198,6 +208,8 @@ class Product {
       finalPrice: fp,
       gstRate: (json['gstRate'] as num?)?.toDouble() ?? 0.0,
       isFestivalStock: json['isFestivalStock'] as bool? ?? false,
+      isReserved: json['isReserved'] as bool? ?? false,
+      reservedFor: json['reservedFor'] as String? ?? '',
       rawJson: json,
     );
   }

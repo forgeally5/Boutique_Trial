@@ -18,7 +18,6 @@ class _StockReportScreenState extends State<StockReportScreen> {
   final _searchCtrl = TextEditingController();
   String _categoryFilter = 'All';
   String _statusFilter = 'All';
-  String _pricingFilter = 'All';
   bool _loading = false;
 
   List<Map<String, dynamic>> _allProducts = [];
@@ -26,7 +25,6 @@ class _StockReportScreenState extends State<StockReportScreen> {
   List<String> _categories = ['All'];
 
   final _statusOptions = ['All', 'In Stock', 'Low Stock', 'Out of Stock', 'Damaged/Defective'];
-  final _pricingOptions = ['All', 'Quantity-Based', 'Weight-Based'];
 
   @override
   void initState() {
@@ -115,8 +113,6 @@ class _StockReportScreenState extends State<StockReportScreen> {
             r['category']?.toString() != _categoryFilter) { return false; }
         if (_statusFilter != 'All' &&
             r['status']?.toString() != _statusFilter) { return false; }
-        if (_pricingFilter != 'All' &&
-            r['pricingType']?.toString() != _pricingFilter) { return false; }
         return true;
       }).toList();
     });
@@ -241,28 +237,6 @@ class _StockReportScreenState extends State<StockReportScreen> {
                     },
                   ),
                 ),
-                const SizedBox(width: 12),
-                // Pricing Type
-                Expanded(
-                  flex: 2,
-                  child: DropdownButtonFormField<String>(
-                    initialValue: _pricingFilter,
-                    style: const TextStyle(
-                        fontSize: 13, color: BoutiqueColors.textPrimary),
-                    decoration:
-                        BoutiqueInputDecoration.field(hintText: 'Pricing Type'),
-                    items: _pricingOptions
-                        .map((p) =>
-                            DropdownMenuItem(value: p, child: Text(p)))
-                        .toList(),
-                    onChanged: (v) {
-                      if (v != null) {
-                        setState(() => _pricingFilter = v);
-                        _applyFilters();
-                      }
-                    },
-                  ),
-                ),
                 const SizedBox(width: 8),
                 IconButton(
                   icon: const Icon(Icons.refresh_rounded,
@@ -352,8 +326,8 @@ class _StockReportScreenState extends State<StockReportScreen> {
   Widget _tableHeader() {
     const cols = [
       'S.No', 'Tag ID', 'Product Name', 'Category',
-      'Type', 'Qty', 'Unit', 'MRP (₹)', 'Sell Price (₹)',
-      'Stock Value (₹)', 'Festival', 'Status'
+      'Qty', 'Unit', 'MRP (₹)', 'Sell Price (₹)',
+      'Stock Value (₹)', 'Status'
     ];
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
@@ -380,7 +354,7 @@ class _StockReportScreenState extends State<StockReportScreen> {
   }
 
   int _flex(int idx) {
-    const flexes = [1, 2, 4, 2, 2, 1, 1, 2, 2, 2, 1, 2];
+    const flexes = [1, 2, 4, 2, 1, 1, 2, 2, 2, 2];
     return flexes[idx];
   }
 
@@ -429,9 +403,6 @@ class _StockReportScreenState extends State<StockReportScreen> {
               child: _cell(r['name']?.toString() ?? '—', bold: true)),
           Expanded(flex: 2, child: _cell(r['category']?.toString() ?? '—')),
           Expanded(
-              flex: 2,
-              child: _cell(r['pricingType']?.toString() ?? '—')),
-          Expanded(
               flex: 1,
               child: _cell('$qty',
                   color: qty == 0
@@ -452,16 +423,6 @@ class _StockReportScreenState extends State<StockReportScreen> {
               flex: 2,
               child: _cell('₹${_numFmt.format(stockVal)}',
                   color: BoutiqueColors.textPrimary, bold: true)),
-          Expanded(
-            flex: 1,
-            child: Icon(
-              isFestival ? Icons.celebration_rounded : Icons.remove,
-              size: 16,
-              color: isFestival
-                  ? BoutiqueColors.gold
-                  : BoutiqueColors.textMuted,
-            ),
-          ),
           Expanded(
             flex: 2,
             child: Container(
