@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../state/admin_state.dart';
 import 'billing/create_bill_screen.dart';
 import 'billing/bill_history_screen.dart';
+import 'billing/customer_ledger_screen.dart';
 
 const _brown = Color(0xFF3E2723);
 const _brownLight = Color(0xFF8D6E63);
@@ -24,7 +25,7 @@ class BillingView extends StatefulWidget {
 }
 
 class _BillingViewState extends State<BillingView> {
-  // 0 = Create Bill, 1 = Bill History
+  // 0 = Create Bill, 1 = Bill History, 2 = Customer Ledger
   int _tab = 0;
 
   @override
@@ -43,6 +44,8 @@ class _BillingViewState extends State<BillingView> {
               _buildTab(0, Icons.receipt_long_rounded, 'Create Bill'),
               const SizedBox(width: 4),
               _buildTab(1, Icons.history_rounded, 'Bill History'),
+              const SizedBox(width: 4),
+              _buildTab(2, Icons.account_balance_wallet_rounded, 'Customer Ledger'),
             ],
           ),
         ),
@@ -62,6 +65,8 @@ class _BillingViewState extends State<BillingView> {
               ),
               if (_tab == 1)
                 BillHistoryScreen(state: widget.state),
+              if (_tab == 2)
+                CustomerLedgerScreen(state: widget.state),
             ],
           ),
         ),

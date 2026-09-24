@@ -199,9 +199,10 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
       final manualTotal = double.tryParse(_adjustmentCtrl.text);
       final adjustment = manualTotal != null ? manualTotal - computedTotal : 0.0;
       final totalPayable = (computedTotal + adjustment).clamp(0.0, double.infinity);
-      final amountReceived = _billType == 'Advance Payment'
-          ? (double.tryParse(_amountReceivedCtrl.text) ?? totalPayable)
-          : totalPayable;
+      final splitSum = splitPayments.fold<double>(0, (s, p) => s + (double.tryParse(p['amount'].toString()) ?? 0));
+      final amountReceived = isSplit
+          ? splitSum
+          : (double.tryParse(_amountReceivedCtrl.text) ?? totalPayable);
       final pendingBalance = (totalPayable - amountReceived).clamp(0.0, double.infinity);
 
       final billData = {
@@ -1340,9 +1341,10 @@ class _BillSummaryPanelState extends State<_BillSummaryPanel> {
         final adjustment = manualTotal != null ? manualTotal - computedTotal : 0.0;
         final total = (computedTotal + adjustment).clamp(0.0, double.infinity);
 
-        final targetAmount = widget.billType == 'Advance Payment'
-            ? (double.tryParse(widget.amountReceivedCtrl.text) ?? total)
-            : total;
+        final splitSum = _splitPayments.fold<double>(0, (s, p) => s + (double.tryParse((p['amountCtrl'] as TextEditingController).text) ?? 0));
+        final targetAmount = _isSplitPayment 
+            ? total 
+            : (double.tryParse(widget.amountReceivedCtrl.text) ?? total);
 
         double allocated = 0;
         if (_isSplitPayment) {
@@ -1469,24 +1471,24 @@ class _BillSummaryPanelState extends State<_BillSummaryPanel> {
             ),
             const SizedBox(height: 24),
             
-            if (widget.billType == 'Advance Payment') ...[
+            if (!_isSplitPayment) ...[
               Row(
                 children: [
-                  const Text('Advance Received', style: TextStyle(fontFamily: 'serif', fontSize: 16, fontWeight: FontWeight.bold, color: BoutiqueColors.textPrimary)),
+                  Text(widget.billType == 'Advance Payment' ? 'Advance Received' : 'Amount Received', style: const TextStyle(fontFamily: 'serif', fontSize: 15, fontWeight: FontWeight.bold, color: BoutiqueColors.textPrimary)),
                   const Spacer(),
                   SizedBox(
-                    width: 110,
+                    width: 140,
                     height: 38,
                     child: TextField(
                       controller: widget.amountReceivedCtrl,
                       keyboardType: const TextInputType.numberWithOptions(decimal: true),
                       style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: BoutiqueColors.accent),
-                      decoration: BoutiqueInputDecoration.field(hintText: 'e.g. 500'),
+                      decoration: BoutiqueInputDecoration.field(hintText: 'Empty = Full Pay'),
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 16),
             ],
 
             const Text('Payment Details',
@@ -1495,23 +1497,29 @@ class _BillSummaryPanelState extends State<_BillSummaryPanel> {
             Row(
               children: [
                 Expanded(
-                  child: RadioListTile<bool>(
-                    value: false,
-                    groupValue: _isSplitPayment,
-                    title: const Text('Single', style: TextStyle(fontSize: 13)),
-                    contentPadding: EdgeInsets.zero,
-                    dense: true,
-                    onChanged: (v) => setState(() => _isSplitPayment = v!),
+                  child: Material(
+                    color: Colors.transparent,
+                    child: RadioListTile<bool>(
+                      value: false,
+                      groupValue: _isSplitPayment,
+                      title: const Text('Single', style: TextStyle(fontSize: 13)),
+                      contentPadding: EdgeInsets.zero,
+                      dense: true,
+                      onChanged: (v) => setState(() => _isSplitPayment = v!),
+                    ),
                   ),
                 ),
                 Expanded(
-                  child: RadioListTile<bool>(
-                    value: true,
-                    groupValue: _isSplitPayment,
-                    title: const Text('Split', style: TextStyle(fontSize: 13)),
-                    contentPadding: EdgeInsets.zero,
-                    dense: true,
-                    onChanged: (v) => setState(() => _isSplitPayment = v!),
+                  child: Material(
+                    color: Colors.transparent,
+                    child: RadioListTile<bool>(
+                      value: true,
+                      groupValue: _isSplitPayment,
+                      title: const Text('Split', style: TextStyle(fontSize: 13)),
+                      contentPadding: EdgeInsets.zero,
+                      dense: true,
+                      onChanged: (v) => setState(() => _isSplitPayment = v!),
+                    ),
                   ),
                 ),
               ],

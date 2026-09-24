@@ -588,22 +588,23 @@ class _BillHistoryScreenState extends State<BillHistoryScreen> {
     final pendingBalance = (b['pendingBalance'] as num?)?.toDouble() ?? (totalPayable - amountReceived).clamp(0.0, double.infinity);
     final isFullySettled = isAdvance && pendingBalance <= 0;
     final hasDue = isAdvance && pendingBalance > 0;
-
-    return ListTile(
-      onTap: () => _viewBill(b),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
-      leading: Container(
-        padding: const EdgeInsets.all(10),
-        decoration: BoxDecoration(
-          color: hasDue
-              ? const Color(0xFFFFF3E0)
-              : isFullySettled
-                  ? const Color(0xFFE8F5E9)
-                  : BoutiqueColors.accentSoft,
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Icon(
-          hasDue
+    return Material(
+      color: Colors.transparent,
+      child: ListTile(
+        onTap: () => _viewBill(b),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
+        leading: Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: hasDue
+                ? const Color(0xFFFFF3E0)
+                : isFullySettled
+                    ? const Color(0xFFE8F5E9)
+                    : BoutiqueColors.accentSoft,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Icon(
+            hasDue
               ? Icons.pending_actions_rounded
               : isFullySettled
                   ? Icons.verified_rounded
@@ -690,10 +691,12 @@ class _BillHistoryScreenState extends State<BillHistoryScreen> {
           ),
         ],
       ),
-    );
-  }
+    ),
+  );
+}
 
-  // ── Professional View-mode dropdown ───────────────────────────────────────
+// ── Professional View-mode dropdown ───────────────────────────────────────
+
   Widget _buildViewDropdown() {
     final accent = BoutiqueColors.accent;
     const Map<String, Color> colors = {

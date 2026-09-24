@@ -17,6 +17,7 @@ class Product {
   final String vendor;
   final String notes;
   final String pricingType; // "Weight-Based" or "Quantity-Based"
+  final String imageUrl;
 
   // Weight-based fields
   final double grossWeight;
@@ -82,6 +83,7 @@ class Product {
     this.isFestivalStock = false,
     this.isReserved = false,
     this.reservedFor = '',
+    this.imageUrl = '',
     this.rawJson,
   });
 
@@ -114,6 +116,7 @@ class Product {
     bool? isFestivalStock,
     bool? isReserved,
     String? reservedFor,
+    String? imageUrl,
     Map<String, dynamic>? rawJson,
   }) {
     return Product(
@@ -145,6 +148,7 @@ class Product {
       isFestivalStock: isFestivalStock ?? this.isFestivalStock,
       isReserved: isReserved ?? this.isReserved,
       reservedFor: reservedFor ?? this.reservedFor,
+      imageUrl: imageUrl ?? this.imageUrl,
       rawJson: rawJson ?? this.rawJson,
     );
   }
@@ -179,6 +183,7 @@ class Product {
       'isFestivalStock': isFestivalStock,
       'isReserved': isReserved,
       'reservedFor': reservedFor,
+      'imageUrl': imageUrl,
     };
   }
 
@@ -223,6 +228,7 @@ class Product {
       isFestivalStock: json['isFestivalStock'] as bool? ?? false,
       isReserved: json['isReserved'] as bool? ?? false,
       reservedFor: json['reservedFor'] as String? ?? '',
+      imageUrl: json['imageUrl'] as String? ?? '',
       rawJson: json,
     );
   }

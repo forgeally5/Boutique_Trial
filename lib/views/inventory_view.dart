@@ -547,10 +547,13 @@ class _InventoryViewState extends State<InventoryView> {
         decoration: BoxDecoration(
           color: BoutiqueColors.accentSoft,
           borderRadius: BorderRadius.circular(8),
+          image: p.imageUrl.isNotEmpty 
+              ? DecorationImage(image: NetworkImage(p.imageUrl), fit: BoxFit.cover)
+              : null,
         ),
-        child: const Center(
+        child: p.imageUrl.isEmpty ? const Center(
           child: Icon(Icons.inventory_2_outlined, color: BoutiqueColors.accent, size: 22),
-        ),
+        ) : null,
       ),
       title: Row(
         children: [

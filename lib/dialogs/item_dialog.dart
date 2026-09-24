@@ -4,6 +4,10 @@ import '../models/product.dart';
 import '../state/admin_state.dart';
 import '../utils/boutique_theme.dart';
 import '../utils/excel_generator.dart';
+import 'dart:io';
+import 'package:image_picker/image_picker.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'dart:typed_data';
 
 class ItemDialog extends StatefulWidget {
   final String adminEmail;
@@ -58,6 +62,11 @@ class _ItemDialogState extends State<ItemDialog> {
   bool _sellingPriceTouched = false;
   bool _quantityTouched = false;
 
+  Uint8List? _imageBytes;
+  String _imageUrl = '';
+  bool _isUploading = false;
+  final ImagePicker _picker = ImagePicker();
+
   static const _brown = Color(0xFF3E2723);
   static const _lightBrown = Color(0xFF8D6E63);
   static const _bg = Color(0xFFF9F6F0);
@@ -88,6 +97,16 @@ class _ItemDialogState extends State<ItemDialog> {
       }
     }
     return 'RM-${(maxVal + 1).toString().padLeft(3, '0')}';
+  }
+
+  Future<void> _pickImage() async {
+    final XFile? image = await _picker.pickImage(source: ImageSource.gallery);
+    if (image != null) {
+      final bytes = await image.readAsBytes();
+      setState(() {
+        _imageBytes = bytes;
+      });
+    }
   }
 
   String _itemName = '';
@@ -573,6 +592,24 @@ class _ItemDialogState extends State<ItemDialog> {
       return;
     }
 
+    if (_imageBytes != null) {
+      setState(() => _isUploading = true);
+      try {
+        String fileName = DateTime.now().millisecondsSinceEpoch.toString() + '.jpg';
+        Reference storageRef = FirebaseStorage.instance.ref().child('product_images/$fileName');
+        UploadTask uploadTask = storageRef.putData(_imageBytes!, SettableMetadata(contentType: 'image/jpeg'));
+        TaskSnapshot snapshot = await uploadTask.timeout(const Duration(seconds: 15), onTimeout: () {
+          throw Exception('Upload timed out. Please check your Firebase Storage security rules or connection.');
+        });
+        _imageUrl = await snapshot.ref.getDownloadURL();
+      } catch (e) {
+        if (mounted) BoutiqueToast.showError(context, 'Failed to upload image: $e');
+        setState(() => _isUploading = false);
+        return;
+      }
+      setState(() => _isUploading = false);
+    }
+
     final product = Product(
       tagId: _tagIdCtrl.text.trim().toUpperCase(),
       name: _nameCtrl.text.trim(),
@@ -599,6 +636,7 @@ class _ItemDialogState extends State<ItemDialog> {
       isReserved: _isReserved,
       reservedQuantity: _isReserved ? (int.tryParse(_reservedQtyCtrl.text) ?? (int.tryParse(_quantityCtrl.text) ?? 0)) : 0,
       reservedFor: _isReserved ? _reservedForCtrl.text.trim() : '',
+      imageUrl: _imageUrl,
     );
 
     try {
@@ -676,6 +714,38 @@ class _ItemDialogState extends State<ItemDialog> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+
+                    // ── Product Image ──────────────────────────
+                    Center(
+                      child: GestureDetector(
+                        onTap: _pickImage,
+                        child: Container(
+                          width: 120,
+                          height: 120,
+                          decoration: BoxDecoration(
+                            color: Colors.grey.shade200,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: _border),
+                            image: _imageBytes != null
+                                ? DecorationImage(image: MemoryImage(_imageBytes!), fit: BoxFit.cover)
+                                : (_imageUrl.isNotEmpty
+                                    ? DecorationImage(image: NetworkImage(_imageUrl), fit: BoxFit.cover)
+                                    : null),
+                          ),
+                          child: _imageBytes == null && _imageUrl.isEmpty
+                              ? const Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(Icons.add_a_photo, color: Colors.grey, size: 30),
+                                    SizedBox(height: 8),
+                                    Text('Add Photo', style: TextStyle(color: Colors.grey, fontSize: 12)),
+                                  ],
+                                )
+                              : null,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
 
                     // ── Section 1: Identification ──────────────────────────
                     _sectionHeader('Identification', Icons.badge_outlined),
@@ -1193,7 +1263,7 @@ class _ItemDialogState extends State<ItemDialog> {
                     opacity: _isFormValid ? 1.0 : 0.4,
                     duration: const Duration(milliseconds: 200),
                     child: OutlinedButton.icon(
-                      onPressed: _isFormValid ? () => _save(downloadInwardExcel: true) : null,
+                      onPressed: (_isFormValid && !_isUploading) ? () => _save(downloadInwardExcel: true) : null,
                       icon: const Icon(Icons.download_rounded, size: 16),
                       label: const Text('Save & Inward Bill (.xlsx)', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
                       style: OutlinedButton.styleFrom(
@@ -1209,11 +1279,16 @@ class _ItemDialogState extends State<ItemDialog> {
                     opacity: _isFormValid ? 1.0 : 0.4,
                     duration: const Duration(milliseconds: 200),
                     child: ElevatedButton.icon(
-                      onPressed: () => _save(downloadInwardExcel: false),
-                      icon: Icon(isEdit ? Icons.save_rounded : Icons.add_rounded, size: 18),
-                      label: Text(isEdit ? 'Update Product' : 'Save Product'),
+                      onPressed: _isUploading ? null : () => _save(downloadInwardExcel: false),
+                      icon: _isUploading 
+                          ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: _brown, strokeWidth: 2.5))
+                          : Icon(isEdit ? Icons.save_rounded : Icons.add_rounded, size: 18),
+                      label: Text(
+                        _isUploading ? 'Uploading...' : (isEdit ? 'Update Product' : 'Save Product'),
+                        style: TextStyle(color: _isUploading ? _brown : Colors.white),
+                      ),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: _brown,
+                        backgroundColor: _isUploading ? Colors.grey.shade300 : _brown,
                         foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
