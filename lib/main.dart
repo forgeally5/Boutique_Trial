@@ -12,6 +12,7 @@ import 'views/reports_view.dart';
 import 'login_page.dart';
 import 'views/widgets/connection_status_badge.dart';
 import 'utils/boutique_theme.dart';
+import 'views/master/user_management_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -203,8 +204,8 @@ class _AdminHomeShellState extends State<AdminHomeShell> {
   }
 
   // Tab index → IndexedStack position mapping
-  // 1=Inventory, 2=Billing, 3=Reports, 5=Settings
-  static const _tabToStackIndex = {1: 0, 2: 1, 3: 2, 5: 3};
+  // 1=Inventory, 2=Billing, 3=Reports, 4=Users, 5=Settings
+  static const _tabToStackIndex = {1: 0, 2: 1, 3: 2, 4: 3, 5: 4};
   int get _stackIndex => _tabToStackIndex[_activeTabIndex] ?? 0;
 
   Widget _buildSettingsView() {
@@ -565,6 +566,7 @@ class _AdminHomeShellState extends State<AdminHomeShell> {
                         _buildNavItem(1, Icons.inventory_2_outlined, 'Inventory'),
                         _buildNavItem(2, Icons.point_of_sale_rounded, 'Billing / POS'),
                         _buildNavItem(3, Icons.analytics_outlined, 'Reports'),
+                        _buildNavItem(4, Icons.manage_accounts_outlined, 'Users'),
                         _buildNavItem(5, Icons.settings_outlined, 'Settings'),
                       ],
                     ),
@@ -679,7 +681,9 @@ class _AdminHomeShellState extends State<AdminHomeShell> {
                       ),
                       // Index 2: Reports
                       const ReportsView(),
-                      // Index 3: Settings
+                      // Index 3: Users
+                      const UserManagementScreen(),
+                      // Index 4: Settings
                       _buildSettingsView(),
                     ],
                   ),
