@@ -636,6 +636,7 @@ class _ItemDialogState extends State<ItemDialog> {
       isReserved: _isReserved,
       reservedQuantity: _isReserved ? (int.tryParse(_reservedQtyCtrl.text) ?? (int.tryParse(_quantityCtrl.text) ?? 0)) : 0,
       reservedFor: _isReserved ? _reservedForCtrl.text.trim() : '',
+      addedDate: widget.initialProduct?.addedDate ?? DateTime.now(),
       imageUrl: _imageUrl,
     );
 

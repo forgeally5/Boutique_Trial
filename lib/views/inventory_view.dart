@@ -25,6 +25,7 @@ class _InventoryViewState extends State<InventoryView> {
   bool _isGridView = false;
   Product? _selectedDrawerProduct;
   final TextEditingController _searchCtrl = TextEditingController();
+  DateTimeRange? _selectedDateRange;
 
   @override
   void initState() {
@@ -60,7 +61,8 @@ class _InventoryViewState extends State<InventoryView> {
     if (identical(allProducts, _lastSourceProducts) &&
         _searchQuery == _lastSearch &&
         _selectedCategory == _lastCategory &&
-        _selectedStatus == _lastStatus) {
+        _selectedStatus == _lastStatus &&
+        _selectedDateRange == null) {
       return _cachedFilteredList.where((p) => !_filterLowStockOnly || p.quantity < 5).toList();
     }
     _lastSourceProducts = allProducts;
@@ -83,7 +85,13 @@ class _InventoryViewState extends State<InventoryView> {
                       : (_selectedStatus == 'Reserved'
                           ? (p.isReserved && p.reservedQuantity > 0)
                           : p.status == _selectedStatus))));
-      return matchesSearch && matchesCategory && matchesStatus;
+      
+      final matchesDate = _selectedDateRange == null ||
+          (p.addedDate != null &&
+              p.addedDate!.isAfter(_selectedDateRange!.start.subtract(const Duration(days: 1))) &&
+              p.addedDate!.isBefore(_selectedDateRange!.end.add(const Duration(days: 1))));
+
+      return matchesSearch && matchesCategory && matchesStatus && matchesDate;
     }).toList();
     return _cachedFilteredList.where((p) => !_filterLowStockOnly || (p.quantity > 0 && p.quantity < 5)).toList();
   }
@@ -394,6 +402,64 @@ class _InventoryViewState extends State<InventoryView> {
                           onChanged: (val) {
                             if (val != null) setState(() => _selectedStatus = val);
                           },
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      // Date Filter
+                      Expanded(
+                        flex: 2,
+                        child: InkWell(
+                          onTap: () async {
+                            final picked = await showDateRangePicker(
+                              context: context,
+                              firstDate: DateTime(2020),
+                              lastDate: DateTime.now(),
+                              initialDateRange: _selectedDateRange,
+                              builder: (context, child) {
+                                return Theme(
+                                  data: Theme.of(context).copyWith(
+                                    colorScheme: const ColorScheme.light(
+                                      primary: BoutiqueColors.accent,
+                                    ),
+                                  ),
+                                  child: child!,
+                                );
+                              },
+                            );
+                            if (picked != null) {
+                              setState(() => _selectedDateRange = picked);
+                            }
+                          },
+                          child: Container(
+                            height: 48,
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                            decoration: BoxDecoration(
+                              border: Border.all(color: BoutiqueColors.border),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.calendar_today_rounded, size: 18, color: BoutiqueColors.textSecondary),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    _selectedDateRange == null
+                                        ? 'Filter by Date Added'
+                                        : '${_selectedDateRange!.start.day}/${_selectedDateRange!.start.month} - ${_selectedDateRange!.end.day}/${_selectedDateRange!.end.month}',
+                                    style: const TextStyle(fontSize: 13, color: BoutiqueColors.textPrimary),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                if (_selectedDateRange != null)
+                                  IconButton(
+                                    icon: const Icon(Icons.close, size: 16),
+                                    onPressed: () => setState(() => _selectedDateRange = null),
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints(),
+                                  ),
+                              ],
+                            ),
+                          ),
                         ),
                       ),
                     ],

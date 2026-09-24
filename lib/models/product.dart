@@ -1,3 +1,5 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+
 String getBaseTagId(String tagId) {
   final match = RegExp(r'^(.+?)\[\d+\]$').firstMatch(tagId.trim());
   if (match != null) {
@@ -49,6 +51,8 @@ class Product {
   final bool isReserved;
   final String reservedFor;
 
+  final DateTime? addedDate;
+
   final Map<String, dynamic>? rawJson;
 
   bool get isLowStock => pricingType == 'Quantity-Based' && quantity > 0 && quantity < 5;
@@ -83,6 +87,7 @@ class Product {
     this.isFestivalStock = false,
     this.isReserved = false,
     this.reservedFor = '',
+    this.addedDate,
     this.imageUrl = '',
     this.rawJson,
   });
@@ -116,6 +121,7 @@ class Product {
     bool? isFestivalStock,
     bool? isReserved,
     String? reservedFor,
+    DateTime? addedDate,
     String? imageUrl,
     Map<String, dynamic>? rawJson,
   }) {
@@ -148,6 +154,7 @@ class Product {
       isFestivalStock: isFestivalStock ?? this.isFestivalStock,
       isReserved: isReserved ?? this.isReserved,
       reservedFor: reservedFor ?? this.reservedFor,
+      addedDate: addedDate ?? this.addedDate,
       imageUrl: imageUrl ?? this.imageUrl,
       rawJson: rawJson ?? this.rawJson,
     );
@@ -183,6 +190,7 @@ class Product {
       'isFestivalStock': isFestivalStock,
       'isReserved': isReserved,
       'reservedFor': reservedFor,
+      if (addedDate != null) 'addedDate': addedDate,
       'imageUrl': imageUrl,
     };
   }
@@ -228,6 +236,11 @@ class Product {
       isFestivalStock: json['isFestivalStock'] as bool? ?? false,
       isReserved: json['isReserved'] as bool? ?? false,
       reservedFor: json['reservedFor'] as String? ?? '',
+      addedDate: json['addedDate'] != null 
+          ? (json['addedDate'] is Timestamp 
+              ? (json['addedDate'] as Timestamp).toDate() 
+              : DateTime.tryParse(json['addedDate'].toString()))
+          : null,
       imageUrl: json['imageUrl'] as String? ?? '',
       rawJson: json,
     );
