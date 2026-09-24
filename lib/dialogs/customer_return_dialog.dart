@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import '../state/admin_state.dart';
 import '../utils/boutique_theme.dart';
@@ -140,6 +141,8 @@ class _CustomerReturnDialogState extends State<CustomerReturnDialog> {
                   child: TextFormField(
                     controller: _billNoCtrl,
                     decoration: BoutiqueInputDecoration.field(labelText: 'Original Bill No', hintText: 'e.g. SB-001'),
+                    textCapitalization: TextCapitalization.characters,
+                    inputFormatters: [UpperCaseTextFormatter()],
                     onFieldSubmitted: (_) => _searchBill(),
                   ),
                 ),
@@ -251,7 +254,7 @@ class _CustomerReturnDialogState extends State<CustomerReturnDialog> {
                     flex: 1,
                     child: DropdownButtonFormField<String>(
                       decoration: BoutiqueInputDecoration.field(labelText: 'Refund Mode', hintText: ''),
-                      value: _refundModeCtrl.text,
+                      initialValue: _refundModeCtrl.text,
                       items: ['Cash', 'UPI', 'Card', 'Store Credit'].map((m) => DropdownMenuItem(value: m, child: Text(m))).toList(),
                       onChanged: (v) => setState(() => _refundModeCtrl.text = v ?? 'Cash'),
                     ),
@@ -296,5 +299,13 @@ class _CustomerReturnDialogState extends State<CustomerReturnDialog> {
         ),
       ),
     );
+  }
+}
+
+/// Formats text input to uppercase automatically
+class UpperCaseTextFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(TextEditingValue oldValue, TextEditingValue newValue) {
+    return newValue.copyWith(text: newValue.text.toUpperCase());
   }
 }

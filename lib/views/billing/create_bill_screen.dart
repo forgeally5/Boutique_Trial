@@ -46,6 +46,10 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
   bool _isSaving = false;
   bool _attemptedSave = false;
 
+  String _billType = 'Sale';
+  final _narrationCtrl = TextEditingController();
+  final _amountReceivedCtrl = TextEditingController();
+
   // Tracks row mutations (product select, qty change) so summary panel recalculates
   final ValueNotifier<int> _rowVersion = ValueNotifier(0);
 
@@ -121,6 +125,8 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
     }
     _extraDiscountCtrl.dispose();
     _gstCtrl.dispose();
+    _narrationCtrl.dispose();
+    _amountReceivedCtrl.dispose();
     super.dispose();
   }
 
@@ -193,10 +199,15 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
       final manualTotal = double.tryParse(_adjustmentCtrl.text);
       final adjustment = manualTotal != null ? manualTotal - computedTotal : 0.0;
       final totalPayable = (computedTotal + adjustment).clamp(0.0, double.infinity);
+      final amountReceived = _billType == 'Advance Payment'
+          ? (double.tryParse(_amountReceivedCtrl.text) ?? totalPayable)
+          : totalPayable;
+      final pendingBalance = (totalPayable - amountReceived).clamp(0.0, double.infinity);
 
       final billData = {
         'billNo': _billNoCtrl.text.trim(),
-        'billType': 'Sale',
+        'billType': _billType,
+        'narration': _narrationCtrl.text.trim(),
         'billDate': Timestamp.fromDate(_billDate),
         'customerName': _customerNameCtrl.text.trim(),
         'customerMobile': _customerMobileCtrl.text.trim(),
@@ -216,19 +227,43 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
         'adjustmentAmount': adjustment,
         'totalPayable': totalPayable,
         'paymentMode': isSplit ? 'Split Payment' : singleMode,
-        'payments': isSplit ? splitPayments : [{'mode': singleMode, 'amount': totalPayable}],
-        'amountReceived': totalPayable,
+        'payments': isSplit ? splitPayments : [{'mode': singleMode, 'amount': amountReceived}],
+        'amountReceived': amountReceived,
+        'pendingBalance': pendingBalance,
         'balanceReturned': 0.0,
         'createdAt': FieldValue.serverTimestamp(),
       };
 
       await FirebaseFirestore.instance.collection('bills').add(billData);
 
+      // Aggregate quantities for stock deduction
+      final Map<String, double> deductionMap = {};
+      final Map<String, double> reservedDeductionMap = {};
+      final Map<String, Product> productMap = {};
       for (final row in validRows) {
         final p = row.product!;
-        final newQty = (p.quantity - row.qty.toInt()).clamp(0, 999999);
+        if (row.isFromReserve) {
+          reservedDeductionMap[p.tagId] = (reservedDeductionMap[p.tagId] ?? 0) + row.qty;
+        } else {
+          deductionMap[p.tagId] = (deductionMap[p.tagId] ?? 0) + row.qty;
+        }
+        productMap[p.tagId] = p;
+      }
+
+      for (final tagId in productMap.keys) {
+        final p = productMap[tagId]!;
+        final regularDeducted = (deductionMap[tagId] ?? 0).toInt();
+        final reservedDeducted = (reservedDeductionMap[tagId] ?? 0).toInt();
+        final totalDeducted = regularDeducted + reservedDeducted;
+        
+        final newQty = (p.quantity - totalDeducted).clamp(0, 999999);
+        final newReservedQty = (p.reservedQuantity - reservedDeducted).clamp(0, 999999);
+        
         final updated = p.copyWith(
           quantity: newQty,
+          reservedQuantity: newReservedQty,
+          isReserved: newReservedQty > 0 ? p.isReserved : false,
+          reservedFor: newReservedQty > 0 ? p.reservedFor : '',
           status: newQty == 0 ? 'Sold Out' : p.status,
         );
         await widget.state.updateProduct(updated);
@@ -315,6 +350,9 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
       _gstCtrl.text = '0';
       _gstType = 'No GST';
       _adjustmentCtrl.text = '';
+      _billType = 'Sale';
+      _narrationCtrl.clear();
+      _amountReceivedCtrl.clear();
       _attemptedSave = false;
     });
   }
@@ -332,9 +370,15 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
     final manualTotal = double.tryParse(_adjustmentCtrl.text);
     final adjustment = manualTotal != null ? manualTotal - computedTotal : 0.0;
     final totalPayable = (computedTotal + adjustment).clamp(0.0, double.infinity);
+    final amountReceived = _billType == 'Advance Payment'
+        ? (double.tryParse(_amountReceivedCtrl.text) ?? totalPayable)
+        : totalPayable;
+    final pendingBalance = (totalPayable - amountReceived).clamp(0.0, double.infinity);
 
     final billData = {
       'billNo': _billNoCtrl.text.trim(),
+      'billType': _billType,
+      'narration': _narrationCtrl.text.trim(),
       'billDate': Timestamp.fromDate(_billDate),
       'customerName': _customerNameCtrl.text.trim(),
       'customerMobile': _customerMobileCtrl.text.trim(),
@@ -344,6 +388,8 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
       'taxAmount': taxAmt,
       'adjustmentAmount': adjustment,
       'totalPayable': totalPayable,
+      'amountReceived': amountReceived,
+      'pendingBalance': pendingBalance,
     };
 
     final bytes = await BoutiquePdfGenerator.generate(billData);
@@ -426,6 +472,8 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
                   gstCtrl: _gstCtrl,
                   gstType: _gstType,
                   adjustmentCtrl: _adjustmentCtrl,
+                  billType: _billType,
+                  amountReceivedCtrl: _amountReceivedCtrl,
                   isSaving: _isSaving,
                   hasValidRows: _hasValidRows,
                   onDiscountTypeChanged: (t) => setState(() => _extraDiscountType = t),
@@ -478,6 +526,19 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
                   readOnly: true,
                   style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: BoutiqueColors.accent),
                   decoration: BoutiqueInputDecoration.field(hintText: 'Bill No', labelText: 'Invoice #'),
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: DropdownButtonFormField<String>(
+                  value: _billType,
+                  style: const TextStyle(fontSize: 13, color: BoutiqueColors.textPrimary),
+                  decoration: BoutiqueInputDecoration.field(hintText: 'Bill Type', labelText: 'Bill Type'),
+                  items: const [
+                    DropdownMenuItem(value: 'Sale', child: Text('Sale')),
+                    DropdownMenuItem(value: 'Advance Payment', child: Text('Advance Payment')),
+                  ],
+                  onChanged: (v) => setState(() => _billType = v ?? 'Sale'),
                 ),
               ),
               const SizedBox(width: 16),
@@ -584,6 +645,12 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
               ),
             ],
           ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _narrationCtrl,
+            style: const TextStyle(fontSize: 13, color: BoutiqueColors.textPrimary),
+            decoration: BoutiqueInputDecoration.field(hintText: 'Narration / Remarks', labelText: 'Narration'),
+          ),
           if (_showExtraCustomerDetails) ...[
             const SizedBox(height: 16),
             TextField(
@@ -669,15 +736,31 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
             children: [
               const Text('Select Products to Bill',
                   style: TextStyle(fontFamily: 'serif', fontSize: 18, fontWeight: FontWeight.bold, color: BoutiqueColors.textPrimary)),
-              ElevatedButton.icon(
-                onPressed: () => setState(() => _rows.add(BillRow())),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: BoutiqueColors.accentSoft,
-                  foregroundColor: BoutiqueColors.accent,
-                  elevation: 0,
-                ),
-                icon: const Icon(Icons.add, size: 18),
-                label: const Text('Add Row'),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  OutlinedButton.icon(
+                    onPressed: _showReservedItemsList,
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFFB45309),
+                      side: const BorderSide(color: Color(0xFFFFCC80)),
+                      backgroundColor: const Color(0xFFFFF3E0),
+                    ),
+                    icon: const Icon(Icons.bookmark_added_rounded, size: 16),
+                    label: const Text('Reserved List'),
+                  ),
+                  const SizedBox(width: 12),
+                  ElevatedButton.icon(
+                    onPressed: () => setState(() => _rows.add(BillRow())),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: BoutiqueColors.accentSoft,
+                      foregroundColor: BoutiqueColors.accent,
+                      elevation: 0,
+                    ),
+                    icon: const Icon(Icons.add, size: 18),
+                    label: const Text('Add Row'),
+                  ),
+                ],
               ),
             ],
           ),
@@ -688,6 +771,7 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
               key: ObjectKey(_rows[i]),
               row: _rows[i],
               products: _cachedProducts,
+              getAvailableStock: _getAvailableStock,
               onChanged: () {
                 _rowVersion.value++; // notify summary panel
                 setState(() {});    // refresh row display (qty, line amount)
@@ -700,6 +784,131 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
                   : null,
             ),
         ],
+      ),
+    );
+  }
+
+  int _getAvailableStock(Product p, [BillRow? currentRow]) {
+    double usedInOtherRows = 0;
+    bool isReserveCheck = currentRow?.isFromReserve ?? false;
+    
+    for (final r in _rows) {
+      if (r != currentRow && r.product != null) {
+        if (r.product!.tagId.trim().toLowerCase() == p.tagId.trim().toLowerCase()) {
+          // If we are checking available reserve stock, only count other rows that ALSO use reserve stock.
+          if (isReserveCheck) {
+            if (r.isFromReserve) usedInOtherRows += r.qty;
+          } else {
+            // Normal stock check: count other rows that use normal stock
+            if (!r.isFromReserve) usedInOtherRows += r.qty;
+          }
+        }
+      }
+    }
+    
+    final int baseStock = isReserveCheck ? p.reservedQuantity : p.sellableQuantity;
+    final remaining = baseStock - usedInOtherRows.toInt();
+    return remaining < 0 ? 0 : remaining;
+  }
+  void _showReservedItemsList() {
+    final reservedItems = _cachedProducts.where((p) => p.isReserved && p.reservedQuantity > 0).toList();
+
+    showDialog(
+      context: context,
+      builder: (ctx) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        backgroundColor: BoutiqueColors.bgCard,
+        child: Container(
+          width: 600,
+          constraints: const BoxConstraints(maxHeight: 600),
+          child: Column(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                decoration: const BoxDecoration(
+                  color: Color(0xFFFFF3E0),
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+                  border: Border(bottom: BorderSide(color: Color(0xFFFFCC80))),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.bookmark_added_rounded, color: Color(0xFFB45309)),
+                    const SizedBox(width: 12),
+                    const Text('Reserved Items', style: TextStyle(fontFamily: 'serif', fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFFB45309))),
+                    const Spacer(),
+                    IconButton(
+                      icon: const Icon(Icons.close, color: Color(0xFFB45309)),
+                      onPressed: () => Navigator.pop(ctx),
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: reservedItems.isEmpty
+                    ? const Center(
+                        child: Text('No reserved items found.', style: TextStyle(color: BoutiqueColors.textSecondary)),
+                      )
+                    : ListView.separated(
+                        padding: const EdgeInsets.all(16),
+                        itemCount: reservedItems.length,
+                        separatorBuilder: (_, __) => const Divider(color: BoutiqueColors.borderLight),
+                        itemBuilder: (context, idx) {
+                          final p = reservedItems[idx];
+                          final availableReserve = _getAvailableStock(p, BillRow(isFromReserve: true));
+                          return ListTile(
+                            title: Text('${p.tagId} - ${p.name}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                            subtitle: Padding(
+                              padding: const EdgeInsets.only(top: 4.0),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text('Reserved For: ${p.reservedFor.isNotEmpty ? p.reservedFor : 'Unknown'}', style: const TextStyle(fontSize: 12, color: BoutiqueColors.textSecondary)),
+                                  const SizedBox(height: 2),
+                                  Text('Qty Reserved: ${p.reservedQuantity} (Available: $availableReserve)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: availableReserve > 0 ? BoutiqueColors.accent : Colors.red)),
+                                ],
+                              ),
+                            ),
+                            trailing: ElevatedButton(
+                              onPressed: availableReserve > 0
+                                  ? () {
+                                      setState(() {
+                                        final row = BillRow(isFromReserve: true);
+                                        row.product = p;
+                                        row.qty = 1;
+                                        if (p.pricingType == 'Weight-Based') {
+                                          row.price = p.ratePerGram > 0 ? p.ratePerGram : 0.0;
+                                        } else {
+                                          row.price = p.finalPrice > 0 ? p.finalPrice : p.mrp;
+                                        }
+                                        row.discountValue = p.discountValue;
+                                        row.discountType = p.discountType;
+                                        
+                                        // Auto-fill customer details from reserved details if bill is empty
+                                        if (_customerNameCtrl.text.isEmpty && _customerMobileCtrl.text.isEmpty && p.reservedFor.isNotEmpty) {
+                                          final parts = p.reservedFor.split('-');
+                                          if (parts.isNotEmpty) _customerNameCtrl.text = parts[0].trim();
+                                          if (parts.length > 1) {
+                                            final num = parts[1].trim().replaceAll(RegExp(r'[^0-9]'), '');
+                                            if (num.length >= 10) _customerMobileCtrl.text = num;
+                                          }
+                                        }
+                                        _rows.add(row);
+                                        _rowVersion.value++;
+                                      });
+                                      Navigator.pop(ctx);
+                                      BoutiqueToast.showSuccess(context, 'Reserved item added to bill');
+                                    }
+                                  : null,
+                              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFB45309), foregroundColor: Colors.white),
+                              child: const Text('Add to Bill'),
+                            ),
+                          );
+                        },
+                      ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -722,6 +931,7 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
 class _BillRowWidget extends StatefulWidget {
   final BillRow row;
   final List<Product> products;
+  final int Function(Product p, [BillRow? currentRow]) getAvailableStock;
   final VoidCallback onChanged;
   final VoidCallback? onDelete;
 
@@ -729,6 +939,7 @@ class _BillRowWidget extends StatefulWidget {
     super.key,
     required this.row,
     required this.products,
+    required this.getAvailableStock,
     required this.onChanged,
     this.onDelete,
   });
@@ -741,6 +952,7 @@ class _BillRowWidgetState extends State<_BillRowWidget> {
   @override
   Widget build(BuildContext context) {
     final row = widget.row;
+    final availableStock = row.product != null ? widget.getAvailableStock(row.product!, row) : 0;
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(14),
@@ -757,17 +969,23 @@ class _BillRowWidgetState extends State<_BillRowWidget> {
             child: _ProductAutocomplete(
               products: widget.products,
               selected: row.product,
+              getAvailableStock: (p) => widget.getAvailableStock(p, row),
               onSelected: (p) {
-                if (p.sellableQuantity <= 0) {
+                final available = widget.getAvailableStock(p, row);
+                if (available <= 0) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Item is out of stock or damaged.'), backgroundColor: Colors.red),
+                    const SnackBar(content: Text('Item is out of stock (already selected in other rows).'), backgroundColor: Colors.red),
                   );
                   return;
                 }
                 setState(() {
                   row.product = p;
-                  if (row.qty > p.sellableQuantity) row.qty = p.sellableQuantity.toDouble();
-                  row.price = p.finalPrice > 0 ? p.finalPrice : p.mrp;
+                  if (row.qty > available) row.qty = available.toDouble();
+                  if (p.pricingType == 'Weight-Based') {
+                    row.price = p.ratePerGram > 0 ? p.ratePerGram : 0.0;
+                  } else {
+                    row.price = p.finalPrice > 0 ? p.finalPrice : p.mrp;
+                  }
                   row.discountValue = p.discountValue;
                   row.discountType = p.discountType;
                 });
@@ -786,6 +1004,7 @@ class _BillRowWidgetState extends State<_BillRowWidget> {
               border: Border.all(color: BoutiqueColors.border),
             ),
             child: Row(
+              mainAxisSize: MainAxisSize.min,
               children: [
                 IconButton(
                   icon: const Icon(Icons.remove, size: 14, color: BoutiqueColors.textSecondary),
@@ -796,11 +1015,17 @@ class _BillRowWidgetState extends State<_BillRowWidget> {
                         }
                       : null,
                 ),
-                Text('Qty: ${row.qty.toInt()} ${row.unitLabel}',
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                InkWell(
+                  onTap: () => _editQuantityDialog(),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4.0),
+                    child: Text('Qty: ${row.qty == row.qty.toInt() ? row.qty.toInt() : row.qty.toStringAsFixed(2)} ${row.unitLabel}',
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, decoration: TextDecoration.underline, decorationStyle: TextDecorationStyle.dashed)),
+                  ),
+                ),
                 IconButton(
                   icon: const Icon(Icons.add, size: 14, color: BoutiqueColors.accent),
-                  onPressed: (row.product != null && row.qty < row.product!.sellableQuantity)
+                  onPressed: (row.product != null && row.qty < availableStock)
                       ? () {
                           setState(() => row.qty += 1);
                           widget.onChanged();
@@ -810,6 +1035,24 @@ class _BillRowWidgetState extends State<_BillRowWidget> {
               ],
             ),
           ),
+          if (row.product?.pricingType == 'Weight-Based') ...[
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF5E6E8),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: BoutiqueColors.accentLightBorder),
+              ),
+              child: InkWell(
+                onTap: () => _editWeightDialog(),
+                child: Text(
+                  '${row.weight > 0 ? row.weight.toStringAsFixed(2) : 'Enter'} ${row.product?.weightUnit ?? 'g'}',
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: BoutiqueColors.accent, decoration: TextDecoration.underline, decorationStyle: TextDecorationStyle.dashed),
+                ),
+              ),
+            ),
+          ],
           const SizedBox(width: 12),
 
           // Price & Total
@@ -820,7 +1063,7 @@ class _BillRowWidgetState extends State<_BillRowWidget> {
               children: [
                 Text('₹${row.lineAmount.toStringAsFixed(2)}',
                     style: const TextStyle(fontFamily: 'serif', fontSize: 15, fontWeight: FontWeight.bold, color: BoutiqueColors.textPrimary)),
-                Text('@ ₹${row.price}',
+                Text(row.product?.pricingType == 'Weight-Based' ? '@ ₹${row.price}/${row.product?.weightUnit ?? 'g'}' : '@ ₹${row.price}',
                     style: const TextStyle(fontSize: 11, color: BoutiqueColors.textSecondary)),
               ],
             ),
@@ -835,6 +1078,73 @@ class _BillRowWidgetState extends State<_BillRowWidget> {
       ),
     );
   }
+
+  Future<void> _editQuantityDialog() async {
+    final ctrl = TextEditingController(text: widget.row.qty == widget.row.qty.toInt() ? widget.row.qty.toInt().toString() : widget.row.qty.toString());
+    final result = await showDialog<double>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Enter Quantity', style: TextStyle(fontFamily: 'serif', color: BoutiqueColors.accent)),
+        content: TextField(
+          controller: ctrl,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          decoration: const InputDecoration(border: OutlineInputBorder(), labelText: 'Quantity'),
+          autofocus: true,
+          onSubmitted: (v) => Navigator.pop(ctx, double.tryParse(v)),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: BoutiqueColors.accent),
+            onPressed: () => Navigator.pop(ctx, double.tryParse(ctrl.text)), 
+            child: const Text('Save', style: TextStyle(color: Colors.white))
+          ),
+        ],
+      ),
+    );
+    if (result != null && result > 0) {
+      final available = widget.row.product != null
+          ? widget.getAvailableStock(widget.row.product!, widget.row)
+          : 0;
+      if (widget.row.product != null && result > available) {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Cannot exceed available stock ($available available)'), backgroundColor: Colors.red),
+        );
+      } else {
+        setState(() => widget.row.qty = result);
+        widget.onChanged();
+      }
+    }
+  }
+
+  Future<void> _editWeightDialog() async {
+    final ctrl = TextEditingController(text: widget.row.weight > 0 ? widget.row.weight.toString() : '');
+    final result = await showDialog<double>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Enter Weight (${widget.row.product?.weightUnit ?? 'g'})', style: const TextStyle(fontFamily: 'serif', color: BoutiqueColors.accent)),
+        content: TextField(
+          controller: ctrl,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          decoration: const InputDecoration(border: OutlineInputBorder(), labelText: 'Grams'),
+          autofocus: true,
+          onSubmitted: (v) => Navigator.pop(ctx, double.tryParse(v)),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: BoutiqueColors.accent),
+            onPressed: () => Navigator.pop(ctx, double.tryParse(ctrl.text)), 
+            child: const Text('Save', style: TextStyle(color: Colors.white))
+          ),
+        ],
+      ),
+    );
+    if (result != null && result > 0) {
+      setState(() => widget.row.weight = result);
+      widget.onChanged();
+    }
+  }
 }
 
 // ── Product Autocomplete ──────────────────────────────────────────────────────
@@ -845,11 +1155,13 @@ class _ProductAutocomplete extends StatelessWidget {
   final List<Product> products;
   final Product? selected;
   final ValueChanged<Product> onSelected;
+  final int Function(Product) getAvailableStock;
 
   const _ProductAutocomplete({
     required this.products,
     required this.selected,
     required this.onSelected,
+    required this.getAvailableStock,
   });
 
   @override
@@ -882,6 +1194,7 @@ class _ProductAutocomplete extends StatelessWidget {
                 itemCount: options.length,
                 itemBuilder: (context, index) {
                   final p = options.elementAt(index);
+                  final stock = getAvailableStock(p);
                   return InkWell(
                     onTap: () => onSelected(p),
                     child: Padding(
@@ -902,15 +1215,15 @@ class _ProductAutocomplete extends StatelessWidget {
                               Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                                 decoration: BoxDecoration(
-                                  color: p.sellableQuantity > 0 ? BoutiqueColors.accent.withOpacity(0.1) : Colors.red.withOpacity(0.1),
+                                  color: stock > 0 ? BoutiqueColors.accent.withOpacity(0.1) : Colors.red.withOpacity(0.1),
                                   borderRadius: BorderRadius.circular(6),
                                 ),
                                 child: Text(
-                                  'Stock: ${p.sellableQuantity.toInt()}',
+                                  'Stock: $stock',
                                   style: TextStyle(
                                     fontSize: 11,
                                     fontWeight: FontWeight.bold,
-                                    color: p.sellableQuantity > 0 ? BoutiqueColors.accent : Colors.red,
+                                    color: stock > 0 ? BoutiqueColors.accent : Colors.red,
                                   ),
                                 ),
                               ),
@@ -918,7 +1231,9 @@ class _ProductAutocomplete extends StatelessWidget {
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            '₹${p.mrp}  •  ${p.category}',
+                            p.pricingType == 'Weight-Based'
+                              ? '₹${p.ratePerGram == p.ratePerGram.toInt() ? p.ratePerGram.toInt() : p.ratePerGram.toStringAsFixed(2)}/${p.weightUnit}  •  ${p.category}'
+                              : '₹${p.mrp == p.mrp.toInt() ? p.mrp.toInt() : p.mrp.toStringAsFixed(2)}  •  ${p.category}',
                             style: const TextStyle(fontSize: 11, color: BoutiqueColors.textSecondary),
                           ),
                         ],
@@ -959,6 +1274,8 @@ class _BillSummaryPanel extends StatefulWidget {
   final TextEditingController gstCtrl;
   final String gstType;
   final TextEditingController adjustmentCtrl;
+  final String billType;
+  final TextEditingController amountReceivedCtrl;
   final bool isSaving;
   final bool hasValidRows;
   final ValueChanged<String> onDiscountTypeChanged;
@@ -974,6 +1291,8 @@ class _BillSummaryPanel extends StatefulWidget {
     required this.gstCtrl,
     required this.gstType,
     required this.adjustmentCtrl,
+    required this.billType,
+    required this.amountReceivedCtrl,
     required this.isSaving,
     required this.hasValidRows,
     required this.onDiscountTypeChanged,
@@ -1005,7 +1324,7 @@ class _BillSummaryPanelState extends State<_BillSummaryPanel> {
     // AnimatedBuilder listens to discount/tax/adjustment controllers AND rowVersion
     // so subtotal recalculates on product select, qty change, or discount/tax edits
     return AnimatedBuilder(
-      animation: Listenable.merge([widget.extraDiscountCtrl, widget.gstCtrl, widget.adjustmentCtrl, widget.rowVersion]),
+      animation: Listenable.merge([widget.extraDiscountCtrl, widget.gstCtrl, widget.adjustmentCtrl, widget.amountReceivedCtrl, widget.rowVersion]),
       builder: (context, _) {
         final subtotal = widget.rows.fold<double>(0, (s, r) => s + r.lineAmount);
         final discV = double.tryParse(widget.extraDiscountCtrl.text) ?? 0;
@@ -1021,13 +1340,17 @@ class _BillSummaryPanelState extends State<_BillSummaryPanel> {
         final adjustment = manualTotal != null ? manualTotal - computedTotal : 0.0;
         final total = (computedTotal + adjustment).clamp(0.0, double.infinity);
 
+        final targetAmount = widget.billType == 'Advance Payment'
+            ? (double.tryParse(widget.amountReceivedCtrl.text) ?? total)
+            : total;
+
         double allocated = 0;
         if (_isSplitPayment) {
           for (var p in _splitPayments) {
             allocated += double.tryParse((p['amountCtrl'] as TextEditingController).text) ?? 0;
           }
         }
-        double remaining = total - allocated;
+        double remaining = targetAmount - allocated;
 
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1146,6 +1469,26 @@ class _BillSummaryPanelState extends State<_BillSummaryPanel> {
             ),
             const SizedBox(height: 24),
             
+            if (widget.billType == 'Advance Payment') ...[
+              Row(
+                children: [
+                  const Text('Advance Received', style: TextStyle(fontFamily: 'serif', fontSize: 16, fontWeight: FontWeight.bold, color: BoutiqueColors.textPrimary)),
+                  const Spacer(),
+                  SizedBox(
+                    width: 110,
+                    height: 38,
+                    child: TextField(
+                      controller: widget.amountReceivedCtrl,
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: BoutiqueColors.accent),
+                      decoration: BoutiqueInputDecoration.field(hintText: 'e.g. 500'),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 24),
+            ],
+
             const Text('Payment Details',
                 style: TextStyle(fontFamily: 'serif', fontSize: 16, fontWeight: FontWeight.bold, color: BoutiqueColors.textPrimary)),
             const SizedBox(height: 8),

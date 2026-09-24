@@ -5,6 +5,7 @@ import '../models/product.dart';
 import '../dialogs/item_dialog.dart';
 import '../auth/viewmodels/auth_viewmodel.dart';
 import '../utils/boutique_theme.dart';
+import '../utils/excel_generator.dart';
 
 class InventoryView extends StatefulWidget {
   final AdminState state;
@@ -79,7 +80,9 @@ class _InventoryViewState extends State<InventoryView> {
                   ? (p.quantity > 0 && p.quantity < 5)
                   : (_selectedStatus == 'In Stock'
                       ? (p.quantity > 0 && p.status != 'Sold Out' && p.status != 'Out of Stock')
-                      : p.status == _selectedStatus)));
+                      : (_selectedStatus == 'Reserved'
+                          ? (p.isReserved && p.reservedQuantity > 0)
+                          : p.status == _selectedStatus))));
       return matchesSearch && matchesCategory && matchesStatus;
     }).toList();
     return _cachedFilteredList.where((p) => !_filterLowStockOnly || (p.quantity > 0 && p.quantity < 5)).toList();
@@ -91,6 +94,7 @@ class _InventoryViewState extends State<InventoryView> {
     'Low Stock',
     'Out of Stock',
     'Sold Out',
+    'Reserved',
   ];
 
   void _showAddItemDialog(BuildContext context) async {
@@ -226,6 +230,27 @@ class _InventoryViewState extends State<InventoryView> {
                                 ),
                               ),
                               const SizedBox(width: 16),
+                              OutlinedButton.icon(
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: const Color(0xFF1E7E34),
+                                  side: const BorderSide(color: Color(0xFF1E7E34)),
+                                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                ),
+                                onPressed: () async {
+                                  final products = _getFilteredList(state.products);
+                                  if (products.isEmpty) {
+                                    BoutiqueToast.showError(context, 'No products to export.');
+                                    return;
+                                  }
+                                  await ExcelGenerator.downloadInwardBillExcel(products: products);
+                                  if (!mounted) return;
+                                  BoutiqueToast.showSuccess(context, 'Inward Bill Excel downloaded!');
+                                },
+                                icon: const Icon(Icons.table_view_rounded, size: 18),
+                                label: const Text('Inward Bill (Excel)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                              ),
+                              const SizedBox(width: 12),
                               ElevatedButton.icon(
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: BoutiqueColors.accent,
@@ -553,14 +578,23 @@ class _InventoryViewState extends State<InventoryView> {
         ],
       ),
       subtitle: Text(
-        '${p.category}$matStr • Qty: ${p.quantity} ${p.unit}',
+        '${p.category}$matStr • Qty: ${p.sellableQuantity} ${p.unit}${p.reservedQuantity > 0 ? ' (Res: ${p.reservedQuantity})' : ''}',
         style: const TextStyle(fontSize: 12, color: BoutiqueColors.textSecondary),
       ),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           _buildPriceDisplay(p),
-          const SizedBox(width: 20),
+          const SizedBox(width: 12),
+          IconButton(
+            tooltip: 'Download Inward Bill (.xlsx)',
+            icon: const Icon(Icons.download_rounded, color: Color(0xFF1E7E34), size: 20),
+            onPressed: () async {
+              await ExcelGenerator.downloadInwardBillExcel(products: [p]);
+              if (!mounted) return;
+              BoutiqueToast.showSuccess(context, 'Inward Bill (.xlsx) downloaded for ${p.tagId}!');
+            },
+          ),
           IconButton(
             icon: const Icon(Icons.edit_outlined, color: BoutiqueColors.textSecondary, size: 20),
             onPressed: () => _showEditProductDialog(context, p),
@@ -626,7 +660,7 @@ class _InventoryViewState extends State<InventoryView> {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     _buildPriceDisplay(p),
-                    Text('Qty: ${p.quantity}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: BoutiqueColors.textSecondary)),
+                    Text('Qty: ${p.sellableQuantity}${p.reservedQuantity > 0 ? '\n(Res: ${p.reservedQuantity})' : ''}', textAlign: TextAlign.right, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: BoutiqueColors.textSecondary)),
                   ],
                 ),
               ],
@@ -638,6 +672,13 @@ class _InventoryViewState extends State<InventoryView> {
   }
 
   Widget _buildPriceDisplay(Product p) {
+    if (p.pricingType == 'Weight-Based') {
+      return Text(
+        '₹${p.ratePerGram.toStringAsFixed(p.ratePerGram.truncateToDouble() == p.ratePerGram ? 0 : 2)}/${p.weightUnit}',
+        style: const TextStyle(fontFamily: 'serif', fontSize: 16, fontWeight: FontWeight.bold, color: BoutiqueColors.textPrimary),
+      );
+    }
+    
     final hasDiscount = p.discountValue > 0 && p.finalPrice > 0 && p.finalPrice < p.mrp;
     if (!hasDiscount) {
       return Text(

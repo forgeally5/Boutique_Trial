@@ -4,6 +4,7 @@ import '../models/product.dart';
 import '../models/vendor_issue.dart';
 import '../state/admin_state.dart';
 import '../utils/boutique_theme.dart';
+import '../utils/excel_generator.dart';
 
 class VendorIssueDialog extends StatefulWidget {
   final AdminState state;
@@ -22,6 +23,8 @@ class _VendorIssueDialogState extends State<VendorIssueDialog> {
   final _qtyCtrl = TextEditingController();
   final _notesCtrl = TextEditingController();
   final _refundCtrl = TextEditingController();
+  final _vendorCtrl = TextEditingController();
+  bool _vendorEditable = false;
 
   String? _issueType;
   DateTime _dateReported = DateTime.now();
@@ -52,6 +55,7 @@ class _VendorIssueDialogState extends State<VendorIssueDialog> {
     _qtyCtrl.dispose();
     _notesCtrl.dispose();
     _refundCtrl.dispose();
+    _vendorCtrl.dispose();
     super.dispose();
   }
 
@@ -67,7 +71,7 @@ class _VendorIssueDialogState extends State<VendorIssueDialog> {
     }
   }
 
-  void _save() async {
+  void _save({bool downloadExcel = false}) async {
     if (!_formKey.currentState!.validate()) return;
     if (_selectedProduct == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -90,7 +94,7 @@ class _VendorIssueDialogState extends State<VendorIssueDialog> {
         id: '',
         tagId: _selectedProduct!.tagId,
         productName: _selectedProduct!.name,
-        vendor: _selectedProduct!.vendor, // auto from product
+        vendor: _vendorCtrl.text.trim().isNotEmpty ? _vendorCtrl.text.trim() : _selectedProduct!.vendor,
         quantity: qty,
         issueType: _issueType!,
         actionTaken: 'Pending', // defaults to Pending; updatable from the table
@@ -100,6 +104,13 @@ class _VendorIssueDialogState extends State<VendorIssueDialog> {
       );
 
       await widget.state.logVendorIssue(issue);
+
+      if (downloadExcel) {
+        await ExcelGenerator.downloadVendorIssueBillExcel(issue: issue);
+        if (mounted) {
+          BoutiqueToast.showSuccess(context, 'Issue logged & Issue Bill (.xlsx) downloaded!');
+        }
+      }
 
       if (mounted) {
         Navigator.pop(context, true);
@@ -128,6 +139,8 @@ class _VendorIssueDialogState extends State<VendorIssueDialog> {
       onSelected: (p) {
         setState(() {
           _selectedProduct = p;
+          _vendorCtrl.text = p.vendor.isNotEmpty ? p.vendor : '';
+          _vendorEditable = false;
         });
         _onQtyChanged();
       },
@@ -247,6 +260,41 @@ class _VendorIssueDialogState extends State<VendorIssueDialog> {
                 const SizedBox(height: 16),
               ],
 
+              // Vendor / Supplier Name (editable)
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Expanded(
+                    child: TextFormField(
+                      controller: _vendorCtrl,
+                      enabled: _vendorEditable,
+                      decoration: BoutiqueInputDecoration.field(
+                        labelText: 'Vendor / Supplier Name',
+                        hintText: 'e.g. Ravi Textiles',
+                        prefixIcon: const Icon(Icons.storefront_outlined, size: 18, color: BoutiqueColors.textSecondary),
+                      ),
+                      style: TextStyle(
+                        color: _vendorEditable ? BoutiqueColors.textPrimary : BoutiqueColors.textSecondary,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Tooltip(
+                    message: _vendorEditable ? 'Lock vendor name' : 'Edit vendor name',
+                    child: IconButton(
+                      icon: Icon(
+                        _vendorEditable ? Icons.lock_open_rounded : Icons.edit_rounded,
+                        color: _vendorEditable ? BoutiqueColors.accent : BoutiqueColors.textSecondary,
+                        size: 20,
+                      ),
+                      onPressed: () => setState(() => _vendorEditable = !_vendorEditable),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+
               // Qty Affected (full width)
               TextFormField(
                 controller: _qtyCtrl,
@@ -269,7 +317,7 @@ class _VendorIssueDialogState extends State<VendorIssueDialog> {
                   Expanded(
                     child: DropdownButtonFormField<String>(
                       decoration: BoutiqueInputDecoration.field(labelText: 'Issue Type', hintText: ''),
-                      value: widget.state.issueTypes.contains(_issueType) ? _issueType : null,
+                      initialValue: widget.state.issueTypes.contains(_issueType) ? _issueType : null,
                       isExpanded: true,
                       items: widget.state.issueTypes.map((t) => DropdownMenuItem(value: t, child: Text(t, style: const TextStyle(fontSize: 13), overflow: TextOverflow.ellipsis))).toList(),
                       onChanged: (v) => setState(() => _issueType = v),
@@ -337,9 +385,19 @@ class _VendorIssueDialogState extends State<VendorIssueDialog> {
                     child: const Text('Cancel'),
                   ),
                   const SizedBox(width: 12),
+                  OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFF1E7E34),
+                      side: const BorderSide(color: Color(0xFF1E7E34)),
+                    ),
+                    onPressed: _isSaving ? null : () => _save(downloadExcel: true),
+                    icon: const Icon(Icons.download_rounded, size: 16),
+                    label: const Text('Save & Issue Bill (.xlsx)'),
+                  ),
+                  const SizedBox(width: 12),
                   ElevatedButton(
                     style: ElevatedButton.styleFrom(backgroundColor: BoutiqueColors.accent, foregroundColor: Colors.white),
-                    onPressed: _isSaving ? null : _save,
+                    onPressed: _isSaving ? null : () => _save(downloadExcel: false),
                     child: _isSaving ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)) : const Text('Log Issue'),
                   ),
                 ],
@@ -412,7 +470,8 @@ class _ManageIssueTypesDialogState extends State<_ManageIssueTypesDialog> {
           style: ElevatedButton.styleFrom(backgroundColor: BoutiqueColors.accent, foregroundColor: Colors.white),
           onPressed: () async {
             await widget.state.updateIssueTypes(_types);
-            if (mounted) Navigator.pop(context);
+            if (!context.mounted) return;
+            Navigator.pop(context);
           },
           child: const Text('Save'),
         ),

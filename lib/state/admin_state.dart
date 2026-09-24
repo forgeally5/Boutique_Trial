@@ -311,17 +311,20 @@ class AdminState extends ChangeNotifier {
   final List<String> _dynamicCategories = [];
   final List<String> _dynamicMaterials = [];
   final List<String> _dynamicUnits = [];
+  final List<String> _dynamicWeightUnits = [];
   final List<String> _dynamicItemNames = [];
 
   final Set<String> _deletedCategories = {};
   final Set<String> _deletedMaterials = {};
   final Set<String> _deletedUnits = {};
+  final Set<String> _deletedWeightUnits = {};
   final Set<String> _deletedItemNames = {};
 
   final List<String> _defaultMaterials = [
     'Brass', 'Silver', 'Panchaloha', 'Wood', 'Clay', 'Marble', 'Plastic/Steel', 'N/A'
   ];
   final List<String> _defaultUnits = ['Piece', 'Set', 'Pair', 'Box', 'Packet'];
+  final List<String> _defaultWeightUnits = ['g', 'kg', 'mg', 'carat'];
   final List<String> _defaultItemNames = [
     'Ganesh Idol',
     'Lakshmi Idol',
@@ -371,6 +374,15 @@ class AdminState extends ChangeNotifier {
       ..._products.map((p) => p.unit).where((u) => u.isNotEmpty)
     };
     return set.where((u) => !_deletedUnits.contains(u)).toList();
+  }
+
+  List<String> get weightUnits {
+    final set = <String>{
+      ..._defaultWeightUnits,
+      ..._dynamicWeightUnits,
+      ..._products.map((p) => p.weightUnit).where((u) => u.isNotEmpty)
+    };
+    return set.where((u) => !_deletedWeightUnits.contains(u)).toList();
   }
 
   List<String> get itemNames {
@@ -537,6 +549,61 @@ class AdminState extends ChangeNotifier {
     } catch (_) {}
   }
 
+  Future<void> addWeightUnit(String unit) async {
+    final trimmed = unit.trim();
+    if (trimmed.isEmpty) return;
+    if (!_defaultWeightUnits.contains(trimmed)) {
+      _deletedWeightUnits.remove(trimmed);
+      if (!_dynamicWeightUnits.contains(trimmed)) {
+        _dynamicWeightUnits.add(trimmed);
+        try {
+          _firestore.collection('weight_units').add({'name': trimmed, 'createdAt': FieldValue.serverTimestamp()});
+        } catch (_) {}
+      }
+    }
+    notifyListeners();
+  }
+
+  Future<void> updateWeightUnit(String oldUnit, String newUnit) async {
+    final oldTrimmed = oldUnit.trim();
+    final newTrimmed = newUnit.trim();
+    if (oldTrimmed.isEmpty || newTrimmed.isEmpty || oldTrimmed == newTrimmed) return;
+
+    if (!_defaultWeightUnits.contains(newTrimmed)) {
+      _deletedWeightUnits.remove(newTrimmed);
+      _deletedWeightUnits.add(oldTrimmed);
+      _dynamicWeightUnits.remove(oldTrimmed);
+      if (!_dynamicWeightUnits.contains(newTrimmed)) {
+        _dynamicWeightUnits.add(newTrimmed);
+      }
+      notifyListeners();
+
+      try {
+        final snap = await _firestore.collection('weight_units').where('name', isEqualTo: oldTrimmed).get();
+        for (var doc in snap.docs) {
+          await doc.reference.update({'name': newTrimmed});
+        }
+        if (snap.docs.isEmpty) {
+          await _firestore.collection('weight_units').add({'name': newTrimmed, 'createdAt': FieldValue.serverTimestamp()});
+        }
+      } catch (_) {}
+    }
+  }
+
+  Future<void> deleteWeightUnit(String unit) async {
+    final trimmed = unit.trim();
+    if (trimmed.isEmpty) return;
+    _dynamicWeightUnits.remove(trimmed);
+    _deletedWeightUnits.add(trimmed);
+    notifyListeners();
+    try {
+      final snap = await _firestore.collection('weight_units').where('name', isEqualTo: trimmed).get();
+      for (var doc in snap.docs) {
+        await doc.reference.delete();
+      }
+    } catch (_) {}
+  }
+
   void addItemName(String newName) {
     final trimmed = newName.trim();
     if (trimmed.isNotEmpty) {
@@ -620,6 +687,17 @@ class AdminState extends ChangeNotifier {
           final name = doc.data()['name']?.toString() ?? '';
           if (name.isNotEmpty && !_dynamicUnits.contains(name) && !_deletedUnits.contains(name)) {
             _dynamicUnits.add(name);
+          }
+        }
+        _debouncedNotify();
+      });
+
+      // Fetch weight units
+      _firestore.collection('weight_units').snapshots().listen((snap) {
+        for (var doc in snap.docs) {
+          final name = doc.data()['name']?.toString() ?? '';
+          if (name.isNotEmpty && !_dynamicWeightUnits.contains(name) && !_deletedWeightUnits.contains(name)) {
+            _dynamicWeightUnits.add(name);
           }
         }
         _debouncedNotify();

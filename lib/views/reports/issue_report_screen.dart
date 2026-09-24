@@ -9,6 +9,7 @@ import '../../models/vendor_issue.dart';
 import '../../utils/pdf_report_generator.dart';
 import '../../state/admin_state.dart';
 import '../../utils/boutique_theme.dart';
+import '../../utils/excel_generator.dart';
 
 class IssueReportScreen extends StatefulWidget {
   const IssueReportScreen({super.key});
@@ -455,9 +456,25 @@ class _IssueReportScreenState extends State<IssueReportScreen> {
           // Print
           _iconBtn(Icons.print_outlined, BoutiqueColors.accent, _handlePrint,
               'Print Report'),
-          // Download
+          // Download PDF
           _iconBtn(Icons.download_outlined, BoutiqueColors.accent,
               _handleDownload, 'Download PDF'),
+          // Download Excel
+          _iconBtn(Icons.table_view_rounded, const Color(0xFF1E7E34), () async {
+            if (_filtered.isEmpty) {
+              BoutiqueToast.showError(context, 'No data to download.');
+              return;
+            }
+            await ExcelGenerator.downloadIssueReportExcel(
+              rows: _filtered,
+              dateFrom: _dateFrom,
+              dateTo: _dateTo,
+              filterType: _typeFilter,
+            );
+            if (mounted) {
+              BoutiqueToast.showSuccess(context, 'Issue Report (.xlsx) downloaded!');
+            }
+          }, 'Download Excel (.xlsx)'),
         ],
       ),
     );
@@ -493,9 +510,9 @@ class _IssueReportScreenState extends State<IssueReportScreen> {
   Widget _tableHeader() {
     const cols = [
       'Date', 'Product',
-      'Qty', 'Issue / Reason', 'Refund (₹)', 'Status / Action', ''
+      'Qty', 'Issue / Reason', 'Refund (₹)', 'Status', 'Actions'
     ];
-    const flexes = [2, 4, 1, 3, 2, 2, 1];
+    const flexes = [2, 4, 1, 3, 2, 2, 2];
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       decoration: const BoxDecoration(
@@ -597,16 +614,44 @@ class _IssueReportScreenState extends State<IssueReportScreen> {
               ),
             ),
           ),
-          // Action (edit – vendor only)
+          // Action (download & edit – vendor only)
           Expanded(
-            flex: 1,
+            flex: 2,
             child: isVendor
-                ? IconButton(
-                    icon: const Icon(Icons.edit,
-                        size: 16, color: BoutiqueColors.accent),
-                    tooltip: 'Update action',
-                    onPressed: () => _updateVendorAction(
-                        r['id'], r['tagId'], r['actionTaken']),
+                ? Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.download_rounded,
+                            size: 16, color: Color(0xFF1E7E34)),
+                        tooltip: 'Download Issue Bill (.xlsx)',
+                        onPressed: () async {
+                          final issue = VendorIssue(
+                            id: r['id'] ?? '',
+                            tagId: r['tagId'] ?? '',
+                            productName: r['productName'] ?? '',
+                            vendor: r['counterpart'] ?? '',
+                            quantity: (r['qty'] as num?)?.toInt() ?? 1,
+                            issueType: r['issueReason'] ?? '',
+                            actionTaken: r['actionTaken'] ?? 'Pending',
+                            dateReported: r['_dt'] as DateTime? ?? DateTime.now(),
+                            notes: '',
+                            refundAmount: (r['refundAmount'] as num?)?.toDouble() ?? 0.0,
+                          );
+                          await ExcelGenerator.downloadVendorIssueBillExcel(issue: issue);
+                          if (mounted) {
+                            BoutiqueToast.showSuccess(context, 'Issue Bill (.xlsx) downloaded!');
+                          }
+                        },
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.edit,
+                            size: 16, color: BoutiqueColors.accent),
+                        tooltip: 'Update action',
+                        onPressed: () => _updateVendorAction(
+                            r['id'], r['tagId'], r['actionTaken']),
+                      ),
+                    ],
                   )
                 : const SizedBox.shrink(),
           ),

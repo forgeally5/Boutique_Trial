@@ -5,23 +5,32 @@ import '../../models/product.dart';
 class BillRow {
   Product? product;
   double qty;        // always integer quantity (piece-based)
-  double price;      // selling price per unit — editable
+  double weight;     // weight in grams for Weight-Based items
+  double price;      // selling price per unit or rate per gram
   double discountValue;
   String discountType; // "%" or "₹"
+  bool isFromReserve; // True if this row was added from the Reserved Items list
 
   BillRow({
     this.product,
     this.qty = 1,
+    this.weight = 0,
     this.price = 0,
     this.discountValue = 0,
     this.discountType = '%',
+    this.isFromReserve = false,
   });
 
   /// Unit label shown in the table
   String get unitLabel => product?.unit ?? 'Piece';
 
   /// Raw amount before item discount
-  double get grossAmount => qty * price;
+  double get grossAmount {
+    if (product?.pricingType == 'Weight-Based') {
+      return weight * price; // weight * ratePerGram
+    }
+    return qty * price;
+  }
 
   /// Item discount in ₹
   double get itemDiscountAmount {
@@ -46,8 +55,9 @@ class BillRow {
     'tagId': product?.tagId ?? '',
     'name': product?.name ?? '',
     'category': product?.category ?? '',
-    'pricingType': 'Quantity-Based',
-    'qty': qty.toInt(),
+    'pricingType': product?.pricingType ?? 'Quantity-Based',
+    'qty': qty,
+    'weight': weight,
     'unit': product?.unit ?? '',
     'price': price,
     'discountValue': discountValue,
@@ -56,6 +66,7 @@ class BillRow {
     'lineAmount': lineAmount,
     'gstRate': gstRate,
     'lineGstAmount': lineGstAmount,
+    'isFromReserve': isFromReserve,
   };
 
   /// Whether this row has enough data to be counted as valid

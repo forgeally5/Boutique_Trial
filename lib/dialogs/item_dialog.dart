@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import '../models/product.dart';
 import '../state/admin_state.dart';
 import '../utils/boutique_theme.dart';
+import '../utils/excel_generator.dart';
 
 class ItemDialog extends StatefulWidget {
   final String adminEmail;
@@ -37,13 +38,17 @@ class _ItemDialogState extends State<ItemDialog> {
   late TextEditingController _discountCtrl;
   late TextEditingController _gstRateCtrl;
   late TextEditingController _reservedForCtrl;
+  late TextEditingController _reservedQtyCtrl;
+  late TextEditingController _ratePerGramCtrl;
 
   String _discountType = '%'; // "%" or "₹"
+  String _pricingType = 'Quantity-Based'; // "Quantity-Based" or "Weight-Based"
   String _category = 'Idols';
   String _deity = 'General';
   String _material = 'Brass';
   String _status = 'In Stock';
   String _unit = 'Piece';
+  String _weightUnit = 'Grams';
   bool _isReserved = false;
 
   // Validation touched flags
@@ -113,6 +118,11 @@ class _ItemDialogState extends State<ItemDialog> {
     return list.isNotEmpty ? list : _units;
   }
 
+  List<String> get _availableWeightUnits {
+    final list = widget.adminState.weightUnits;
+    return list.isNotEmpty ? list : ['g', 'kg', 'mg', 'carat'];
+  }
+
   void _showEditItemPrompt(
     BuildContext parentContext,
     String type,
@@ -178,6 +188,8 @@ class _ItemDialogState extends State<ItemDialog> {
               currentItems = widget.adminState.materials;
             } else if (type == 'Item Name') {
               currentItems = widget.adminState.itemNames;
+            } else if (type == 'Weight Unit') {
+              currentItems = widget.adminState.weightUnits;
             } else {
               currentItems = widget.adminState.units;
             }
@@ -253,6 +265,9 @@ class _ItemDialogState extends State<ItemDialog> {
                                   _itemName = val;
                                   _nameCtrl.text = val;
                                 });
+                              } else if (type == 'Weight Unit') {
+                                widget.adminState.addWeightUnit(val);
+                                setState(() => _weightUnit = val);
                               } else if (type == 'Unit') {
                                 widget.adminState.addUnit(val);
                                 setState(() => _unit = val);
@@ -300,6 +315,9 @@ class _ItemDialogState extends State<ItemDialog> {
                                                 _nameCtrl.text = newVal;
                                               });
                                             }
+                                          } else if (type == 'Weight Unit') {
+                                            await widget.adminState.updateWeightUnit(item, newVal);
+                                            if (_weightUnit == item) setState(() => _weightUnit = newVal);
                                           } else if (type == 'Unit') {
                                             await widget.adminState.renameUnit(item, newVal);
                                             if (_unit == item) setState(() => _unit = newVal);
@@ -349,6 +367,11 @@ class _ItemDialogState extends State<ItemDialog> {
                                                   _itemName = _availableItemNames.isNotEmpty ? _availableItemNames.first : '';
                                                   _nameCtrl.text = _itemName;
                                                 });
+                                              }
+                                            } else if (type == 'Weight Unit') {
+                                              await widget.adminState.deleteWeightUnit(item);
+                                              if (_weightUnit == item) {
+                                                setState(() => _weightUnit = _availableWeightUnits.isNotEmpty ? _availableWeightUnits.first : '');
                                               }
                                             } else if (type == 'Unit') {
                                               await widget.adminState.deleteUnit(item);
@@ -400,9 +423,11 @@ class _ItemDialogState extends State<ItemDialog> {
     _quantityCtrl = TextEditingController(text: p != null ? p.quantity.toString() : '1');
     _mrpCtrl = TextEditingController(text: p != null && p.mrp > 0 ? p.mrp.toString() : '');
     _sellingPriceCtrl = TextEditingController(text: p != null && p.sellingPrice > 0 ? p.sellingPrice.toString() : '');
+    _ratePerGramCtrl = TextEditingController(text: p != null && p.ratePerGram > 0 ? p.ratePerGram.toString() : '');
     _discountCtrl = TextEditingController(text: p != null && p.discountValue > 0 ? p.discountValue.toString() : '');
     _gstRateCtrl = TextEditingController(text: p != null && p.gstRate > 0 ? (p.gstRate == p.gstRate.toInt() ? p.gstRate.toInt().toString() : p.gstRate.toString()) : '0');
     _reservedForCtrl = TextEditingController(text: p != null ? p.reservedFor : '');
+    _reservedQtyCtrl = TextEditingController(text: p != null && p.reservedQuantity > 0 ? p.reservedQuantity.toString() : '');
 
     if (p != null && p.name.isNotEmpty) {
       _itemName = p.name;
@@ -424,8 +449,17 @@ class _ItemDialogState extends State<ItemDialog> {
         orElse: () => 'Piece',
       );
       _unit = normUnit;
+      
+      final storedWeightUnit = p.weightUnit.isNotEmpty ? p.weightUnit : 'g';
+      final normWeightUnit = _availableWeightUnits.firstWhere(
+        (u) => u.toLowerCase() == storedWeightUnit.toLowerCase(),
+        orElse: () => 'g',
+      );
+      _weightUnit = normWeightUnit;
+      
       _isReserved = p.isReserved;
       _discountType = p.discountType.isNotEmpty ? p.discountType : '%';
+      _pricingType = p.pricingType.isNotEmpty ? p.pricingType : 'Quantity-Based';
     } else {
       if (_availableCategories.isNotEmpty) {
         _category = _availableCategories.first;
@@ -446,9 +480,11 @@ class _ItemDialogState extends State<ItemDialog> {
     _quantityCtrl.dispose();
     _mrpCtrl.dispose();
     _sellingPriceCtrl.dispose();
+    _ratePerGramCtrl.dispose();
     _discountCtrl.dispose();
     _gstRateCtrl.dispose();
     _reservedForCtrl.dispose();
+    _reservedQtyCtrl.dispose();
     super.dispose();
   }
 
@@ -523,12 +559,12 @@ class _ItemDialogState extends State<ItemDialog> {
     return true;
   }
 
-  Future<void> _save() async {
+  Future<void> _save({bool downloadInwardExcel = false}) async {
     setState(() {
       _tagIdTouched = true;
       _nameTouched = true;
       _categoryTouched = true;
-      _sellingPriceTouched = true;
+      if (_pricingType == 'Quantity-Based') _sellingPriceTouched = true;
       _quantityTouched = true;
     });
 
@@ -547,30 +583,45 @@ class _ItemDialogState extends State<ItemDialog> {
       status: _status,
       vendor: _vendorCtrl.text.trim(),
       notes: _notesCtrl.text.trim(),
-      pricingType: 'Quantity-Based',
+      pricingType: _pricingType,
       grossWeight: 0.0,
       netWeight: 0.0,
-      ratePerGram: 0.0,
+      ratePerGram: _pricingType == 'Weight-Based' ? (double.tryParse(_ratePerGramCtrl.text) ?? 0.0) : 0.0,
       makingCharges: 0.0,
       quantity: int.tryParse(_quantityCtrl.text) ?? 0,
       unit: _unit,
-      mrp: double.tryParse(_mrpCtrl.text) ?? 0.0,
-      sellingPrice: _sellingPrice,
+      mrp: _pricingType == 'Weight-Based' ? 0.0 : (double.tryParse(_mrpCtrl.text) ?? 0.0),
+      sellingPrice: _pricingType == 'Weight-Based' ? 0.0 : _sellingPrice,
       discountValue: _discountAmount,
       discountType: _discountType,
-      finalPrice: _finalPrice,
+      finalPrice: _pricingType == 'Weight-Based' ? 0.0 : _finalPrice,
       gstRate: double.tryParse(_gstRateCtrl.text) ?? 0.0,
       isReserved: _isReserved,
+      reservedQuantity: _isReserved ? (int.tryParse(_reservedQtyCtrl.text) ?? (int.tryParse(_quantityCtrl.text) ?? 0)) : 0,
       reservedFor: _isReserved ? _reservedForCtrl.text.trim() : '',
     );
 
     try {
       if (widget.initialProduct == null) {
         await widget.adminState.addProduct(product);
-        if (mounted) BoutiqueToast.showSuccess(context, 'Product added successfully!');
+        if (mounted) {
+          if (downloadInwardExcel) {
+            await ExcelGenerator.downloadInwardBillExcel(products: [product]);
+            if (mounted) BoutiqueToast.showSuccess(context, 'Product added & Inward Bill (.xlsx) downloaded!');
+          } else {
+            BoutiqueToast.showSuccess(context, 'Product added successfully!');
+          }
+        }
       } else {
         await widget.adminState.updateProduct(product);
-        if (mounted) BoutiqueToast.showSuccess(context, 'Product updated successfully!');
+        if (mounted) {
+          if (downloadInwardExcel) {
+            await ExcelGenerator.downloadInwardBillExcel(products: [product]);
+            if (mounted) BoutiqueToast.showSuccess(context, 'Product updated & Inward Bill (.xlsx) downloaded!');
+          } else {
+            BoutiqueToast.showSuccess(context, 'Product updated successfully!');
+          }
+        }
       }
       if (mounted) Navigator.pop(context);
     } catch (e) {
@@ -791,52 +842,147 @@ class _ItemDialogState extends State<ItemDialog> {
                     // ── Section 3: Pricing & Discount ─────────────────────
                     _sectionHeader('Pricing & Discount', Icons.currency_rupee_rounded),
                     const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Container(
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: _border),
+                              color: Colors.white,
+                            ),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: GestureDetector(
+                                    onTap: () => setState(() => _pricingType = 'Quantity-Based'),
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(vertical: 10),
+                                      decoration: BoxDecoration(
+                                        color: _pricingType == 'Quantity-Based' ? _brown : Colors.transparent,
+                                        borderRadius: const BorderRadius.horizontal(left: Radius.circular(8)),
+                                      ),
+                                      alignment: Alignment.center,
+                                      child: Text('Fixed Price', style: TextStyle(color: _pricingType == 'Quantity-Based' ? Colors.white : _lightBrown, fontWeight: FontWeight.bold)),
+                                    ),
+                                  ),
+                                ),
+                                Expanded(
+                                  child: GestureDetector(
+                                    onTap: () => setState(() => _pricingType = 'Weight-Based'),
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(vertical: 10),
+                                      decoration: BoxDecoration(
+                                        color: _pricingType == 'Weight-Based' ? _brown : Colors.transparent,
+                                        borderRadius: const BorderRadius.horizontal(right: Radius.circular(8)),
+                                      ),
+                                      alignment: Alignment.center,
+                                      child: Text('By Weight', style: TextStyle(color: _pricingType == 'Weight-Based' ? Colors.white : _lightBrown, fontWeight: FontWeight.bold)),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Expanded(
+                                child: _field(
+                                  label: 'GST Rate (%)',
+                                  controller: _gstRateCtrl,
+                                  isNum: true,
+                                  hint: '0',
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                              PopupMenuButton<String>(
+                                icon: const Icon(Icons.arrow_drop_down, color: _brown),
+                                tooltip: 'Common GST Rates',
+                                onSelected: (v) {
+                                  if (v == 'Custom') {
+                                    _gstRateCtrl.clear();
+                                  } else {
+                                    _gstRateCtrl.text = v;
+                                  }
+                                },
+                                itemBuilder: (context) {
+                                  final items = ['0', '5', '12', '18', '28']
+                                      .map((r) => PopupMenuItem(value: r, child: Text('$r%')))
+                                      .toList();
+                                  items.add(const PopupMenuItem(value: 'Custom', child: Text('Custom')));
+                                  return items;
+                                },
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
                     Row(children: [
-                      Expanded(child: _field(
-                        label: 'Price (₹) *',
-                        controller: _sellingPriceCtrl,
-                        isNum: true,
-                        hint: '0.00',
-                        onChanged: (v) {
-                          // Keep MRP in sync with price
-                          _mrpCtrl.text = v;
-                          setState(() => _sellingPriceTouched = true);
-                        },
-                      )),
+                      Expanded(
+                        child: _pricingType == 'Weight-Based'
+                          ? Row(
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                Expanded(
+                                  flex: 2,
+                                  child: _field(
+                                    label: 'Rate per $_weightUnit (₹) *',
+                                    controller: _ratePerGramCtrl,
+                                    isNum: true,
+                                    hint: 'e.g. 85.50',
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  flex: 1,
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          Expanded(
+                                            child: _dropdown(
+                                              'Unit',
+                                              _availableWeightUnits.contains(_weightUnit) ? _weightUnit : (_availableWeightUnits.isNotEmpty ? _availableWeightUnits.first : 'g'),
+                                              _availableWeightUnits,
+                                              (v) => setState(() => _weightUnit = v!),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 4),
+                                          IconButton(
+                                            onPressed: () => _showManageMasterListDialog('Weight Unit'),
+                                            icon: const Icon(Icons.settings_outlined, color: _brown),
+                                            tooltip: 'Manage Units',
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            )
+                          : _field(
+                              label: 'Price (₹) *',
+                              controller: _sellingPriceCtrl,
+                              isNum: true,
+                              hint: '0.00',
+                              onChanged: (v) {
+                                _mrpCtrl.text = v;
+                                setState(() => _sellingPriceTouched = true);
+                              },
+                            ),
+                      ),
                       const SizedBox(width: 16),
                       Expanded(
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            Expanded(
-                              child: _field(
-                                label: 'GST Rate (%)',
-                                controller: _gstRateCtrl,
-                                isNum: true,
-                                hint: '0',
-                              ),
-                            ),
-                            const SizedBox(width: 4),
-                            PopupMenuButton<String>(
-                              icon: const Icon(Icons.arrow_drop_down, color: _brown),
-                              tooltip: 'Common GST Rates',
-                              onSelected: (v) {
-                                if (v == 'Custom') {
-                                  _gstRateCtrl.clear();
-                                } else {
-                                  _gstRateCtrl.text = v;
-                                }
-                              },
-                              itemBuilder: (context) {
-                                final items = ['0', '5', '12', '18', '28']
-                                    .map((r) => PopupMenuItem(value: r, child: Text('$r%')))
-                                    .toList();
-                                items.add(const PopupMenuItem(value: 'Custom', child: Text('Custom')));
-                                return items;
-                              },
-                            ),
-                          ],
-                        ),
+                        child: _pricingType == 'Weight-Based'
+                          ? const SizedBox.shrink()
+                          : const SizedBox.shrink(), // placeholder for balance in layout
                       ),
                     ]),
                     const SizedBox(height: 16),
@@ -877,61 +1023,62 @@ class _ItemDialogState extends State<ItemDialog> {
                       ),
                       const SizedBox(width: 16),
                       // Final Price — AnimatedBuilder so only this rebuilds on price/discount keystrokes
-                      Expanded(
-                        flex: 2,
-                        child: AnimatedBuilder(
-                          animation: Listenable.merge([_sellingPriceCtrl, _discountCtrl]),
-                          builder: (context, _) {
-                            final sp = double.tryParse(_sellingPriceCtrl.text) ?? 0.0;
-                            final d = double.tryParse(_discountCtrl.text) ?? 0.0;
-                            final fp = _discountType == '%'
-                                ? (sp - sp * d / 100).clamp(0.0, double.infinity)
-                                : (sp - d).clamp(0.0, double.infinity);
-                            final mrp = double.tryParse(_mrpCtrl.text) ?? 0.0;
-                            final pctOff = (mrp > 0 && fp < mrp) ? (mrp - fp) / mrp * 100 : null;
-                            return Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Text('Final Price', style: TextStyle(
-                                  fontSize: 12, color: _lightBrown, fontWeight: FontWeight.w600,
-                                )),
-                                const SizedBox(height: 6),
-                                Container(
-                                  height: 50,
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFFE8F5E9),
-                                    borderRadius: BorderRadius.circular(8),
-                                    border: Border.all(color: const Color(0xFFA5D6A7)),
-                                  ),
-                                  alignment: Alignment.centerLeft,
-                                  padding: const EdgeInsets.symmetric(horizontal: 14),
-                                  child: Row(children: [
-                                    const Icon(Icons.currency_rupee, size: 16, color: Color(0xFF2E7D32)),
-                                    Text(
-                                      fp.toStringAsFixed(2),
-                                      style: const TextStyle(
-                                        fontSize: 18, fontWeight: FontWeight.bold,
-                                        color: Color(0xFF2E7D32),
-                                      ),
-                                    ),
-                                  ]),
-                                ),
-                                if (pctOff != null) ...[  
+                      if (_pricingType == 'Quantity-Based')
+                        Expanded(
+                          flex: 2,
+                          child: AnimatedBuilder(
+                            animation: Listenable.merge([_sellingPriceCtrl, _discountCtrl]),
+                            builder: (context, _) {
+                              final sp = double.tryParse(_sellingPriceCtrl.text) ?? 0.0;
+                              final d = double.tryParse(_discountCtrl.text) ?? 0.0;
+                              final fp = _discountType == '%'
+                                  ? (sp - sp * d / 100).clamp(0.0, double.infinity)
+                                  : (sp - d).clamp(0.0, double.infinity);
+                              final mrp = double.tryParse(_mrpCtrl.text) ?? 0.0;
+                              final pctOff = (mrp > 0 && fp < mrp) ? (mrp - fp) / mrp * 100 : null;
+                              return Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text('Final Price', style: TextStyle(
+                                    fontSize: 12, color: _lightBrown, fontWeight: FontWeight.w600,
+                                  )),
                                   const SizedBox(height: 6),
-                                  Row(children: [
-                                    const Icon(Icons.info_outline, size: 14, color: _lightBrown),
-                                    const SizedBox(width: 4),
-                                    Text(
-                                      '${pctOff.toStringAsFixed(1)}% off MRP',
-                                      style: const TextStyle(fontSize: 12, color: _lightBrown),
+                                  Container(
+                                    height: 50,
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFE8F5E9),
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(color: const Color(0xFFA5D6A7)),
                                     ),
-                                  ]),
+                                    alignment: Alignment.centerLeft,
+                                    padding: const EdgeInsets.symmetric(horizontal: 14),
+                                    child: Row(children: [
+                                      const Icon(Icons.currency_rupee, size: 16, color: Color(0xFF2E7D32)),
+                                      Text(
+                                        fp.toStringAsFixed(2),
+                                        style: const TextStyle(
+                                          fontSize: 18, fontWeight: FontWeight.bold,
+                                          color: Color(0xFF2E7D32),
+                                        ),
+                                      ),
+                                    ]),
+                                  ),
+                                  if (pctOff != null) ...[  
+                                    const SizedBox(height: 6),
+                                    Row(children: [
+                                      const Icon(Icons.info_outline, size: 14, color: _lightBrown),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        '${pctOff.toStringAsFixed(1)}% off MRP',
+                                        style: const TextStyle(fontSize: 12, color: _lightBrown),
+                                      ),
+                                    ]),
+                                  ],
                                 ],
-                              ],
-                            );
-                          },
+                              );
+                            },
+                          ),
                         ),
-                      ),
                     ]),
 
                     const SizedBox(height: 24),
@@ -972,10 +1119,44 @@ class _ItemDialogState extends State<ItemDialog> {
                     ),
                     if (_isReserved) ...[
                       const SizedBox(height: 12),
-                      _field(
-                        label: 'Customer Details (Name/Number)',
-                        controller: _reservedForCtrl,
-                        hint: 'e.g. John Doe - 9876543210',
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _field(
+                              label: 'Reserved Qty',
+                              controller: _reservedQtyCtrl,
+                              isNum: true,
+                              hint: 'e.g. 2',
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _field(
+                              label: 'Customer Details (Name/Number)',
+                              controller: _reservedForCtrl,
+                              hint: 'e.g. John Doe - 9876543210',
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFFF3E0),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: const Color(0xFFFFCC80)),
+                        ),
+                        child: Row(children: [
+                          const Icon(Icons.info_outline, size: 14, color: Color(0xFFB45309)),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              'Reserved Qty will be deducted from sellable stock. Available = Total − Issue − Reserved.',
+                              style: const TextStyle(fontSize: 11, color: Color(0xFFB45309)),
+                            ),
+                          ),
+                        ]),
                       ),
                     ],
                   ],
@@ -1011,8 +1192,24 @@ class _ItemDialogState extends State<ItemDialog> {
                   AnimatedOpacity(
                     opacity: _isFormValid ? 1.0 : 0.4,
                     duration: const Duration(milliseconds: 200),
+                    child: OutlinedButton.icon(
+                      onPressed: _isFormValid ? () => _save(downloadInwardExcel: true) : null,
+                      icon: const Icon(Icons.download_rounded, size: 16),
+                      label: const Text('Save & Inward Bill (.xlsx)', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFF1E7E34),
+                        side: const BorderSide(color: Color(0xFF1E7E34)),
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  AnimatedOpacity(
+                    opacity: _isFormValid ? 1.0 : 0.4,
+                    duration: const Duration(milliseconds: 200),
                     child: ElevatedButton.icon(
-                      onPressed: _save,
+                      onPressed: () => _save(downloadInwardExcel: false),
                       icon: Icon(isEdit ? Icons.save_rounded : Icons.add_rounded, size: 18),
                       label: Text(isEdit ? 'Update Product' : 'Save Product'),
                       style: ElevatedButton.styleFrom(

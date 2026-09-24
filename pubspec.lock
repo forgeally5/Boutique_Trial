@@ -440,6 +440,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.19.0"
+  jiffy:
+    dependency: transitive
+    description:
+      name: jiffy
+      sha256: "1c1b86459969ff9f32dc5b0ffe392f1e08181e66396cf9dd8fa7c90552a691af"
+      url: "https://pub.dev"
+    source: hosted
+    version: "6.3.2"
   jni:
     dependency: transitive
     description:
@@ -773,6 +781,30 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.4.1"
+  syncfusion_flutter_core:
+    dependency: transitive
+    description:
+      name: syncfusion_flutter_core
+      sha256: "85c1d4be09cfa5b74a026cd1b4c5c7c1a2b2bf709e5e61d4c2feee989ebb1da4"
+      url: "https://pub.dev"
+    source: hosted
+    version: "34.2.9"
+  syncfusion_flutter_xlsio:
+    dependency: "direct main"
+    description:
+      name: syncfusion_flutter_xlsio
+      sha256: "3e8500e252ec7a1b0deca0d97f4d007c4bc5004eeca41d36d56c97ebb1dbc059"
+      url: "https://pub.dev"
+    source: hosted
+    version: "34.2.9"
+  syncfusion_officecore:
+    dependency: transitive
+    description:
+      name: syncfusion_officecore
+      sha256: "7293ab4ee78467582690a391889b33914be8499a4d46ee309aa94a0419dcab21"
+      url: "https://pub.dev"
+    source: hosted
+    version: "34.2.9"
   term_glyph:
     dependency: transitive
     description:

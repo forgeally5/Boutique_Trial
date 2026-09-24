@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'package:printing/printing.dart';
-import '../../utils/boutique_theme.dart';
+import 'package:provider/provider.dart';
+import '../../state/admin_state.dart';
 import 'dart:math' as math;
 import '../../utils/pdf_report_generator.dart';
+import '../../utils/boutique_theme.dart';
 
 class SalesReportScreen extends StatefulWidget {
   const SalesReportScreen({super.key});
@@ -1291,6 +1293,7 @@ class _ProductWiseSalesTabState extends State<_ProductWiseSalesTab> {
     }).toList();
 
     // 2. Aggregate
+    final adminState = context.read<AdminState>();
     final aggMap = <String, Map<String, dynamic>>{};
     for (final r in filteredRaw) {
       final tagId = r['tagId'].toString();
@@ -1318,15 +1321,19 @@ class _ProductWiseSalesTabState extends State<_ProductWiseSalesTab> {
     final aggList = aggMap.values.map((v) {
       final qty = v['qty'] as int;
       final rev = v['revenue'] as double;
+      final tagId = v['tagId'].toString();
+      final product = adminState.lookupProduct(tagId);
+      final sellPrice = product != null ? (product.sellingPrice > 0 ? product.sellingPrice : product.mrp) : 0.0;
+      
       return {
-        'tagId': v['tagId'],
+        'tagId': tagId,
         'productName': v['productName'],
         'category': v['category'],
         'qty': qty,
         'revenue': rev,
         'discount': v['discount'],
         'orders': (v['orderIds'] as Set).length,
-        'avgPrice': qty > 0 ? rev / qty : 0.0,
+        'sellPrice': sellPrice,
       };
     }).toList();
 
@@ -1349,7 +1356,7 @@ class _ProductWiseSalesTabState extends State<_ProductWiseSalesTab> {
         case 3: valA = a['qty']; valB = b['qty']; break;
         case 4: valA = a['revenue']; valB = b['revenue']; break;
         case 5: valA = a['discount']; valB = b['discount']; break;
-        case 6: valA = a['avgPrice']; valB = b['avgPrice']; break;
+        case 6: valA = a['sellPrice']; valB = b['sellPrice']; break;
         case 7: valA = a['orders']; valB = b['orders']; break;
         default: valA = a['revenue']; valB = b['revenue']; break;
       }
@@ -1573,7 +1580,7 @@ class _ProductWiseSalesTabState extends State<_ProductWiseSalesTab> {
   Widget _tableHeader() {
     const cols = [
       'S.No', 'Tag ID', 'Product Name', 'Category', 'Qty Sold',
-      'Revenue (₹)', 'Discount (₹)', 'Avg Price (₹)', 'Orders'
+      'Revenue (₹)', 'Discount (₹)', 'Selling Price (₹)', 'Orders'
     ];
     const flexes = [1, 2, 4, 2, 2, 2, 2, 2, 2];
     // We map column labels to column indices for sorting
@@ -1642,7 +1649,7 @@ class _ProductWiseSalesTabState extends State<_ProductWiseSalesTab> {
           Expanded(flex: flexes[4], child: _cell(r['qty'].toString())),
           Expanded(flex: flexes[5], child: _cell('₹${_numFmt.format(r['revenue'])}', bold: true)),
           Expanded(flex: flexes[6], child: _cell('₹${_numFmt.format(r['discount'])}')),
-          Expanded(flex: flexes[7], child: _cell('₹${_numFmt.format(r['avgPrice'])}')),
+          Expanded(flex: flexes[7], child: _cell('₹${_numFmt.format(r['sellPrice'])}')),
           Expanded(flex: flexes[8], child: _cell(r['orders'].toString())),
         ],
       ),

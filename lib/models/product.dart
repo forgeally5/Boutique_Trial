@@ -21,15 +21,18 @@ class Product {
   // Weight-based fields
   final double grossWeight;
   final double netWeight;
+  final String weightUnit;
   final double ratePerGram;
   final double makingCharges;
 
   // Quantity-based fields
   final int quantity;
   final int issueQuantity; // units marked as damaged or pending vendor return
+  final int reservedQuantity; // units reserved for a specific customer
   final String unit;
   
-  int get sellableQuantity => quantity - issueQuantity;
+  /// Available stock = total - damaged/issue - reserved
+  int get sellableQuantity => (quantity - issueQuantity - reservedQuantity).clamp(0, quantity);
   final double mrp;
   final double sellingPrice;
 
@@ -63,10 +66,12 @@ class Product {
     this.pricingType = 'Quantity-Based',
     this.grossWeight = 0.0,
     this.netWeight = 0.0,
+    this.weightUnit = 'g',
     this.ratePerGram = 0.0,
     this.makingCharges = 0.0,
     this.quantity = 0,
     this.issueQuantity = 0,
+    this.reservedQuantity = 0,
     this.unit = 'piece',
     this.mrp = 0.0,
     this.sellingPrice = 0.0,
@@ -93,10 +98,12 @@ class Product {
     String? pricingType,
     double? grossWeight,
     double? netWeight,
+    String? weightUnit,
     double? ratePerGram,
     double? makingCharges,
     int? quantity,
     int? issueQuantity,
+    int? reservedQuantity,
     String? unit,
     double? mrp,
     double? sellingPrice,
@@ -122,10 +129,12 @@ class Product {
       pricingType: pricingType ?? this.pricingType,
       grossWeight: grossWeight ?? this.grossWeight,
       netWeight: netWeight ?? this.netWeight,
+      weightUnit: weightUnit ?? this.weightUnit,
       ratePerGram: ratePerGram ?? this.ratePerGram,
       makingCharges: makingCharges ?? this.makingCharges,
       quantity: quantity ?? this.quantity,
       issueQuantity: issueQuantity ?? this.issueQuantity,
+      reservedQuantity: reservedQuantity ?? this.reservedQuantity,
       unit: unit ?? this.unit,
       mrp: mrp ?? this.mrp,
       sellingPrice: sellingPrice ?? this.sellingPrice,
@@ -154,10 +163,12 @@ class Product {
       'pricingType': pricingType,
       'grossWeight': grossWeight,
       'netWeight': netWeight,
+      'weightUnit': weightUnit,
       'ratePerGram': ratePerGram,
       'makingCharges': makingCharges,
       'quantity': quantity,
       'issueQuantity': issueQuantity,
+      'reservedQuantity': reservedQuantity,
       'unit': unit,
       'mrp': mrp,
       'sellingPrice': sellingPrice,
@@ -196,10 +207,12 @@ class Product {
       pricingType: json['pricingType'] as String? ?? 'Quantity-Based',
       grossWeight: (json['grossWeight'] as num?)?.toDouble() ?? 0.0,
       netWeight: (json['netWeight'] as num?)?.toDouble() ?? 0.0,
+      weightUnit: json['weightUnit'] as String? ?? 'g',
       ratePerGram: (json['ratePerGram'] as num?)?.toDouble() ?? 0.0,
       makingCharges: (json['makingCharges'] as num?)?.toDouble() ?? 0.0,
       quantity: (json['quantity'] as num?)?.toInt() ?? 0,
       issueQuantity: (json['issueQuantity'] as num?)?.toInt() ?? 0,
+      reservedQuantity: (json['reservedQuantity'] as num?)?.toInt() ?? 0,
       unit: json['unit'] as String? ?? 'piece',
       mrp: (json['mrp'] as num?)?.toDouble() ?? 0.0,
       sellingPrice: sp,

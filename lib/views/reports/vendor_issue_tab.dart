@@ -5,6 +5,8 @@ import 'package:provider/provider.dart';
 import '../../state/admin_state.dart';
 import '../../utils/boutique_theme.dart';
 import '../../dialogs/vendor_issue_dialog.dart';
+import '../../models/vendor_issue.dart';
+import '../../utils/excel_generator.dart';
 
 class VendorIssueTab extends StatefulWidget {
   const VendorIssueTab({super.key});
@@ -242,6 +244,20 @@ class _VendorIssueTabState extends State<VendorIssueTab> {
                 },
               ),
               const SizedBox(width: 12),
+              _iconBtn(Icons.table_view_rounded, const Color(0xFF1E7E34), () async {
+                if (_filtered.isEmpty) {
+                  BoutiqueToast.showError(context, 'No issues to download.');
+                  return;
+                }
+                await ExcelGenerator.downloadIssueReportExcel(
+                  rows: _filtered,
+                  dateFrom: _dateFrom,
+                  dateTo: _dateTo,
+                  filterType: 'Vendor Issues',
+                );
+                if (!context.mounted) return;
+                BoutiqueToast.showSuccess(context, 'Issue Report (.xlsx) downloaded!');
+              }, 'Download Excel (.xlsx)'),
               _iconBtn(Icons.refresh_rounded, BoutiqueColors.accent, _load, 'Refresh'),
             ],
           ),
@@ -300,7 +316,7 @@ class _VendorIssueTabState extends State<VendorIssueTab> {
       ),
       child: Row(
         children: cols.asMap().entries.map((e) {
-          final flex = [2, 4, 3, 1, 2, 2, 2, 1][e.key];
+          final flex = [2, 4, 3, 1, 2, 2, 2, 2][e.key];
           return Expanded(
             flex: flex,
             child: Text(
@@ -352,10 +368,37 @@ class _VendorIssueTabState extends State<VendorIssueTab> {
             ),
           ),
           Expanded(
-            flex: 1,
-            child: IconButton(
-              icon: const Icon(Icons.edit, size: 16, color: BoutiqueColors.accent),
-              onPressed: () => _updateAction(r['id'], r['tagId'], action),
+            flex: 2,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  tooltip: 'Download Issue Bill (.xlsx)',
+                  icon: const Icon(Icons.download_rounded, size: 16, color: Color(0xFF1E7E34)),
+                  onPressed: () async {
+                    final issue = VendorIssue(
+                      id: r['id'] ?? '',
+                      tagId: r['tagId'] ?? '',
+                      productName: r['productName'] ?? '',
+                      vendor: r['vendor'] ?? '',
+                      quantity: (r['quantity'] as num?)?.toInt() ?? 1,
+                      issueType: r['issueType'] ?? '',
+                      actionTaken: action,
+                      dateReported: dt ?? DateTime.now(),
+                      notes: r['notes'] ?? '',
+                      refundAmount: (r['refundAmount'] as num?)?.toDouble() ?? 0.0,
+                    );
+                    await ExcelGenerator.downloadVendorIssueBillExcel(issue: issue);
+                    if (mounted) {
+                      BoutiqueToast.showSuccess(context, 'Issue Bill (.xlsx) downloaded!');
+                    }
+                  },
+                ),
+                IconButton(
+                  icon: const Icon(Icons.edit, size: 16, color: BoutiqueColors.accent),
+                  onPressed: () => _updateAction(r['id'], r['tagId'], action),
+                ),
+              ],
             ),
           ),
         ],

@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import 'package:printing/printing.dart';
 import '../../utils/boutique_theme.dart';
 import '../../utils/pdf_report_generator.dart';
+import '../../utils/excel_generator.dart';
 
 class CustomerReturnTab extends StatefulWidget {
   const CustomerReturnTab({super.key});
@@ -248,9 +249,25 @@ class _CustomerReturnTabState extends State<CustomerReturnTab> {
                 // Print
                 _iconBtn(Icons.print_outlined, BoutiqueColors.accent,
                     _handlePrint, 'Print Report'),
-                // Download
+                // Download PDF
                 _iconBtn(Icons.download_outlined, BoutiqueColors.accent,
                     _handleDownload, 'Download PDF'),
+                // Download Excel
+                _iconBtn(Icons.table_view_rounded, const Color(0xFF1E7E34), () async {
+                  if (_filtered.isEmpty) {
+                    BoutiqueToast.showError(context, 'No data to download.');
+                    return;
+                  }
+                  await ExcelGenerator.downloadIssueReportExcel(
+                    rows: _filtered,
+                    dateFrom: _dateFrom,
+                    dateTo: _dateTo,
+                    filterType: 'Customer Returns',
+                  );
+                  if (mounted) {
+                    BoutiqueToast.showSuccess(context, 'Customer Return Report (.xlsx) downloaded!');
+                  }
+                }, 'Download Excel (.xlsx)'),
               ],
             ),
           ),
