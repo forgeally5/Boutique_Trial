@@ -17,7 +17,7 @@ class _UserEditDialogState extends State<UserEditDialog> {
 
   late TextEditingController _nameController;
   late TextEditingController _emailController;
-  late TextEditingController _discountController;
+  late TextEditingController _passwordController;
 
   String _selectedRole = 'Salesman';
   bool _isActive = true;
@@ -30,9 +30,7 @@ class _UserEditDialogState extends State<UserEditDialog> {
     super.initState();
     _nameController = TextEditingController(text: widget.existingUser?.displayName ?? '');
     _emailController = TextEditingController(text: widget.existingUser?.email ?? '');
-    _discountController = TextEditingController(
-      text: widget.existingUser?.maxDiscountPercent.toString() ?? '0.0',
-    );
+    _passwordController = TextEditingController(text: widget.existingUser?.plainPassword ?? '');
     _selectedRole = widget.existingUser?.role ?? 'Salesman';
     _isActive = widget.existingUser?.isActive ?? true;
     _permissions = widget.existingUser?.permissions ?? PermissionsModel.salesmanPreset();
@@ -42,7 +40,7 @@ class _UserEditDialogState extends State<UserEditDialog> {
   void dispose() {
     _nameController.dispose();
     _emailController.dispose();
-    _discountController.dispose();
+    _passwordController.dispose();
     super.dispose();
   }
 
@@ -68,7 +66,7 @@ class _UserEditDialogState extends State<UserEditDialog> {
       displayName: _nameController.text.trim(),
       role: _selectedRole,
       isActive: _isActive,
-      maxDiscountPercent: double.tryParse(_discountController.text) ?? 0.0,
+      plainPassword: _passwordController.text.trim(),
       permissions: _permissions,
       createdAt: widget.existingUser?.createdAt,
     );
@@ -133,9 +131,8 @@ class _UserEditDialogState extends State<UserEditDialog> {
                             ),
                             const SizedBox(height: 16),
                             TextFormField(
-                              controller: _discountController,
-                              decoration: const InputDecoration(labelText: 'Max Discount Allowed (%)', border: OutlineInputBorder()),
-                              keyboardType: TextInputType.number,
+                              controller: _passwordController,
+                              decoration: const InputDecoration(labelText: 'Password', border: OutlineInputBorder()),
                               validator: (v) => v!.isEmpty ? 'Required' : null,
                             ),
                             const SizedBox(height: 16),
@@ -169,13 +166,10 @@ class _UserEditDialogState extends State<UserEditDialog> {
                                 ]),
                                 _buildPermissionSection('Transactions & Billing', [
                                   _buildCheckbox('Sales Entry', _permissions.salesEntry, (v) => _permissions = PermissionsModel.fromMap({..._permissions.toMap(), 'salesEntry': v})),
-                                  _buildCheckbox('Purchase Entry', _permissions.purchaseEntry, (v) => _permissions = PermissionsModel.fromMap({..._permissions.toMap(), 'purchaseEntry': v})),
                                   _buildCheckbox('Edit Transactions', _permissions.editTransactions, (v) => _permissions = PermissionsModel.fromMap({..._permissions.toMap(), 'editTransactions': v})),
                                   _buildCheckbox('Delete Transactions', _permissions.deleteTransactions, (v) => _permissions = PermissionsModel.fromMap({..._permissions.toMap(), 'deleteTransactions': v})),
                                 ]),
-                                _buildPermissionSection('Master Data & Admin', [
-                                  _buildCheckbox('Manage Master Data (Items/Tax)', _permissions.manageItems, (v) => _permissions = PermissionsModel.fromMap({..._permissions.toMap(), 'manageItems': v, 'manageTax': v})),
-                                  _buildCheckbox('Manage Rates', _permissions.manageRates, (v) => _permissions = PermissionsModel.fromMap({..._permissions.toMap(), 'manageRates': v})),
+                                _buildPermissionSection('Admin Features', [
                                   _buildCheckbox('Manage Users', _permissions.manageUsers, (v) => _permissions = PermissionsModel.fromMap({..._permissions.toMap(), 'manageUsers': v})),
                                   _buildCheckbox('View Reports & Audit', _permissions.viewReports, (v) => _permissions = PermissionsModel.fromMap({..._permissions.toMap(), 'viewReports': v, 'viewAuditLog': v})),
                                 ]),

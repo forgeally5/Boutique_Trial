@@ -6,6 +6,8 @@ import '../dialogs/item_dialog.dart';
 import '../auth/viewmodels/auth_viewmodel.dart';
 import '../utils/boutique_theme.dart';
 import '../utils/excel_generator.dart';
+import '../utils/qr_pdf_generator.dart';
+import '../widgets/searchable_dropdown.dart';
 
 class InventoryView extends StatefulWidget {
   final AdminState state;
@@ -380,11 +382,10 @@ class _InventoryViewState extends State<InventoryView> {
                       // Category Filter
                       Expanded(
                         flex: 2,
-                        child: DropdownButtonFormField<String>(
-                          initialValue: state.categories.contains(_selectedCategory) ? _selectedCategory : 'All Categories',
-                          style: const TextStyle(fontSize: 13, color: BoutiqueColors.textPrimary),
-                          decoration: BoutiqueInputDecoration.field(hintText: 'Category'),
-                          items: state.categories.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
+                        child: SearchableDropdownField(
+                          label: 'Category',
+                          value: state.categories.contains(_selectedCategory) ? _selectedCategory : 'All Categories',
+                          items: state.categories,
                           onChanged: (val) {
                             if (val != null) setState(() => _selectedCategory = val);
                           },
@@ -394,11 +395,10 @@ class _InventoryViewState extends State<InventoryView> {
                       // Status Filter
                       Expanded(
                         flex: 2,
-                        child: DropdownButtonFormField<String>(
-                          initialValue: _selectedStatus,
-                          style: const TextStyle(fontSize: 13, color: BoutiqueColors.textPrimary),
-                          decoration: BoutiqueInputDecoration.field(hintText: 'Status'),
-                          items: _statuses.map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(),
+                        child: SearchableDropdownField(
+                          label: 'Status',
+                          value: _selectedStatus,
+                          items: _statuses,
                           onChanged: (val) {
                             if (val != null) setState(() => _selectedStatus = val);
                           },
@@ -655,6 +655,11 @@ class _InventoryViewState extends State<InventoryView> {
         children: [
           _buildPriceDisplay(p),
           const SizedBox(width: 12),
+          IconButton(
+            tooltip: 'Print QR Label',
+            icon: const Icon(Icons.qr_code_2_rounded, color: BoutiqueColors.accent, size: 20),
+            onPressed: () => QrPdfGenerator.printProductQr(p),
+          ),
           IconButton(
             tooltip: 'Download Inward Bill (.xlsx)',
             icon: const Icon(Icons.download_rounded, color: Color(0xFF1E7E34), size: 20),

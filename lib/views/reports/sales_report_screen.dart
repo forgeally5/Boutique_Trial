@@ -7,6 +7,7 @@ import '../../state/admin_state.dart';
 import 'dart:math' as math;
 import '../../utils/pdf_report_generator.dart';
 import '../../utils/boutique_theme.dart';
+import '../../widgets/searchable_dropdown.dart';
 
 class SalesReportScreen extends StatefulWidget {
   const SalesReportScreen({super.key});
@@ -323,16 +324,10 @@ class _IndividualSalesTabState extends State<_IndividualSalesTab> {
                 const SizedBox(width: 12),
                 Expanded(
                   flex: 2,
-                  child: DropdownButtonFormField<String>(
-                    initialValue: _categoryFilter,
-                    style: const TextStyle(
-                        fontSize: 13, color: BoutiqueColors.textPrimary),
-                    decoration:
-                        BoutiqueInputDecoration.field(hintText: 'Category'),
-                    items: _categories
-                        .map((c) =>
-                            DropdownMenuItem(value: c, child: Text(c)))
-                        .toList(),
+                  child: SearchableDropdownField(
+                    label: 'Category',
+                    value: _categoryFilter,
+                    items: _categories,
                     onChanged: (v) {
                       if (v != null) {
                         setState(() => _categoryFilter = v);
@@ -344,16 +339,10 @@ class _IndividualSalesTabState extends State<_IndividualSalesTab> {
                 const SizedBox(width: 12),
                 Expanded(
                   flex: 2,
-                  child: DropdownButtonFormField<String>(
-                    initialValue: _paymentFilter,
-                    style: const TextStyle(
-                        fontSize: 13, color: BoutiqueColors.textPrimary),
-                    decoration: BoutiqueInputDecoration.field(
-                        hintText: 'Payment Mode'),
-                    items: _paymentModes
-                        .map((m) =>
-                            DropdownMenuItem(value: m, child: Text(m)))
-                        .toList(),
+                  child: SearchableDropdownField(
+                    label: 'Payment Mode',
+                    value: _paymentFilter,
+                    items: _paymentModes,
                     onChanged: (v) {
                       if (v != null) {
                         setState(() => _paymentFilter = v);
@@ -828,16 +817,10 @@ class _TotalSalesTabState extends State<_TotalSalesTab> {
                 const SizedBox(width: 12),
                 Expanded(
                   flex: 2,
-                  child: DropdownButtonFormField<String>(
-                    initialValue: _paymentFilter,
-                    style: const TextStyle(
-                        fontSize: 13, color: BoutiqueColors.textPrimary),
-                    decoration: BoutiqueInputDecoration.field(
-                        hintText: 'Payment Mode'),
-                    items: _paymentModes
-                        .map((m) =>
-                            DropdownMenuItem(value: m, child: Text(m)))
-                        .toList(),
+                  child: SearchableDropdownField(
+                    label: 'Payment Mode',
+                    value: _paymentFilter,
+                    items: _paymentModes,
                     onChanged: (v) {
                       if (v != null) {
                         setState(() => _paymentFilter = v);
@@ -1468,15 +1451,10 @@ class _ProductWiseSalesTabState extends State<_ProductWiseSalesTab> {
                 const SizedBox(width: 12),
                 Expanded(
                   flex: 2,
-                  child: DropdownButtonFormField<String>(
-                    initialValue: _categoryFilter,
-                    style: const TextStyle(
-                        fontSize: 13, color: BoutiqueColors.textPrimary),
-                    decoration:
-                        BoutiqueInputDecoration.field(hintText: 'Category'),
-                    items: _categories
-                        .map((c) => DropdownMenuItem(value: c, child: Text(c)))
-                        .toList(),
+                  child: SearchableDropdownField(
+                    label: 'Category',
+                    value: _categoryFilter,
+                    items: _categories,
                     onChanged: (v) {
                       if (v != null) {
                         setState(() => _categoryFilter = v);
@@ -1488,15 +1466,10 @@ class _ProductWiseSalesTabState extends State<_ProductWiseSalesTab> {
                 const SizedBox(width: 12),
                 Expanded(
                   flex: 2,
-                  child: DropdownButtonFormField<String>(
-                    initialValue: _paymentFilter,
-                    style: const TextStyle(
-                        fontSize: 13, color: BoutiqueColors.textPrimary),
-                    decoration: BoutiqueInputDecoration.field(
-                        hintText: 'Payment Mode'),
-                    items: _paymentModes
-                        .map((m) => DropdownMenuItem(value: m, child: Text(m)))
-                        .toList(),
+                  child: SearchableDropdownField(
+                    label: 'Payment Mode',
+                    value: _paymentFilter,
+                    items: _paymentModes,
                     onChanged: (v) {
                       if (v != null) {
                         setState(() => _paymentFilter = v);

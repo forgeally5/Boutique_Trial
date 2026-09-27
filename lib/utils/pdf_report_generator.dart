@@ -13,7 +13,7 @@ const _kBorderColor = PdfColor.fromInt(0xFFE8E2D9);
 const _kRowAlt = PdfColor.fromInt(0xFFFAF7F2);
 const _kWhite70 = PdfColor(1, 1, 1, 0.7);
 
-const _kCompanyName = 'FORGEALLY BOUTIQUE';
+const _kCompanyName = 'RITUMITA BOUTIQUE';
 const _kCompanySubtitle = 'High-End Fashion & Custom Couture';
 const _kCompanyGstin = 'GSTIN: 33AAAAA0000A1Z5';
 const _kCompanyPhone = 'Ph: +91 98765 43210';

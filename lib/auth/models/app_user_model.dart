@@ -163,7 +163,7 @@ class AppUserModel {
   final String displayName;
   final String role; // 'admin', 'salesman'
   final bool isActive;
-  final double maxDiscountPercent;
+  final String? plainPassword;
   final PermissionsModel permissions;
   final DateTime? createdAt;
 
@@ -173,7 +173,7 @@ class AppUserModel {
     required this.displayName,
     required this.role,
     required this.isActive,
-    required this.maxDiscountPercent,
+    this.plainPassword,
     required this.permissions,
     this.createdAt,
   });
@@ -185,7 +185,7 @@ class AppUserModel {
       displayName: map['displayName'] ?? '',
       role: map['role'] ?? 'salesman',
       isActive: map['isActive'] ?? false,
-      maxDiscountPercent: (map['maxDiscountPercent'] ?? 0.0).toDouble(),
+      plainPassword: map['plainPassword'],
       permissions: PermissionsModel.fromMap(map['permissions']),
       createdAt: map['createdAt'] is Timestamp
           ? (map['createdAt'] as Timestamp).toDate()
@@ -199,7 +199,7 @@ class AppUserModel {
       'displayName': displayName,
       'role': role,
       'isActive': isActive,
-      'maxDiscountPercent': maxDiscountPercent,
+      'plainPassword': plainPassword,
       'permissions': permissions.toMap(),
       'createdAt': createdAt != null ? Timestamp.fromDate(createdAt!) : FieldValue.serverTimestamp(),
     };

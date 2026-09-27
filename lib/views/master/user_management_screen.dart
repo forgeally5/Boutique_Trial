@@ -34,18 +34,47 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
           ),
         ],
       ),
-      body: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      body: Column(
         children: [
-          // Sidebar / Left Panel for Quotas & Filters
-          Expanded(
-            flex: 2,
-            child: _buildLeftPanel(),
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    decoration: const InputDecoration(
+                      labelText: 'Search Users',
+                      prefixIcon: Icon(Icons.search),
+                      border: OutlineInputBorder(),
+                    ),
+                    onChanged: (val) {
+                      setState(() {
+                        _searchQuery = val.toLowerCase();
+                      });
+                    },
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Wrap(
+                  spacing: 8,
+                  children: ['All', 'Admin', 'Salesman'].map((role) {
+                    return ChoiceChip(
+                      label: Text(role),
+                      selected: _roleFilter == role,
+                      onSelected: (selected) {
+                        if (selected) {
+                          setState(() {
+                            _roleFilter = role;
+                          });
+                        }
+                      },
+                    );
+                  }).toList(),
+                ),
+              ],
+            ),
           ),
-          const VerticalDivider(width: 1),
-          // Main Content / User List
           Expanded(
-            flex: 5,
             child: _buildUserList(),
           ),
         ],
@@ -53,90 +82,7 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
     );
   }
 
-  Widget _buildLeftPanel() {
-    return Padding(
-      padding: const EdgeInsets.all(16.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text('Quotas & Limits', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 16),
-          StreamBuilder<SystemQuotaModel>(
-            stream: _userService.streamQuotas(),
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Center(child: CircularProgressIndicator());
-              }
-              final quota = snapshot.data ?? const SystemQuotaModel(
-                maxSalesmen: 0, currentSalesmen: 0,
-              );
-              return Column(
-                children: [
-                  _buildQuotaProgress('Salesmen', quota.currentSalesmen, quota.maxSalesmen, Colors.amber),
-                ],
-              );
-            }
-          ),
-          const SizedBox(height: 32),
-          const Text('Filters', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 16),
-          TextField(
-            decoration: const InputDecoration(
-              labelText: 'Search Users',
-              prefixIcon: Icon(Icons.search),
-              border: OutlineInputBorder(),
-            ),
-            onChanged: (val) {
-              setState(() {
-                _searchQuery = val.toLowerCase();
-              });
-            },
-          ),
-          const SizedBox(height: 16),
-          Wrap(
-            spacing: 8,
-            children: ['All', 'Admin', 'Salesman'].map((role) {
-              return ChoiceChip(
-                label: Text(role),
-                selected: _roleFilter == role,
-                onSelected: (selected) {
-                  if (selected) {
-                    setState(() {
-                      _roleFilter = role;
-                    });
-                  }
-                },
-              );
-            }).toList(),
-          ),
-        ],
-      ),
-    );
-  }
 
-  Widget _buildQuotaProgress(String title, int current, int max, Color color) {
-    double progress = max == 0 ? 0 : current / max;
-    bool isFull = current >= max;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(title, style: const TextStyle(fontWeight: FontWeight.w500)),
-            Text('$current / $max ${isFull ? '(LIMIT REACHED)' : ''}', 
-                 style: TextStyle(color: isFull ? Colors.red : null, fontWeight: isFull ? FontWeight.bold : FontWeight.normal)),
-          ],
-        ),
-        const SizedBox(height: 4),
-        LinearProgressIndicator(
-          value: progress,
-          color: isFull ? Colors.red : color,
-          backgroundColor: Colors.grey[300],
-        ),
-      ],
-    );
-  }
 
   Widget _buildUserList() {
     return StreamBuilder<List<AppUserModel>>(
@@ -194,24 +140,33 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
                     ]
                   ],
                 ),
-                subtitle: Text(user.email),
-                trailing: PopupMenuButton<String>(
-                  onSelected: (val) {
-                    if (val == 'edit') {
-                      showDialog(
-                        context: context,
-                        builder: (context) => UserEditDialog(existingUser: user),
-                      );
-                    } else if (val == 'toggle') {
-                      _userService.toggleUserStatus(user.uid, !user.isActive);
-                    } else if (val == 'delete') {
-                      _showDeleteConfirmation(user);
-                    }
-                  },
-                  itemBuilder: (context) => [
-                    const PopupMenuItem(value: 'edit', child: Text('Edit Permissions')),
-                    PopupMenuItem(value: 'toggle', child: Text(user.isActive ? 'Deactivate Account' : 'Activate Account')),
-                    const PopupMenuItem(value: 'delete', child: Text('Delete User', style: TextStyle(color: Colors.red))),
+                subtitle: Text('${user.email}${user.plainPassword != null ? ' | Password: ${user.plainPassword}' : ''}'),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Switch(
+                      value: user.isActive,
+                      onChanged: (val) {
+                        _userService.toggleUserStatus(user.uid, val);
+                      },
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.edit),
+                      tooltip: 'Edit Permissions',
+                      onPressed: () {
+                        showDialog(
+                          context: context,
+                          builder: (context) => UserEditDialog(existingUser: user),
+                        );
+                      },
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.delete, color: Colors.red),
+                      tooltip: 'Delete User',
+                      onPressed: () {
+                        _showDeleteConfirmation(user);
+                      },
+                    ),
                   ],
                 ),
               ),

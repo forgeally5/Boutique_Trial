@@ -1,4 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../auth/models/app_user_model.dart';
 import '../auth/models/system_quota_model.dart';
 import '../auth/models/override_request_model.dart';
@@ -32,10 +34,36 @@ class UserManagementService {
   }
 
   Future<void> createUser(AppUserModel user) async {
-    // NOTE: In a real app, creating the FirebaseAuth user account would happen here 
-    // or via a Cloud Function to avoid signing out the admin. 
-    // Here we focus on the Firestore document creation.
-    await _usersRef.doc(user.uid).set(user.toMap());
+    AppUserModel userToSave = user;
+    try {
+      if (user.plainPassword != null && user.plainPassword!.isNotEmpty) {
+        final FirebaseApp tempApp = await Firebase.initializeApp(
+          name: 'TemporaryApp_${DateTime.now().millisecondsSinceEpoch}',
+          options: Firebase.app().options,
+        );
+        final tempAuth = FirebaseAuth.instanceFor(app: tempApp);
+        final cred = await tempAuth.createUserWithEmailAndPassword(
+          email: user.email,
+          password: user.plainPassword!,
+        );
+        
+        userToSave = AppUserModel(
+          uid: cred.user!.uid,
+          email: user.email,
+          displayName: user.displayName,
+          role: user.role,
+          isActive: user.isActive,
+          plainPassword: user.plainPassword,
+          permissions: user.permissions,
+          createdAt: user.createdAt,
+        );
+        await tempApp.delete();
+      }
+    } catch (e) {
+      print('Error creating auth user: $e');
+    }
+    
+    await _usersRef.doc(userToSave.uid).set(userToSave.toMap());
   }
 
   Future<void> updateUser(AppUserModel user) async {

@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import 'package:printing/printing.dart';
 import '../../utils/boutique_theme.dart';
 import '../../utils/pdf_report_generator.dart';
+import '../../widgets/searchable_dropdown.dart';
 
 class StockReportScreen extends StatefulWidget {
   const StockReportScreen({super.key});
@@ -197,16 +198,10 @@ class _StockReportScreenState extends State<StockReportScreen> {
                 // Category
                 Expanded(
                   flex: 2,
-                  child: DropdownButtonFormField<String>(
-                    initialValue: _categoryFilter,
-                    style: const TextStyle(
-                        fontSize: 13, color: BoutiqueColors.textPrimary),
-                    decoration:
-                        BoutiqueInputDecoration.field(hintText: 'Category'),
-                    items: _categories
-                        .map((c) =>
-                            DropdownMenuItem(value: c, child: Text(c)))
-                        .toList(),
+                  child: SearchableDropdownField(
+                    label: 'Category',
+                    value: _categoryFilter,
+                    items: _categories,
                     onChanged: (v) {
                       if (v != null) {
                         setState(() => _categoryFilter = v);
@@ -219,16 +214,10 @@ class _StockReportScreenState extends State<StockReportScreen> {
                 // Status
                 Expanded(
                   flex: 2,
-                  child: DropdownButtonFormField<String>(
-                    initialValue: _statusFilter,
-                    style: const TextStyle(
-                        fontSize: 13, color: BoutiqueColors.textPrimary),
-                    decoration:
-                        BoutiqueInputDecoration.field(hintText: 'Status'),
-                    items: _statusOptions
-                        .map((s) =>
-                            DropdownMenuItem(value: s, child: Text(s)))
-                        .toList(),
+                  child: SearchableDropdownField(
+                    label: 'Status',
+                    value: _statusFilter,
+                    items: _statusOptions,
                     onChanged: (v) {
                       if (v != null) {
                         setState(() => _statusFilter = v);

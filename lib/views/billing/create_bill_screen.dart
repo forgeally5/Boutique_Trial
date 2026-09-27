@@ -8,7 +8,9 @@ import '../../state/admin_state.dart';
 import '../../models/product.dart';
 import 'bill_row_model.dart';
 import '../../utils/boutique_theme.dart';
+import '../../widgets/searchable_dropdown.dart';
 import '../../utils/boutique_pdf_generator.dart';
+import '../widgets/scanner_dialog.dart';
 
 class CreateBillScreen extends StatefulWidget {
   final AdminState state;
@@ -531,14 +533,10 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
               ),
               const SizedBox(width: 16),
               Expanded(
-                child: DropdownButtonFormField<String>(
+                child: SearchableDropdownField(
+                  label: 'Bill Type',
                   value: _billType,
-                  style: const TextStyle(fontSize: 13, color: BoutiqueColors.textPrimary),
-                  decoration: BoutiqueInputDecoration.field(hintText: 'Bill Type', labelText: 'Bill Type'),
-                  items: const [
-                    DropdownMenuItem(value: 'Sale', child: Text('Sale')),
-                    DropdownMenuItem(value: 'Advance Payment', child: Text('Advance Payment')),
-                  ],
+                  items: const ['Sale', 'Advance Payment'],
                   onChanged: (v) => setState(() => _billType = v ?? 'Sale'),
                 ),
               ),
@@ -994,6 +992,50 @@ class _BillRowWidgetState extends State<_BillRowWidget> {
               },
             ),
           ),
+          const SizedBox(width: 8),
+          IconButton(
+            tooltip: 'Scan QR',
+            icon: const Icon(Icons.qr_code_scanner_rounded, color: BoutiqueColors.accent),
+            onPressed: () async {
+              final scannedTagId = await showDialog<String>(
+                context: context,
+                builder: (ctx) => const ScannerDialog(),
+              );
+              if (scannedTagId != null && scannedTagId.isNotEmpty) {
+                final matched = widget.products.where((p) => p.tagId.toLowerCase() == scannedTagId.toLowerCase()).toList();
+                if (matched.isNotEmpty) {
+                  final p = matched.first;
+                  final available = widget.getAvailableStock(p, row);
+                  if (available <= 0) {
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Scanned item is out of stock.'), backgroundColor: Colors.red),
+                      );
+                    }
+                    return;
+                  }
+                  setState(() {
+                    row.product = p;
+                    if (row.qty > available) row.qty = available.toDouble();
+                    if (p.pricingType == 'Weight-Based') {
+                      row.price = p.ratePerGram > 0 ? p.ratePerGram : 0.0;
+                    } else {
+                      row.price = p.finalPrice > 0 ? p.finalPrice : p.mrp;
+                    }
+                    row.discountValue = p.discountValue;
+                    row.discountType = p.discountType;
+                  });
+                  widget.onChanged();
+                } else {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('No product found with tag ID: $scannedTagId'), backgroundColor: Colors.red),
+                    );
+                  }
+                }
+              }
+            },
+          ),
           const SizedBox(width: 12),
 
           // Qty stepper — only rebuilds this widget, not parent
@@ -1168,6 +1210,8 @@ class _ProductAutocomplete extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Autocomplete<Product>(
+      // Force rebuild autocomplete key when selected changes via QR scanner
+      key: ValueKey(selected?.tagId),
       initialValue: selected != null
           ? TextEditingValue(text: '${selected!.tagId} - ${selected!.name}')
           : TextEditingValue.empty,

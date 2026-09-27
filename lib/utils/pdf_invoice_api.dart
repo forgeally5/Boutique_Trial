@@ -149,7 +149,7 @@ class PdfInvoiceApi {
 
   static Future<Uint8List> generate(SalesInvoiceData data) async {
     // 1. Fetch template settings dynamically from Firestore
-    String businessName = 'FORGEALLY';
+    String businessName = 'RITUMITA BOUTIQUE';
     String subtitle = 'BOUTIQUE RETAIL';
     String address = 'Your Shop Address, City - 000000. Tamil Nadu, INDIA';
     String gstNo = '';

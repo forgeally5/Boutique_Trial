@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../../state/admin_state.dart';
 import '../../utils/boutique_theme.dart';
+import '../../widgets/searchable_dropdown.dart';
 import '../../dialogs/vendor_issue_dialog.dart';
 import '../../models/vendor_issue.dart';
 import '../../utils/excel_generator.dart';
@@ -200,11 +201,10 @@ class _VendorIssueTabState extends State<VendorIssueTab> {
               // Type filter
               Expanded(
                 flex: 2,
-                child: DropdownButtonFormField<String>(
-                  initialValue: _issueTypeFilter,
-                  style: const TextStyle(fontSize: 13, color: BoutiqueColors.textPrimary),
-                  decoration: BoutiqueInputDecoration.field(hintText: 'Issue Type'),
-                  items: _issueTypes.map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(),
+                child: SearchableDropdownField(
+                  label: 'Issue Type',
+                  value: _issueTypeFilter,
+                  items: _issueTypes,
                   onChanged: (v) {
                     if (v != null) {
                       setState(() => _issueTypeFilter = v);
@@ -217,11 +217,10 @@ class _VendorIssueTabState extends State<VendorIssueTab> {
               // Action filter
               Expanded(
                 flex: 2,
-                child: DropdownButtonFormField<String>(
-                  initialValue: _actionFilter,
-                  style: const TextStyle(fontSize: 13, color: BoutiqueColors.textPrimary),
-                  decoration: BoutiqueInputDecoration.field(hintText: 'Action'),
-                  items: _actions.map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(),
+                child: SearchableDropdownField(
+                  label: 'Action',
+                  value: _actionFilter,
+                  items: _actions,
                   onChanged: (v) {
                     if (v != null) {
                       setState(() => _actionFilter = v);

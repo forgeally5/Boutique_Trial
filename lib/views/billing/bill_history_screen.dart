@@ -5,6 +5,7 @@ import 'package:printing/printing.dart';
 import '../../state/admin_state.dart';
 import '../../utils/boutique_theme.dart';
 import '../../utils/boutique_pdf_generator.dart';
+import '../../widgets/searchable_dropdown.dart';
 
 class BillHistoryScreen extends StatefulWidget {
   final AdminState? state;
@@ -377,11 +378,10 @@ class _BillHistoryScreenState extends State<BillHistoryScreen> {
                 // ── Payment Mode Dropdown ────────────────────────────
                 Expanded(
                   flex: 2,
-                  child: DropdownButtonFormField<String>(
-                    initialValue: _paymentModeFilter,
-                    style: const TextStyle(fontSize: 13, color: BoutiqueColors.textPrimary),
-                    decoration: BoutiqueInputDecoration.field(hintText: 'Payment Mode'),
-                    items: _paymentModes.map((m) => DropdownMenuItem(value: m, child: Text(m))).toList(),
+                  child: SearchableDropdownField(
+                    label: 'Payment Mode',
+                    value: _paymentModeFilter,
+                    items: _paymentModes,
                     onChanged: (v) {
                       if (v != null) {
                         setState(() => _paymentModeFilter = v);

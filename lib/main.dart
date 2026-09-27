@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'auth/viewmodels/auth_viewmodel.dart';
+import 'auth/models/app_user_model.dart';
 import 'firebase_options.dart';
 import 'state/admin_state.dart';
 import 'services/local_db_service.dart';
@@ -39,7 +40,7 @@ class TrilokAdminApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'ForgeAlly Boutique',
+      title: 'RituMita Boutique',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,
@@ -94,26 +95,9 @@ class _SplashScreen extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: BoutiqueColors.accentSoft,
-                shape: BoxShape.circle,
-                border: Border.all(color: BoutiqueColors.accentLightBorder, width: 1.5),
-              ),
-              child: const Text(
-                'F',
-                style: TextStyle(
-                  fontFamily: 'serif',
-                  fontSize: 36,
-                  fontWeight: FontWeight.bold,
-                  color: BoutiqueColors.accent,
-                ),
-              ),
-            ),
-            const SizedBox(height: 20),
+            // Logo removed by request
             const Text(
-              'ForgeAlly Boutique',
+              'RituMita Boutique',
               style: TextStyle(
                 fontFamily: 'serif',
                 fontSize: 32,
@@ -159,8 +143,7 @@ class AdminHomeShell extends StatefulWidget {
 
 class _AdminHomeShellState extends State<AdminHomeShell> {
   final AdminState _state = AdminState();
-  // 1: Inventory, 2: Billing, 3: Reports, 5: Settings
-  int _activeTabIndex = 1;
+  int _activeTabIndex = 0; // 0 = uninitialized
   String _selectedBillingSection = 'A Sales Entry';
   final TextEditingController _globalSearchCtrl = TextEditingController();
 
@@ -174,6 +157,25 @@ class _AdminHomeShellState extends State<AdminHomeShell> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final perms = context.read<AuthViewModel>().appUser?.permissions ?? PermissionsModel.adminPreset();
+      if (mounted && _activeTabIndex == 0) {
+        setState(() {
+          if (perms.viewInventory) {
+            _activeTabIndex = 1;
+          } else if (perms.salesEntry) {
+            _activeTabIndex = 2;
+          } else if (perms.viewReports) {
+            _activeTabIndex = 3;
+          } else if (perms.manageUsers) {
+            _activeTabIndex = 4;
+          } else {
+            _activeTabIndex = 5;
+          }
+        });
+      }
+    });
+
     _state.addListener(() {
       if (mounted) {
         if (_state.requestedTabIndex != null) {
@@ -486,7 +488,17 @@ class _AdminHomeShellState extends State<AdminHomeShell> {
   @override
   Widget build(BuildContext context) {
     final isDesktop = MediaQuery.of(context).size.width >= 900;
-    final userEmail = context.watch<AuthViewModel>().adminUser?.email ?? 'admin@boutique.com';
+    final authUser = context.watch<AuthViewModel>().appUser;
+    final userEmail = authUser?.email ?? 'admin@boutique.com';
+    final perms = authUser?.permissions ?? PermissionsModel.adminPreset();
+    
+    final canViewInventory = perms.viewInventory;
+    final canViewBilling = perms.salesEntry; // Billing access
+    final canViewReports = perms.viewReports;
+    final canManageUsers = perms.manageUsers;
+
+    // Guard to wait for init logic to assign active tab
+    if (_activeTabIndex == 0) return const Scaffold(backgroundColor: BoutiqueColors.bgMain);
 
     return Scaffold(
       backgroundColor: BoutiqueColors.bgMain,
@@ -507,50 +519,34 @@ class _AdminHomeShellState extends State<AdminHomeShell> {
                     padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
                     child: Row(
                       children: [
-                        Container(
-                          width: 34,
-                          height: 34,
-                          decoration: BoxDecoration(
-                            color: BoutiqueColors.accent,
-                            borderRadius: BorderRadius.circular(8),
+                        // Logo removed by request
+                        Flexible(
+                          child: const Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                'RituMita Boutique',
+                                style: TextStyle(
+                                  fontFamily: 'serif',
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                  color: BoutiqueColors.textPrimary,
+                                  letterSpacing: 0.5,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              Text(
+                                'BOUTIQUE RETAIL',
+                                style: TextStyle(
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.w600,
+                                  letterSpacing: 1.5,
+                                  color: BoutiqueColors.accent,
+                                ),
+                              ),
+                            ],
                           ),
-                          child: const Center(
-                            child: Text(
-                              'F',
-                              style: TextStyle(
-                                fontFamily: 'serif',
-                                color: Colors.white,
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        const Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              'ForgeAlly',
-                              style: TextStyle(
-                                fontFamily: 'serif',
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                                color: BoutiqueColors.textPrimary,
-                                letterSpacing: 1.0,
-                              ),
-                            ),
-                            Text(
-                              'BOUTIQUE RETAIL',
-                              style: TextStyle(
-                                fontSize: 9,
-                                fontWeight: FontWeight.w600,
-                                letterSpacing: 1.5,
-                                color: BoutiqueColors.accent,
-                              ),
-                            ),
-                          ],
                         ),
                       ],
                     ),
@@ -563,10 +559,10 @@ class _AdminHomeShellState extends State<AdminHomeShell> {
                     child: ListView(
                       padding: const EdgeInsets.symmetric(horizontal: 14),
                       children: [
-                        _buildNavItem(1, Icons.inventory_2_outlined, 'Inventory'),
-                        _buildNavItem(2, Icons.point_of_sale_rounded, 'Billing / POS'),
-                        _buildNavItem(3, Icons.analytics_outlined, 'Reports'),
-                        _buildNavItem(4, Icons.manage_accounts_outlined, 'Users'),
+                        if (canViewInventory) _buildNavItem(1, Icons.inventory_2_outlined, 'Inventory'),
+                        if (canViewBilling) _buildNavItem(2, Icons.point_of_sale_rounded, 'Billing / POS'),
+                        if (canViewReports) _buildNavItem(3, Icons.analytics_outlined, 'Reports'),
+                        if (canManageUsers) _buildNavItem(4, Icons.manage_accounts_outlined, 'Users'),
                         _buildNavItem(5, Icons.settings_outlined, 'Settings'),
                       ],
                     ),
@@ -593,9 +589,9 @@ class _AdminHomeShellState extends State<AdminHomeShell> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Text(
-                                'Boutique Admin',
-                                style: TextStyle(
+                              Text(
+                                authUser?.email != null ? (authUser!.role.toUpperCase()) : 'Boutique Admin',
+                                style: const TextStyle(
                                   fontSize: 12,
                                   fontWeight: FontWeight.bold,
                                   color: BoutiqueColors.textPrimary,
@@ -640,15 +636,16 @@ class _AdminHomeShellState extends State<AdminHomeShell> {
                           icon: const Icon(Icons.menu_rounded, color: BoutiqueColors.textPrimary),
                           onSelected: (idx) => _switchTab(idx),
                           itemBuilder: (ctx) => [
-                            const PopupMenuItem(value: 1, child: Text('Inventory')),
-                            const PopupMenuItem(value: 2, child: Text('Billing / POS')),
-                            const PopupMenuItem(value: 3, child: Text('Reports')),
+                            if (canViewInventory) const PopupMenuItem(value: 1, child: Text('Inventory')),
+                            if (canViewBilling) const PopupMenuItem(value: 2, child: Text('Billing / POS')),
+                            if (canViewReports) const PopupMenuItem(value: 3, child: Text('Reports')),
+                            if (canManageUsers) const PopupMenuItem(value: 4, child: Text('Users')),
                             const PopupMenuItem(value: 5, child: Text('Settings')),
                           ],
                         ),
                         const SizedBox(width: 8),
                         const Text(
-                          'ForgeAlly',
+                          'RituMita Boutique',
                           style: TextStyle(
                             fontFamily: 'serif',
                             fontSize: 18,

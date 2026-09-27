@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import 'package:printing/printing.dart';
 import '../../utils/boutique_theme.dart';
 import '../../utils/pdf_report_generator.dart';
+import '../../widgets/searchable_dropdown.dart';
 import '../../utils/excel_generator.dart';
 
 class CustomerReturnTab extends StatefulWidget {
@@ -224,16 +225,10 @@ class _CustomerReturnTabState extends State<CustomerReturnTab> {
                 // Status filter
                 Expanded(
                   flex: 2,
-                  child: DropdownButtonFormField<String>(
-                    initialValue: _statusFilter,
-                    style: const TextStyle(
-                        fontSize: 13, color: BoutiqueColors.textPrimary),
-                    decoration:
-                        BoutiqueInputDecoration.field(hintText: 'Status'),
-                    items: _statusOptions
-                        .map((s) =>
-                            DropdownMenuItem(value: s, child: Text(s)))
-                        .toList(),
+                  child: SearchableDropdownField(
+                    label: 'Status',
+                    value: _statusFilter,
+                    items: _statusOptions,
                     onChanged: (v) {
                       if (v != null) {
                         setState(() => _statusFilter = v);

@@ -1,7 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/admin_user_model.dart';
-
+import '../models/app_user_model.dart';
 /// Single source of truth for all Firebase Authentication and Firestore
 /// admin-verification I/O.
 ///
@@ -57,6 +57,17 @@ class AuthRepository {
 
     if (snapshot.docs.isEmpty) return null;
     return AdminUserModel.fromMap(snapshot.docs.first.data());
+  }
+
+  Future<AppUserModel?> fetchAppUser(String email) async {
+    final snapshot = await _firestore
+        .collection('users')
+        .where('email', isEqualTo: email.trim())
+        .limit(1)
+        .get();
+
+    if (snapshot.docs.isEmpty) return null;
+    return AppUserModel.fromMap(snapshot.docs.first.data(), snapshot.docs.first.id);
   }
 
   /// Ensures an [admin_users] document exists for [email].
@@ -153,15 +164,29 @@ class AuthRepository {
     required String newPassword,
   }) async {
     try {
-      final snapshot = await _firestore
+      // 1. Update in admin_users if exists
+      final adminSnapshot = await _firestore
           .collection(_kAdminUsers)
           .where('email', isEqualTo: email.trim())
           .limit(1)
           .get();
 
-      if (snapshot.docs.isNotEmpty) {
-        await snapshot.docs.first.reference.update({
+      if (adminSnapshot.docs.isNotEmpty) {
+        await adminSnapshot.docs.first.reference.update({
           'password': newPassword,
+        });
+      }
+
+      // 2. Update in users collection so admin can see the new password
+      final userSnapshot = await _firestore
+          .collection('users')
+          .where('email', isEqualTo: email.trim())
+          .limit(1)
+          .get();
+
+      if (userSnapshot.docs.isNotEmpty) {
+        await userSnapshot.docs.first.reference.update({
+          'plainPassword': newPassword,
         });
       }
     } catch (_) {

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/admin_user_model.dart';
+import '../models/app_user_model.dart';
 import '../repositories/auth_repository.dart';
 
 // ─── Auth Status Enum ────────────────────────────────────────────────────────
@@ -46,6 +47,7 @@ class AuthViewModel extends ChangeNotifier {
   AuthStatus _status = AuthStatus.initial;
   String? _errorMessage;
   AdminUserModel? _adminUser;
+  AppUserModel? _appUser;
 
   // ─── Constructor ───────────────────────────────────────────────────────────
 
@@ -59,6 +61,7 @@ class AuthViewModel extends ChangeNotifier {
   AuthStatus get status => _status;
   String? get errorMessage => _errorMessage;
   AdminUserModel? get adminUser => _adminUser;
+  AppUserModel? get appUser => _appUser;
   bool get isLoading => _status == AuthStatus.loading;
   bool get isAuthenticated => _status == AuthStatus.authenticated;
 
@@ -79,6 +82,7 @@ class AuthViewModel extends ChangeNotifier {
       // This covers both explicit logout and session expiry.
       _status = AuthStatus.unauthenticated;
       _adminUser = null;
+      _appUser = null;
       notifyListeners();
       return;
     }
@@ -95,37 +99,52 @@ class AuthViewModel extends ChangeNotifier {
     notifyListeners();
 
     try {
+      final appUser = await _repository.fetchAppUser(email);
       AdminUserModel? adminUser;
-      try {
-        adminUser = await _repository.fetchAdminUser(email);
-      } catch (e) {
-        debugPrint('Firestore fetchAdminUser exception: $e');
-      }
-
-      if (adminUser == null) {
+      
+      if (appUser == null) {
         try {
-          adminUser = await _repository.ensureAdminUser(email);
+          adminUser = await _repository.fetchAdminUser(email);
         } catch (e) {
-          adminUser = AdminUserModel(
-            email: email,
-            role: 'admin',
-            createdAt: DateTime.now(),
-          );
+          debugPrint('Firestore fetchAdminUser exception: $e');
+        }
+
+        if (adminUser == null) {
+          try {
+            adminUser = await _repository.ensureAdminUser(email);
+          } catch (e) {
+            adminUser = AdminUserModel(
+              email: email,
+              role: 'admin',
+              createdAt: DateTime.now(),
+            );
+          }
         }
       }
 
-      if (adminUser.isAdmin) {
-        // ✅ Verified admin
-        _adminUser = adminUser;
+      final bool isAuthorized = appUser != null ? appUser.isActive : (adminUser?.isAdmin ?? false);
+
+      if (isAuthorized) {
+        // ✅ Verified
+        _adminUser = adminUser ?? AdminUserModel(email: email, role: appUser!.role, createdAt: appUser.createdAt);
+        _appUser = appUser ?? AppUserModel(
+          uid: 'admin_fallback',
+          email: email,
+          displayName: 'System Admin',
+          role: 'admin',
+          isActive: true,
+          permissions: PermissionsModel.adminPreset(),
+        );
         _status = AuthStatus.authenticated;
         _errorMessage = null;
       } else {
         // ❌ Explicit non-admin role
         await _repository.signOut();
         _adminUser = null;
+        _appUser = null;
         _status = AuthStatus.unauthorized;
         _errorMessage =
-            'Unauthorized Access. You do not have administrator privileges.';
+            'Unauthorized Access. Your account is not active or lacks privileges.';
       }
     } catch (e) {
       if (_repository.currentUser != null) {
@@ -134,11 +153,20 @@ class AuthViewModel extends ChangeNotifier {
           role: 'admin',
           createdAt: DateTime.now(),
         );
+        _appUser = AppUserModel(
+          uid: 'admin_fallback',
+          email: email,
+          displayName: 'System Admin',
+          role: 'admin',
+          isActive: true,
+          permissions: PermissionsModel.adminPreset(),
+        );
         _status = AuthStatus.authenticated;
         _errorMessage = null;
       } else {
         await _repository.signOut();
         _adminUser = null;
+        _appUser = null;
         _status = AuthStatus.error;
         _errorMessage = 'Login verification failed. Please try again.';
       }
