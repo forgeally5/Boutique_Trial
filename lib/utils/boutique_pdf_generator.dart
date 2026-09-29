@@ -11,6 +11,19 @@ class BoutiquePdfGenerator {
   static pw.Font? _fontSerif;
   static pw.Font? _fontScript;
 
+  static pw.Widget _underlineText(String text, PdfColor goldLine, PdfColor textDark) {
+    return pw.Container(
+      padding: const pw.EdgeInsets.only(bottom: 2),
+      decoration: pw.BoxDecoration(
+        border: pw.Border(bottom: pw.BorderSide(color: goldLine, width: 0.5)),
+      ),
+      child: pw.Text(
+        text,
+        style: pw.TextStyle(fontSize: 8, color: textDark),
+      ),
+    );
+  }
+
   static Future<Uint8List> generate(Map<String, dynamic> bill) async {
     final fmt = DateFormat('dd/MM/yyyy');
     final pdf = pw.Document();
@@ -50,18 +63,7 @@ class BoutiquePdfGenerator {
     final taxAmt = (bill['taxAmount'] as num?)?.toDouble() ?? 0.0;
     final total = (bill['totalPayable'] as num?)?.toDouble() ?? 0.0;
 
-    pw.Widget _underlineText(String text) {
-      return pw.Container(
-        padding: const pw.EdgeInsets.only(bottom: 2),
-        decoration: pw.BoxDecoration(
-          border: pw.Border(bottom: pw.BorderSide(color: goldLine, width: 0.5)),
-        ),
-        child: pw.Text(
-          text,
-          style: pw.TextStyle(fontSize: 8, color: textDark),
-        ),
-      );
-    }
+    pw.Widget underlineText(String text) => _underlineText(text, goldLine, textDark);
 
     pw.Widget pdfCell(String text, {bool isHeader = false, pw.Alignment align = pw.Alignment.center}) {
       return pw.Container(
@@ -145,7 +147,7 @@ class BoutiquePdfGenerator {
                             mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                             children: [
                               pw.Text('INVOICE NO.', style: pw.TextStyle(fontSize: 6, color: textLight)),
-                              _underlineText(billNo),
+                              underlineText(billNo),
                             ],
                           ),
                           pw.SizedBox(height: 4),
@@ -153,7 +155,7 @@ class BoutiquePdfGenerator {
                             mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                             children: [
                               pw.Text('DATE', style: pw.TextStyle(fontSize: 6, color: textLight)),
-                              _underlineText(fmt.format(billDate)),
+                              underlineText(fmt.format(billDate)),
                             ],
                           ),
                         ],
@@ -166,11 +168,11 @@ class BoutiquePdfGenerator {
                 // INVOICE TO
                 pw.Text('INVOICE TO', style: pw.TextStyle(fontSize: 8, letterSpacing: 1, color: textDark, fontWeight: pw.FontWeight.bold)),
                 pw.SizedBox(height: 6),
-                _underlineText(customerName.isEmpty ? 'Walk-in Customer' : customerName),
+                underlineText(customerName.isEmpty ? 'Walk-in Customer' : customerName),
                 pw.SizedBox(height: 4),
-                _underlineText(customerMobile.isEmpty ? ' ' : 'Phone: $customerMobile'),
+                underlineText(customerMobile.isEmpty ? ' ' : 'Phone: $customerMobile'),
                 pw.SizedBox(height: 4),
-                _underlineText(customerAddress.isEmpty ? ' ' : customerAddress),
+                underlineText(customerAddress.isEmpty ? ' ' : customerAddress),
                 pw.SizedBox(height: 20),
 
                 // TABLE
@@ -246,14 +248,14 @@ class BoutiquePdfGenerator {
                           pw.Row(
                             children: [
                               pw.Text('MODE   ', style: pw.TextStyle(fontSize: 7, color: textLight)),
-                              pw.Expanded(child: _underlineText(paymentMode)),
+                              pw.Expanded(child: underlineText(paymentMode)),
                             ]
                           ),
                           pw.SizedBox(height: 6),
                           pw.Row(
                             children: [
                               pw.Text('REMARKS ', style: pw.TextStyle(fontSize: 7, color: textLight)),
-                              pw.Expanded(child: _underlineText(narration)),
+                              pw.Expanded(child: underlineText(narration)),
                             ]
                           ),
                         ],
@@ -275,7 +277,7 @@ class BoutiquePdfGenerator {
                               mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                               children: [
                                 pw.Text('SUBTOTAL', style: pw.TextStyle(fontSize: 7, color: textLight, letterSpacing: 1)),
-                                _underlineText(subtotal.toStringAsFixed(2)),
+                                underlineText(subtotal.toStringAsFixed(2)),
                               ],
                             ),
                             if (taxAmt > 0) ...[
@@ -284,7 +286,7 @@ class BoutiquePdfGenerator {
                                 mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                                 children: [
                                   pw.Text('TAX', style: pw.TextStyle(fontSize: 7, color: textLight, letterSpacing: 1)),
-                                  _underlineText(taxAmt.toStringAsFixed(2)),
+                                  underlineText(taxAmt.toStringAsFixed(2)),
                                 ],
                               ),
                             ],
@@ -293,7 +295,7 @@ class BoutiquePdfGenerator {
                               mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                               children: [
                                 pw.Text('DISCOUNT', style: pw.TextStyle(fontSize: 7, color: textLight, letterSpacing: 1)),
-                                _underlineText(discAmt.toStringAsFixed(2)),
+                                underlineText(discAmt.toStringAsFixed(2)),
                               ],
                             ),
                             pw.SizedBox(height: 10),
@@ -303,7 +305,7 @@ class BoutiquePdfGenerator {
                               mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                               children: [
                                 pw.Text('TOTAL', style: pw.TextStyle(fontSize: 10, color: maroon, fontWeight: pw.FontWeight.bold, letterSpacing: 1)),
-                                _underlineText(total.toStringAsFixed(2)),
+                                underlineText(total.toStringAsFixed(2)),
                               ],
                             ),
                           ],

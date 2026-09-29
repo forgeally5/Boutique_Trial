@@ -1,5 +1,3 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
-
 class SystemQuotaModel {
   final int maxSalesmen;
   final int currentSalesmen;

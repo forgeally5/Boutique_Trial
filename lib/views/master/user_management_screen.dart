@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import '../../auth/models/app_user_model.dart';
-import '../../auth/models/system_quota_model.dart';
 import '../../services/user_management_service.dart';
 import 'user_edit_dialog.dart';
 
@@ -190,7 +189,7 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
       decoration: BoxDecoration(
-        color: _getRoleColor(role).withOpacity(0.2),
+        color: _getRoleColor(role).withValues(alpha: 0.2),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: _getRoleColor(role)),
       ),

@@ -15,7 +15,7 @@ class CustomerLedgerScreen extends StatefulWidget {
 class _CustomerLedgerScreenState extends State<CustomerLedgerScreen> {
   bool _isLoading = true;
   List<Map<String, dynamic>> _allPendingBills = [];
-  Map<String, List<Map<String, dynamic>>> _customerGroups = {};
+  final Map<String, List<Map<String, dynamic>>> _customerGroups = {};
   
   String? _selectedCustomerKey; // Key is typically mobile number
   String _searchQuery = '';
@@ -135,7 +135,7 @@ class _CustomerLedgerScreenState extends State<CustomerLedgerScreen> {
                           final bills = _customerGroups[k]!;
                           final name = bills.first['customerName']?.toString() ?? '';
                           final mobile = bills.first['customerMobile']?.toString() ?? '';
-                          final totalPending = bills.fold(0.0, (sum, b) => sum + ((b['pendingBalance'] as num?)?.toDouble() ?? 0.0));
+                          final totalPending = bills.fold(0.0, (acc, b) => acc + ((b['pendingBalance'] as num?)?.toDouble() ?? 0.0));
                           final isSelected = _selectedCustomerKey == k;
 
                           return InkWell(
@@ -202,7 +202,7 @@ class _CustomerLedgerScreenState extends State<CustomerLedgerScreen> {
   Widget _buildCustomerDetailPanel(List<Map<String, dynamic>> bills) {
     final name = bills.first['customerName']?.toString() ?? '';
     final mobile = bills.first['customerMobile']?.toString() ?? '';
-    final totalPending = bills.fold(0.0, (sum, b) => sum + ((b['pendingBalance'] as num?)?.toDouble() ?? 0.0));
+    final totalPending = bills.fold(0.0, (acc, b) => acc + ((b['pendingBalance'] as num?)?.toDouble() ?? 0.0));
 
     return Container(
       color: Colors.white,
@@ -273,7 +273,7 @@ class _CustomerLedgerScreenState extends State<CustomerLedgerScreen> {
             child: ListView.separated(
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
               itemCount: bills.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 12),
+              separatorBuilder: (_, _) => const SizedBox(height: 12),
               itemBuilder: (ctx, i) {
                 final b = bills[i];
                 final date = (b['billDate'] as Timestamp?)?.toDate() ?? DateTime.now();
@@ -362,7 +362,7 @@ class _CustomerLedgerScreenState extends State<CustomerLedgerScreen> {
                   const SizedBox(height: 16),
                   
                   DropdownButtonFormField<String>(
-                    value: mode,
+                    initialValue: mode,
                     decoration: BoutiqueInputDecoration.field(labelText: 'Payment Mode', hintText: ''),
                     items: const [
                       DropdownMenuItem(value: 'Cash', child: Text('Cash')),

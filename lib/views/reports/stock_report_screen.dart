@@ -46,6 +46,27 @@ class _StockReportScreenState extends State<StockReportScreen> {
       final snap =
           await FirebaseFirestore.instance.collection('products').get();
 
+      // Fetch sales from bills collection to compute total sold per product
+      final billSnap =
+          await FirebaseFirestore.instance.collection('bills').get();
+      final Map<String, int> soldMap = {};
+      for (final doc in billSnap.docs) {
+        final data = doc.data();
+        final billType = data['billType']?.toString() ?? 'Sale';
+        final items = (data['items'] as List?) ?? [];
+        for (final item in items) {
+          final tagId = item['tagId']?.toString().trim() ?? '';
+          final q = (item['qty'] as num?)?.toInt() ?? 0;
+          if (tagId.isNotEmpty) {
+            if (billType == 'Return') {
+              soldMap[tagId] = (soldMap[tagId] ?? 0) - q;
+            } else {
+              soldMap[tagId] = (soldMap[tagId] ?? 0) + q;
+            }
+          }
+        }
+      }
+
       final rows = <Map<String, dynamic>>[];
       final catSet = <String>{};
 
@@ -53,17 +74,21 @@ class _StockReportScreenState extends State<StockReportScreen> {
         final data = Map<String, dynamic>.from(doc.data());
         data['_docId'] = doc.id;
 
-        final qty = (data['quantity'] as num?)?.toInt() ?? 0;
+        final tagId = data['tagId']?.toString().trim() ?? '';
+        final balance = (data['quantity'] as num?)?.toInt() ?? 0;
         final issueQty = (data['issueQuantity'] as num?)?.toInt() ?? 0;
+        final soldQty = (soldMap[tagId] ?? (data['soldQuantity'] as num?)?.toInt() ?? 0).clamp(0, 999999);
+        final totalReceived = (data['totalQuantity'] as num?)?.toInt() ?? (balance + issueQty + soldQty);
+
         final sp = (data['sellingPrice'] as num?)?.toDouble() ?? 0;
         final cat = data['category']?.toString() ?? 'Uncategorized';
         catSet.add(cat);
 
         // 1. Good / Sellable Stock Row
         String status;
-        if (qty == 0) {
+        if (balance == 0) {
           status = 'Out of Stock';
-        } else if (qty > 0 && qty < 5) {
+        } else if (balance > 0 && balance < 5) {
           status = 'Low Stock';
         } else {
           status = 'In Stock';
@@ -71,7 +96,11 @@ class _StockReportScreenState extends State<StockReportScreen> {
 
         final goodStock = Map<String, dynamic>.from(data);
         goodStock['status'] = status;
-        goodStock['stockValue'] = qty * sp;
+        goodStock['totalReceived'] = totalReceived;
+        goodStock['issueQty'] = issueQty;
+        goodStock['soldQty'] = soldQty;
+        goodStock['balance'] = balance;
+        goodStock['stockValue'] = balance * sp;
         rows.add(goodStock);
 
         // 2. Defective Stock Row (displayed separately if any pcs are defective/damaged)
@@ -79,6 +108,10 @@ class _StockReportScreenState extends State<StockReportScreen> {
           final defectiveStock = Map<String, dynamic>.from(data);
           defectiveStock['name'] = '${data['name']} (Defective)';
           defectiveStock['quantity'] = issueQty;
+          defectiveStock['totalReceived'] = issueQty;
+          defectiveStock['issueQty'] = issueQty;
+          defectiveStock['soldQty'] = 0;
+          defectiveStock['balance'] = 0;
           defectiveStock['status'] = 'Damaged/Defective';
           defectiveStock['stockValue'] = issueQty * sp;
           rows.add(defectiveStock);
@@ -124,11 +157,20 @@ class _StockReportScreenState extends State<StockReportScreen> {
       0.0,
       (s, r) =>
           s +
-          ((r['quantity'] as num?)?.toDouble() ?? 0) *
+          ((r['balance'] as num?)?.toDouble() ?? (r['quantity'] as num?)?.toDouble() ?? 0) *
               ((r['sellingPrice'] as num?)?.toDouble() ?? 0));
 
-  int get _totalQty => _filtered.fold(
-      0, (s, r) => s + ((r['quantity'] as num?)?.toInt() ?? 0));
+  int get _totalPurchasedQty => _filtered.fold(
+      0, (s, r) => s + ((r['totalReceived'] as num?)?.toInt() ?? 0));
+
+  int get _totalIssuedQty => _filtered.fold(
+      0, (s, r) => s + ((r['issueQty'] as num?)?.toInt() ?? 0));
+
+  int get _totalSoldQty => _filtered.fold(
+      0, (s, r) => s + ((r['soldQty'] as num?)?.toInt() ?? 0));
+
+  int get _totalBalanceQty => _filtered.fold(
+      0, (s, r) => s + ((r['balance'] as num?)?.toInt() ?? (r['quantity'] as num?)?.toInt() ?? 0));
 
   int get _lowStockCount =>
       _filtered.where((r) => r['status'] == 'Low Stock').length;
@@ -254,26 +296,38 @@ class _StockReportScreenState extends State<StockReportScreen> {
             color: BoutiqueColors.bgCard,
             padding:
                 const EdgeInsets.symmetric(horizontal: 28, vertical: 12),
-            child: Row(
-              children: [
-                _summaryCard(Icons.inventory_2_outlined, 'Total Products',
-                    '${_filtered.length}', BoutiqueColors.accent),
-                const SizedBox(width: 16),
-                _summaryCard(Icons.numbers_rounded, 'Total Qty',
-                    '$_totalQty', BoutiqueColors.gold),
-                const SizedBox(width: 16),
-                _summaryCard(
-                    Icons.currency_rupee_rounded,
-                    'Stock Value',
-                    '₹${_numFmt.format(_totalStockValue)}',
-                    BoutiqueColors.success),
-                const SizedBox(width: 16),
-                _summaryCard(Icons.warning_amber_rounded, 'Low Stock',
-                    '$_lowStockCount', BoutiqueColors.warning),
-                const SizedBox(width: 16),
-                _summaryCard(Icons.remove_shopping_cart_rounded,
-                    'Out of Stock', '$_outOfStockCount', BoutiqueColors.destructive),
-              ],
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  _summaryCard(Icons.inventory_2_outlined, 'Total Products',
+                      '${_filtered.length}', BoutiqueColors.accent),
+                  const SizedBox(width: 14),
+                  _summaryCard(Icons.shopping_bag_outlined, 'Total Purchased',
+                      '$_totalPurchasedQty', BoutiqueColors.accent),
+                  const SizedBox(width: 14),
+                  _summaryCard(Icons.assignment_return_outlined, 'Total Issued',
+                      '$_totalIssuedQty', BoutiqueColors.warning),
+                  const SizedBox(width: 14),
+                  _summaryCard(Icons.point_of_sale_rounded, 'Total Sold',
+                      '$_totalSoldQty', BoutiqueColors.success),
+                  const SizedBox(width: 14),
+                  _summaryCard(Icons.numbers_rounded, 'Balance Stock',
+                      '$_totalBalanceQty', BoutiqueColors.gold),
+                  const SizedBox(width: 14),
+                  _summaryCard(
+                      Icons.currency_rupee_rounded,
+                      'Stock Value',
+                      '₹${_numFmt.format(_totalStockValue)}',
+                      BoutiqueColors.success),
+                  const SizedBox(width: 14),
+                  _summaryCard(Icons.warning_amber_rounded, 'Low Stock',
+                      '$_lowStockCount', BoutiqueColors.warning),
+                  const SizedBox(width: 14),
+                  _summaryCard(Icons.remove_shopping_cart_rounded,
+                      'Out of Stock', '$_outOfStockCount', BoutiqueColors.destructive),
+                ],
+              ),
             ),
           ),
 
@@ -290,20 +344,30 @@ class _StockReportScreenState extends State<StockReportScreen> {
                     : Container(
                         margin: const EdgeInsets.all(24),
                         decoration: BoutiqueDecoration.card(),
-                        child: Column(
-                          children: [
-                            _tableHeader(),
-                            Expanded(
-                              child: ListView.separated(
-                                itemCount: _filtered.length,
-                                separatorBuilder: (_, _) => const Divider(
-                                    height: 1,
-                                    color: BoutiqueColors.borderLight),
-                                itemBuilder: (ctx, i) =>
-                                    _tableRow(_filtered[i], i),
+                        child: LayoutBuilder(
+                          builder: (context, constraints) {
+                            return SingleChildScrollView(
+                              scrollDirection: Axis.horizontal,
+                              child: SizedBox(
+                                width: constraints.maxWidth < 1450 ? 1450 : constraints.maxWidth,
+                                child: Column(
+                                  children: [
+                                    _tableHeader(),
+                                    Expanded(
+                                      child: ListView.separated(
+                                        itemCount: _filtered.length,
+                                        separatorBuilder: (_, _) => const Divider(
+                                            height: 1,
+                                            color: BoutiqueColors.borderLight),
+                                        itemBuilder: (ctx, i) =>
+                                            _tableRow(_filtered[i], i),
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
-                            ),
-                          ],
+                            );
+                          },
                         ),
                       ),
           ),
@@ -314,12 +378,22 @@ class _StockReportScreenState extends State<StockReportScreen> {
 
   Widget _tableHeader() {
     const cols = [
-      'S.No', 'Tag ID', 'Product Name', 'Category',
-      'Qty', 'Unit', 'MRP (₹)', 'Sell Price (₹)',
-      'Stock Value (₹)', 'Status'
+      'S.No',
+      'Tag ID',
+      'Product Name',
+      'Category',
+      'Total Purchased',
+      'Issued Qty',
+      'Sold Qty',
+      'Balance Qty',
+      'Unit',
+      'MRP (₹)',
+      'Sell Price (₹)',
+      'Stock Value (₹)',
+      'Status'
     ];
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: const BoxDecoration(
         color: BoutiqueColors.bgSecondary,
         borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
@@ -328,12 +402,15 @@ class _StockReportScreenState extends State<StockReportScreen> {
         children: cols.asMap().entries.map((e) {
           return Expanded(
             flex: _flex(e.key),
-            child: Text(
-              e.value,
-              style: const TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.bold,
-                color: BoutiqueColors.textSecondary,
+            child: Padding(
+              padding: const EdgeInsets.only(right: 6),
+              child: Text(
+                e.value,
+                style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  color: BoutiqueColors.textSecondary,
+                ),
               ),
             ),
           );
@@ -343,16 +420,18 @@ class _StockReportScreenState extends State<StockReportScreen> {
   }
 
   int _flex(int idx) {
-    const flexes = [1, 2, 4, 2, 1, 1, 2, 2, 2, 2];
+    const flexes = [1, 2, 4, 3, 2, 2, 2, 2, 1, 2, 2, 2, 2];
     return flexes[idx];
   }
 
   Widget _tableRow(Map<String, dynamic> r, int i) {
-    final qty = (r['quantity'] as num?)?.toInt() ?? 0;
+    final totalReceived = (r['totalReceived'] as num?)?.toInt() ?? 0;
+    final issueQty = (r['issueQty'] as num?)?.toInt() ?? 0;
+    final soldQty = (r['soldQty'] as num?)?.toInt() ?? 0;
+    final balance = (r['balance'] as num?)?.toInt() ?? (r['quantity'] as num?)?.toInt() ?? 0;
     final sp = (r['sellingPrice'] as num?)?.toDouble() ?? 0;
-    final stockVal = qty * sp;
+    final stockVal = balance * sp;
     final status = r['status']?.toString() ?? 'In Stock';
-    final isFestival = r['isFestivalStock'] == true;
     final isAlt = i.isOdd;
 
     Color statusColor;
@@ -382,36 +461,55 @@ class _StockReportScreenState extends State<StockReportScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       child: Row(
         children: [
-          Expanded(flex: 1, child: _cell('${i + 1}')),
+          Expanded(flex: 1, child: Padding(padding: const EdgeInsets.only(right: 6), child: _cell('${i + 1}'))),
           Expanded(
               flex: 2,
-              child: _cell(r['tagId']?.toString() ?? '—',
-                  color: BoutiqueColors.accent, bold: true)),
+              child: Padding(padding: const EdgeInsets.only(right: 6), child: _cell(r['tagId']?.toString() ?? '—',
+                  color: BoutiqueColors.accent, bold: true))),
           Expanded(
               flex: 4,
-              child: _cell(r['name']?.toString() ?? '—', bold: true)),
-          Expanded(flex: 2, child: _cell(r['category']?.toString() ?? '—')),
+              child: Padding(padding: const EdgeInsets.only(right: 6), child: _cell(r['name']?.toString() ?? '—', bold: true))),
+          Expanded(flex: 3, child: Padding(padding: const EdgeInsets.only(right: 6), child: _cell(r['category']?.toString() ?? '—'))),
+          // 4 breakdown columns
           Expanded(
-              flex: 1,
-              child: _cell('$qty',
-                  color: qty == 0
+              flex: 2,
+              child: Padding(padding: const EdgeInsets.only(right: 6), child: _cell('$totalReceived',
+                  color: BoutiqueColors.accent, bold: true))),
+          Expanded(
+              flex: 2,
+              child: Padding(padding: const EdgeInsets.only(right: 6), child: _cell('$issueQty',
+                  color: issueQty > 0
+                      ? BoutiqueColors.warning
+                      : BoutiqueColors.textSecondary,
+                  bold: issueQty > 0))),
+          Expanded(
+              flex: 2,
+              child: Padding(padding: const EdgeInsets.only(right: 6), child: _cell('$soldQty',
+                  color: soldQty > 0
+                      ? BoutiqueColors.success
+                      : BoutiqueColors.textSecondary,
+                  bold: soldQty > 0))),
+          Expanded(
+              flex: 2,
+              child: Padding(padding: const EdgeInsets.only(right: 6), child: _cell('$balance',
+                  color: balance == 0
                       ? BoutiqueColors.destructive
-                      : qty < 5
+                      : balance < 5
                           ? BoutiqueColors.warning
                           : BoutiqueColors.textPrimary,
-                  bold: true)),
-          Expanded(flex: 1, child: _cell(r['unit']?.toString() ?? '—')),
+                  bold: true))),
+          Expanded(flex: 1, child: Padding(padding: const EdgeInsets.only(right: 6), child: _cell(r['unit']?.toString() ?? '—'))),
           Expanded(
               flex: 2,
-              child: _cell(
-                  '₹${_numFmt.format((r['mrp'] as num?)?.toDouble() ?? 0)}')),
+              child: Padding(padding: const EdgeInsets.only(right: 6), child: _cell(
+                  '₹${_numFmt.format((r['mrp'] as num?)?.toDouble() ?? 0)}'))),
           Expanded(
               flex: 2,
-              child: _cell('₹${_numFmt.format(sp)}')),
+              child: Padding(padding: const EdgeInsets.only(right: 6), child: _cell('₹${_numFmt.format(sp)}'))),
           Expanded(
               flex: 2,
-              child: _cell('₹${_numFmt.format(stockVal)}',
-                  color: BoutiqueColors.textPrimary, bold: true)),
+              child: Padding(padding: const EdgeInsets.only(right: 6), child: _cell('₹${_numFmt.format(stockVal)}',
+                  color: BoutiqueColors.textPrimary, bold: true))),
           Expanded(
             flex: 2,
             child: Container(
@@ -495,3 +593,4 @@ class _StockReportScreenState extends State<StockReportScreen> {
     );
   }
 }
+

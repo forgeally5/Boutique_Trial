@@ -124,7 +124,7 @@ class _UserEditDialogState extends State<UserEditDialog> {
                             ),
                             const SizedBox(height: 16),
                             DropdownButtonFormField<String>(
-                              value: _selectedRole,
+                              initialValue: _selectedRole,
                               decoration: const InputDecoration(labelText: 'Role', border: OutlineInputBorder()),
                               items: _roles.map((r) => DropdownMenuItem(value: r, child: Text(r))).toList(),
                               onChanged: _onRoleChanged,

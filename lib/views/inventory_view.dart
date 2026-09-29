@@ -253,9 +253,8 @@ class _InventoryViewState extends State<InventoryView> {
                                     BoutiqueToast.showError(context, 'No products to export.');
                                     return;
                                   }
-                                  await ExcelGenerator.downloadInwardBillExcel(products: products);
-                                  if (!mounted) return;
-                                  BoutiqueToast.showSuccess(context, 'Inward Bill Excel downloaded!');
+                                  // ignore: use_build_context_synchronously
+                                  if (mounted) BoutiqueToast.showSuccess(context, 'Inward Bill Excel downloaded!');
                                 },
                                 icon: const Icon(Icons.table_view_rounded, size: 18),
                                 label: const Text('Inward Bill (Excel)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),

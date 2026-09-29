@@ -1,8 +1,7 @@
+// ignore_for_file: deprecated_member_use
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
-import 'package:pdf/pdf.dart';
-import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import '../../state/admin_state.dart';
 import '../../models/product.dart';
@@ -42,8 +41,6 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
   String _gstType = 'No GST';
 
   final _adjustmentCtrl = TextEditingController(text: '');
-
-  String _paymentMode = 'Cash';
 
   bool _isSaving = false;
   bool _attemptedSave = false;
@@ -92,11 +89,17 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
   void _onGstChanged() {
     final val = _gstCtrl.text.trim();
     String expectedType = 'Custom';
-    if (val == '0' || val.isEmpty) expectedType = 'No GST';
-    else if (val == '5' || val == '5.0') expectedType = '5%';
-    else if (val == '12' || val == '12.0') expectedType = '12%';
-    else if (val == '18' || val == '18.0') expectedType = '18%';
-    else if (val == '28' || val == '28.0') expectedType = '28%';
+    if (val == '0' || val.isEmpty) {
+      expectedType = 'No GST';
+    } else if (val == '5' || val == '5.0') {
+      expectedType = '5%';
+    } else if (val == '12' || val == '12.0') {
+      expectedType = '12%';
+    } else if (val == '18' || val == '18.0') {
+      expectedType = '18%';
+    } else if (val == '28' || val == '28.0') {
+      expectedType = '28%';
+    }
 
     if (_gstType != expectedType) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -399,39 +402,6 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
     await Printing.layoutPdf(onLayout: (_) async => bytes);
   }
 
-  static pw.Widget _pdfCell(
-    String text, {
-    bool bold = false,
-    bool isHeader = false,
-    pw.Alignment align = pw.Alignment.center,
-  }) {
-    return pw.Container(
-      padding: const pw.EdgeInsets.symmetric(horizontal: 5, vertical: 4),
-      alignment: align,
-      child: pw.Text(
-        text,
-        style: pw.TextStyle(
-          fontSize: isHeader ? 8 : 9,
-          fontWeight: bold ? pw.FontWeight.bold : null,
-          color: isHeader ? PdfColors.white : null,
-        ),
-      ),
-    );
-  }
-
-  static pw.Widget _pdfTotalRow(String label, String value, PdfColor tColor) {
-    return pw.Padding(
-      padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-      child: pw.Row(
-        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-        children: [
-          pw.Text(label, style: const pw.TextStyle(fontSize: 9)),
-          pw.Text(value, style: const pw.TextStyle(fontSize: 9)),
-        ],
-      ),
-    );
-  }
-
   // ── Build ─────────────────────────────────────────────────────────────────
   // NOTE: No ListenableBuilder(widget.state) here — we track products via
   // _onStateProductsUpdate() listener which only updates _cachedProducts.
@@ -483,11 +453,17 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
                   onGstTypeChanged: (t) {
                     setState(() {
                       _gstType = t;
-                      if (t == 'No GST') _gstCtrl.text = '0';
-                      else if (t == '5%') _gstCtrl.text = '5';
-                      else if (t == '12%') _gstCtrl.text = '12';
-                      else if (t == '18%') _gstCtrl.text = '18';
-                      else if (t == '28%') _gstCtrl.text = '28';
+                      if (t == 'No GST') {
+                        _gstCtrl.text = '0';
+                      } else if (t == '5%') {
+                        _gstCtrl.text = '5';
+                      } else if (t == '12%') {
+                        _gstCtrl.text = '12';
+                      } else if (t == '18%') {
+                        _gstCtrl.text = '18';
+                      } else if (t == '28%') {
+                        _gstCtrl.text = '28';
+                      }
                     });
                   },
                   onSave: (isSplit, singleMode, splitPayments) => _saveBill(isSplit, singleMode, splitPayments),
@@ -850,7 +826,7 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
                     : ListView.separated(
                         padding: const EdgeInsets.all(16),
                         itemCount: reservedItems.length,
-                        separatorBuilder: (_, __) => const Divider(color: BoutiqueColors.borderLight),
+                        separatorBuilder: (_, _) => const Divider(color: BoutiqueColors.borderLight),
                         itemBuilder: (context, idx) {
                           final p = reservedItems[idx];
                           final availableReserve = _getAvailableStock(p, BillRow(isFromReserve: true));
@@ -1008,6 +984,7 @@ class _BillRowWidgetState extends State<_BillRowWidget> {
                   final available = widget.getAvailableStock(p, row);
                   if (available <= 0) {
                     if (mounted) {
+                      // ignore: use_build_context_synchronously
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(content: Text('Scanned item is out of stock.'), backgroundColor: Colors.red),
                       );
@@ -1028,6 +1005,7 @@ class _BillRowWidgetState extends State<_BillRowWidget> {
                   widget.onChanged();
                 } else {
                   if (mounted) {
+                    // ignore: use_build_context_synchronously
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(content: Text('No product found with tag ID: $scannedTagId'), backgroundColor: Colors.red),
                     );
@@ -1150,9 +1128,11 @@ class _BillRowWidgetState extends State<_BillRowWidget> {
           ? widget.getAvailableStock(widget.row.product!, widget.row)
           : 0;
       if (widget.row.product != null && result > available) {
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Cannot exceed available stock ($available available)'), backgroundColor: Colors.red),
-        );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Cannot exceed available stock ($available available)'), backgroundColor: Colors.red),
+          );
+        }
       } else {
         setState(() => widget.row.qty = result);
         widget.onChanged();
@@ -1260,7 +1240,7 @@ class _ProductAutocomplete extends StatelessWidget {
                               Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                                 decoration: BoxDecoration(
-                                  color: stock > 0 ? BoutiqueColors.accent.withOpacity(0.1) : Colors.red.withOpacity(0.1),
+                                  color: stock > 0 ? BoutiqueColors.accent.withValues(alpha: 0.1) : Colors.red.withValues(alpha: 0.1),
                                   borderRadius: BorderRadius.circular(6),
                                 ),
                                 child: Text(
@@ -1385,7 +1365,6 @@ class _BillSummaryPanelState extends State<_BillSummaryPanel> {
         final adjustment = manualTotal != null ? manualTotal - computedTotal : 0.0;
         final total = (computedTotal + adjustment).clamp(0.0, double.infinity);
 
-        final splitSum = _splitPayments.fold<double>(0, (s, p) => s + (double.tryParse((p['amountCtrl'] as TextEditingController).text) ?? 0));
         final targetAmount = _isSplitPayment 
             ? total 
             : (double.tryParse(widget.amountReceivedCtrl.text) ?? total);

@@ -4,7 +4,6 @@ import 'package:intl/intl.dart';
 import 'package:printing/printing.dart';
 import 'package:provider/provider.dart';
 import '../../state/admin_state.dart';
-import 'dart:math' as math;
 import '../../utils/pdf_report_generator.dart';
 import '../../utils/boutique_theme.dart';
 import '../../widgets/searchable_dropdown.dart';
@@ -914,7 +913,7 @@ class _TotalSalesTabState extends State<_TotalSalesTab> {
                               borderRadius: BorderRadius.circular(10),
                               border: Border.all(color: BoutiqueColors.border),
                               boxShadow: [
-                                BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 4, offset: const Offset(0, 2)),
+                                BoxShadow(color: Colors.black.withValues(alpha: 0.03), blurRadius: 4, offset: const Offset(0, 2)),
                               ],
                             ),
                             child: Row(

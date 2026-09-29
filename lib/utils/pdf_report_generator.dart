@@ -481,14 +481,25 @@ Future<Uint8List> generateStockReportPdf({
   final regularFont = await _regularFont();
 
   double totalStockValue = 0;
-  int totalQty = 0;
+  int totalPurchased = 0;
+  int totalIssued = 0;
+  int totalSold = 0;
+  int totalBalance = 0;
   int lowStockCount = 0;
 
   for (final r in rows) {
-    final qty = (r['quantity'] as num?)?.toInt() ?? 0;
+    final balance = (r['balance'] as num?)?.toInt() ?? (r['quantity'] as num?)?.toInt() ?? 0;
+    final totalRec = (r['totalReceived'] as num?)?.toInt() ?? 0;
+    final issue = (r['issueQty'] as num?)?.toInt() ?? 0;
+    final sold = (r['soldQty'] as num?)?.toInt() ?? 0;
     final price = (r['sellingPrice'] as num?)?.toDouble() ?? 0;
-    totalStockValue += qty * price;
-    totalQty += qty;
+
+    totalStockValue += balance * price;
+    totalPurchased += totalRec;
+    totalIssued += issue;
+    totalSold += sold;
+    totalBalance += balance;
+
     final status = r['status']?.toString() ?? '';
     if (status == 'Low Stock') lowStockCount++;
   }
@@ -499,10 +510,11 @@ Future<Uint8List> generateStockReportPdf({
   ].join(' | ');
 
   final columns = [
-    'S.No', 'Tag ID', 'Product Name', 'Category', 'Type',
-    'Qty', 'Unit', 'MRP (₹)', 'Sell Price (₹)', 'Stock Value (₹)', 'Status'
+    'S.No', 'Tag ID', 'Product Name', 'Category',
+    'Tot. Purchased', 'Issued Qty', 'Sold Qty', 'Balance Qty',
+    'Unit', 'Sell Price (₹)', 'Stock Value (₹)', 'Status'
   ];
-  final flexes = [1, 2, 4, 2, 2, 1, 1, 2, 2, 2, 2];
+  final flexes = [1, 2, 4, 2, 2, 2, 2, 2, 1, 2, 2, 2];
 
   pdf.addPage(
     pw.MultiPage(
@@ -526,19 +538,24 @@ Future<Uint8List> generateStockReportPdf({
               _buildTableHeader(columns, flexes, boldFont),
               ...List.generate(rows.length, (i) {
                 final r = rows[i];
-                final qty = (r['quantity'] as num?)?.toInt() ?? 0;
+                final balance = (r['balance'] as num?)?.toInt() ?? (r['quantity'] as num?)?.toInt() ?? 0;
+                final totalRec = (r['totalReceived'] as num?)?.toInt() ?? 0;
+                final issue = (r['issueQty'] as num?)?.toInt() ?? 0;
+                final sold = (r['soldQty'] as num?)?.toInt() ?? 0;
                 final sp = (r['sellingPrice'] as num?)?.toDouble() ?? 0;
+
                 return _buildTableRow([
                   '${i + 1}',
                   r['tagId']?.toString() ?? '—',
                   r['name']?.toString() ?? '—',
                   r['category']?.toString() ?? '—',
-                  r['pricingType']?.toString() ?? '—',
-                  '$qty',
+                  '$totalRec',
+                  '$issue',
+                  '$sold',
+                  '$balance',
                   r['unit']?.toString() ?? '—',
-                  '₹${_numFmt.format((r['mrp'] as num?)?.toDouble() ?? 0)}',
                   '₹${_numFmt.format(sp)}',
-                  '₹${_numFmt.format(qty * sp)}',
+                  '₹${_numFmt.format(balance * sp)}',
                   r['status']?.toString() ?? '—',
                 ], flexes, regularFont, i.isOdd);
               }),
@@ -547,8 +564,11 @@ Future<Uint8List> generateStockReportPdf({
         ),
         _buildSummaryBox({
           'Total Products': '${rows.length}',
-          'Total Qty': '$totalQty',
-          'Total Stock Value': '₹${_numFmt.format(totalStockValue)}',
+          'Total Purchased': '$totalPurchased',
+          'Total Issued': '$totalIssued',
+          'Total Sold': '$totalSold',
+          'Balance Stock': '$totalBalance',
+          'Stock Value': '₹${_numFmt.format(totalStockValue)}',
           'Low Stock Items': '$lowStockCount',
         }, boldFont, regularFont),
         pw.SizedBox(height: 8),

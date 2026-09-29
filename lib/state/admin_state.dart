@@ -1303,9 +1303,13 @@ class AdminState extends ChangeNotifier {
       if (product != null) {
         final newQty = product.quantity + qty;
         String newStatus;
-        if (newQty == 0) newStatus = 'Out of Stock';
-        else if (newQty < 5) newStatus = 'Low Stock';
-        else newStatus = 'In Stock';
+        if (newQty == 0) {
+          newStatus = 'Out of Stock';
+        } else if (newQty < 5) {
+          newStatus = 'Low Stock';
+        } else {
+          newStatus = 'In Stock';
+        }
         
         await updateProduct(product.copyWith(
           quantity: newQty,

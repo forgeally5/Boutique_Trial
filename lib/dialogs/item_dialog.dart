@@ -4,10 +4,8 @@ import '../models/product.dart';
 import '../state/admin_state.dart';
 import '../utils/boutique_theme.dart';
 import '../utils/excel_generator.dart';
-import 'dart:io';
 import 'package:image_picker/image_picker.dart';
 import 'package:firebase_storage/firebase_storage.dart';
-import 'dart:typed_data';
 
 class ItemDialog extends StatefulWidget {
   final String adminEmail;
@@ -595,7 +593,7 @@ class _ItemDialogState extends State<ItemDialog> {
     if (_imageBytes != null) {
       setState(() => _isUploading = true);
       try {
-        String fileName = DateTime.now().millisecondsSinceEpoch.toString() + '.jpg';
+        String fileName = '${DateTime.now().millisecondsSinceEpoch}.jpg';
         Reference storageRef = FirebaseStorage.instance.ref().child('product_images/$fileName');
         UploadTask uploadTask = storageRef.putData(_imageBytes!, SettableMetadata(contentType: 'image/jpeg'));
         TaskSnapshot snapshot = await uploadTask.timeout(const Duration(seconds: 15), onTimeout: () {
