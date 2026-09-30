@@ -89,13 +89,13 @@ BEGIN
     BEGIN
         BLOCK "040904e4"
         BEGIN
-            VALUE "CompanyName", "com.example" "\0"
-            VALUE "FileDescription", "trial" "\0"
+            VALUE "CompanyName", "RituMita" "\0"
+            VALUE "FileDescription", "RituMita Boutique" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "trial" "\0"
-            VALUE "LegalCopyright", "Copyright (C) 2026 com.example. All rights reserved." "\0"
+            VALUE "InternalName", "ritumita_boutique" "\0"
+            VALUE "LegalCopyright", "Copyright (C) 2026 RituMita Boutique. All rights reserved." "\0"
             VALUE "OriginalFilename", "trial.exe" "\0"
-            VALUE "ProductName", "trial" "\0"
+            VALUE "ProductName", "RituMita Boutique" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END
