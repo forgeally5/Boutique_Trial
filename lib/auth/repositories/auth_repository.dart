@@ -60,14 +60,43 @@ class AuthRepository {
   }
 
   Future<AppUserModel?> fetchAppUser(String email) async {
-    final snapshot = await _firestore
+    var snapshot = await _firestore
         .collection('users')
         .where('email', isEqualTo: email.trim())
         .limit(1)
         .get();
 
+    if (snapshot.docs.isEmpty) {
+      snapshot = await _firestore
+          .collection('users')
+          .where('email', isEqualTo: email.trim().toLowerCase())
+          .limit(1)
+          .get();
+    }
+
     if (snapshot.docs.isEmpty) return null;
     return AppUserModel.fromMap(snapshot.docs.first.data(), snapshot.docs.first.id);
+  }
+
+  /// Streams real-time updates for a user document (permissions, role, active status).
+  Stream<AppUserModel?> streamAppUser(String email, [String? uid]) {
+    final cleanEmail = email.trim();
+    if (uid != null && uid.isNotEmpty && !uid.startsWith('temp_') && uid != 'admin_fallback') {
+      return _firestore.collection('users').doc(uid).snapshots().map((doc) {
+        if (!doc.exists || doc.data() == null) return null;
+        return AppUserModel.fromMap(doc.data()!, doc.id);
+      });
+    }
+
+    return _firestore
+        .collection('users')
+        .where('email', isEqualTo: cleanEmail)
+        .limit(1)
+        .snapshots()
+        .map((snapshot) {
+          if (snapshot.docs.isEmpty) return null;
+          return AppUserModel.fromMap(snapshot.docs.first.data(), snapshot.docs.first.id);
+        });
   }
 
   /// Ensures an [admin_users] document exists for [email].
@@ -194,5 +223,17 @@ class AuthRepository {
       // Firestore sync failure is logged but not re-thrown.
     }
   }
+
+  /// Syncs new password to Firestore documents without requiring Firebase Auth currentUser.
+  Future<void> updatePasswordInFirestoreOnly({
+    required String email,
+    required String newPassword,
+  }) async {
+    await _updatePasswordInFirestore(
+      email: email,
+      newPassword: newPassword,
+    );
+  }
 }
+
 

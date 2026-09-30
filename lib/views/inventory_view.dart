@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../state/admin_state.dart';
 import '../models/product.dart';
 import '../dialogs/item_dialog.dart';
+import '../auth/models/app_user_model.dart';
 import '../auth/viewmodels/auth_viewmodel.dart';
 import '../utils/boutique_theme.dart';
 import '../utils/excel_generator.dart';
@@ -20,6 +21,7 @@ class InventoryView extends StatefulWidget {
 
 class _InventoryViewState extends State<InventoryView> {
   AdminState get state => widget.state;
+  PermissionsModel get perms => context.read<AuthViewModel>().appUser?.permissions ?? PermissionsModel.adminPreset();
 
   String _searchQuery = '';
   String _selectedCategory = 'All Categories';
@@ -169,6 +171,9 @@ class _InventoryViewState extends State<InventoryView> {
 
   @override
   Widget build(BuildContext context) {
+    final authUser = context.watch<AuthViewModel>().appUser;
+    final perms = authUser?.permissions ?? PermissionsModel.adminPreset();
+
     return ListenableBuilder(
       listenable: state,
       builder: (context, _) {
@@ -239,39 +244,41 @@ class _InventoryViewState extends State<InventoryView> {
                                   ],
                                 ),
                               ),
-                              const SizedBox(width: 16),
-                              OutlinedButton.icon(
-                                style: OutlinedButton.styleFrom(
-                                  foregroundColor: const Color(0xFF1E7E34),
-                                  side: const BorderSide(color: Color(0xFF1E7E34)),
-                                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                              if (perms.addTags) ...[
+                                const SizedBox(width: 16),
+                                OutlinedButton.icon(
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: const Color(0xFF1E7E34),
+                                    side: const BorderSide(color: Color(0xFF1E7E34)),
+                                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                  ),
+                                  onPressed: () async {
+                                    final products = _getFilteredList(state.products);
+                                    if (products.isEmpty) {
+                                      BoutiqueToast.showError(context, 'No products to export.');
+                                      return;
+                                    }
+                                    // ignore: use_build_context_synchronously
+                                    if (mounted) BoutiqueToast.showSuccess(context, 'Inward Bill Excel downloaded!');
+                                  },
+                                  icon: const Icon(Icons.table_view_rounded, size: 18),
+                                  label: const Text('Inward Bill (Excel)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                                 ),
-                                onPressed: () async {
-                                  final products = _getFilteredList(state.products);
-                                  if (products.isEmpty) {
-                                    BoutiqueToast.showError(context, 'No products to export.');
-                                    return;
-                                  }
-                                  // ignore: use_build_context_synchronously
-                                  if (mounted) BoutiqueToast.showSuccess(context, 'Inward Bill Excel downloaded!');
-                                },
-                                icon: const Icon(Icons.table_view_rounded, size: 18),
-                                label: const Text('Inward Bill (Excel)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                              ),
-                              const SizedBox(width: 12),
-                              ElevatedButton.icon(
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: BoutiqueColors.accent,
-                                  foregroundColor: Colors.white,
-                                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                                  elevation: 0,
+                                const SizedBox(width: 12),
+                                ElevatedButton.icon(
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: BoutiqueColors.accent,
+                                    foregroundColor: Colors.white,
+                                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                    elevation: 0,
+                                  ),
+                                  onPressed: () => _showAddItemDialog(context),
+                                  icon: const Icon(Icons.add_rounded, size: 18),
+                                  label: const Text('Add Product', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                                 ),
-                                onPressed: () => _showAddItemDialog(context),
-                                icon: const Icon(Icons.add_rounded, size: 18),
-                                label: const Text('Add Product', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                              ),
+                              ],
                             ],
                           ),
                         ],
@@ -606,19 +613,24 @@ class _InventoryViewState extends State<InventoryView> {
       child: ListTile(
       onTap: () => setState(() => _selectedDrawerProduct = p),
       contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 6),
-      leading: Container(
-        width: 42,
-        height: 42,
-        decoration: BoxDecoration(
+      leading: ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          width: 42,
+          height: 42,
           color: BoutiqueColors.accentSoft,
-          borderRadius: BorderRadius.circular(8),
-          image: p.imageUrl.isNotEmpty 
-              ? DecorationImage(image: NetworkImage(p.imageUrl), fit: BoxFit.cover)
-              : null,
+          child: p.imageUrl.isNotEmpty 
+              ? Image.network(
+                  p.imageUrl,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, _, _) => const Center(
+                    child: Icon(Icons.inventory_2_outlined, color: BoutiqueColors.accent, size: 22),
+                  ),
+                )
+              : const Center(
+                  child: Icon(Icons.inventory_2_outlined, color: BoutiqueColors.accent, size: 22),
+                ),
         ),
-        child: p.imageUrl.isEmpty ? const Center(
-          child: Icon(Icons.inventory_2_outlined, color: BoutiqueColors.accent, size: 22),
-        ) : null,
       ),
       title: Row(
         children: [
@@ -654,11 +666,12 @@ class _InventoryViewState extends State<InventoryView> {
         children: [
           _buildPriceDisplay(p),
           const SizedBox(width: 12),
-          IconButton(
-            tooltip: 'Print QR Label',
-            icon: const Icon(Icons.qr_code_2_rounded, color: BoutiqueColors.accent, size: 20),
-            onPressed: () => QrPdfGenerator.printProductQr(p),
-          ),
+          if (perms.tagBarcodePrint || perms.editTags)
+            IconButton(
+              tooltip: 'Print QR Label',
+              icon: const Icon(Icons.qr_code_2_rounded, color: BoutiqueColors.accent, size: 20),
+              onPressed: () => QrPdfGenerator.printProductQr(p),
+            ),
           IconButton(
             tooltip: 'Download Inward Bill (.xlsx)',
             icon: const Icon(Icons.download_rounded, color: Color(0xFF1E7E34), size: 20),
@@ -668,14 +681,16 @@ class _InventoryViewState extends State<InventoryView> {
               BoutiqueToast.showSuccess(context, 'Inward Bill (.xlsx) downloaded for ${p.tagId}!');
             },
           ),
-          IconButton(
-            icon: const Icon(Icons.edit_outlined, color: BoutiqueColors.textSecondary, size: 20),
-            onPressed: () => _showEditProductDialog(context, p),
-          ),
-          IconButton(
-            icon: const Icon(Icons.delete_outline_rounded, color: BoutiqueColors.destructive, size: 20),
-            onPressed: () => _confirmDeleteProduct(context, p.tagId),
-          ),
+          if (perms.editTags)
+            IconButton(
+              icon: const Icon(Icons.edit_outlined, color: BoutiqueColors.textSecondary, size: 20),
+              onPressed: () => _showEditProductDialog(context, p),
+            ),
+          if (perms.deleteTags)
+            IconButton(
+              icon: const Icon(Icons.delete_outline_rounded, color: BoutiqueColors.destructive, size: 20),
+              onPressed: () => _confirmDeleteProduct(context, p.tagId),
+            ),
         ],
       ),
     ),
@@ -720,8 +735,26 @@ class _InventoryViewState extends State<InventoryView> {
                   ),
               ],
             ),
-            const Center(
-              child: Icon(Icons.inventory_2_outlined, size: 48, color: BoutiqueColors.accent),
+            Center(
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: Container(
+                  width: 72,
+                  height: 72,
+                  color: BoutiqueColors.accentSoft,
+                  child: p.imageUrl.isNotEmpty
+                      ? Image.network(
+                          p.imageUrl,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, _, _) => const Center(
+                            child: Icon(Icons.inventory_2_outlined, size: 36, color: BoutiqueColors.accent),
+                          ),
+                        )
+                      : const Center(
+                          child: Icon(Icons.inventory_2_outlined, size: 36, color: BoutiqueColors.accent),
+                        ),
+                ),
+              ),
             ),
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -816,15 +849,23 @@ class _InventoryViewState extends State<InventoryView> {
           ),
           const Divider(height: 24, color: BoutiqueColors.border),
           Center(
-            child: Container(
-              width: 90,
-              height: 90,
-              decoration: BoxDecoration(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(16),
+              child: Container(
+                width: 100,
+                height: 100,
                 color: BoutiqueColors.accentSoft,
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: const Center(
-                child: Icon(Icons.inventory_2_outlined, size: 48, color: BoutiqueColors.accent),
+                child: p.imageUrl.isNotEmpty
+                    ? Image.network(
+                        p.imageUrl,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, _, _) => const Center(
+                          child: Icon(Icons.inventory_2_outlined, size: 48, color: BoutiqueColors.accent),
+                        ),
+                      )
+                    : const Center(
+                        child: Icon(Icons.inventory_2_outlined, size: 48, color: BoutiqueColors.accent),
+                      ),
               ),
             ),
           ),
@@ -844,32 +885,34 @@ class _InventoryViewState extends State<InventoryView> {
           const Spacer(),
           Row(
             children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    side: const BorderSide(color: BoutiqueColors.destructive),
+              if (perms.deleteTags)
+                Expanded(
+                  child: OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      side: const BorderSide(color: BoutiqueColors.destructive),
+                    ),
+                    onPressed: () => _confirmDeleteProduct(context, p.tagId),
+                    icon: const Icon(Icons.delete_outline, color: BoutiqueColors.destructive, size: 18),
+                    label: const Text('Delete', style: TextStyle(color: BoutiqueColors.destructive)),
                   ),
-                  onPressed: () => _confirmDeleteProduct(context, p.tagId),
-                  icon: const Icon(Icons.delete_outline, color: BoutiqueColors.destructive, size: 18),
-                  label: const Text('Delete', style: TextStyle(color: BoutiqueColors.destructive)),
                 ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: BoutiqueColors.accent,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
+              if (perms.deleteTags && perms.editTags) const SizedBox(width: 12),
+              if (perms.editTags)
+                Expanded(
+                  child: ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: BoutiqueColors.accent,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                    ),
+                    onPressed: () {
+                      setState(() => _selectedDrawerProduct = null);
+                      _showEditProductDialog(context, p);
+                    },
+                    icon: const Icon(Icons.edit, color: Colors.white, size: 18),
+                    label: const Text('Edit Item', style: TextStyle(color: Colors.white)),
                   ),
-                  onPressed: () {
-                    setState(() => _selectedDrawerProduct = null);
-                    _showEditProductDialog(context, p);
-                  },
-                  icon: const Icon(Icons.edit, color: Colors.white, size: 18),
-                  label: const Text('Edit Item', style: TextStyle(color: Colors.white)),
                 ),
-              ),
             ],
           ),
         ],

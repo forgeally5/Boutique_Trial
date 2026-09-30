@@ -10,6 +10,7 @@ import '../models/item.dart';
 import '../models/vendor_issue.dart';
 
 import '../services/live_rate_service.dart';
+import '../services/api_service.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 
@@ -659,6 +660,19 @@ class AdminState extends ChangeNotifier {
 
   Future<void> fetchProducts() async {
     try {
+      final hostingerProducts = await ApiService().getProducts();
+      if (hostingerProducts.isNotEmpty) {
+        _productsList = hostingerProducts;
+        for (final p in hostingerProducts) {
+          _productsMap[p.tagId.toLowerCase()] = p;
+        }
+        _debouncedNotify();
+      }
+    } catch (e) {
+      debugPrint('Hostinger fetchProducts error: $e');
+    }
+
+    try {
       // 1. Fetch categories
       _firestore.collection('categories').snapshots().listen((snap) {
         for (var doc in snap.docs) {
@@ -1006,6 +1020,13 @@ class AdminState extends ChangeNotifier {
     await _firestore.collection('jewelry_inventory').doc(docId).set(updatedJson, SetOptions(merge: true));
     await _firestore.collection('products').doc(docId).set(updatedJson, SetOptions(merge: true));
 
+    // Save to Hostinger API
+    try {
+      await ApiService().saveProduct(product.copyWith(tagId: docId));
+    } catch (e) {
+      debugPrint('Hostinger saveProduct error: $e');
+    }
+
     // Local update
     final updatedProduct = product.copyWith(tagId: docId);
     final key = docId.toLowerCase();
@@ -1022,6 +1043,13 @@ class AdminState extends ChangeNotifier {
 
     await _firestore.collection('jewelry_inventory').doc(docId).set(json, SetOptions(merge: true));
     await _firestore.collection('products').doc(docId).set(json, SetOptions(merge: true));
+
+    // Update in Hostinger API
+    try {
+      await ApiService().updateProduct(product);
+    } catch (e) {
+      debugPrint('Hostinger updateProduct error: $e');
+    }
 
     final key = docId.toLowerCase();
     _jewelryInventoryMap[key] = product;
@@ -1071,6 +1099,11 @@ class AdminState extends ChangeNotifier {
     notifyListeners();
 
     for (final id in tagsToDelete) {
+      try {
+        await ApiService().deleteProduct(id);
+      } catch (e) {
+        debugPrint('Hostinger deleteProduct error: $e');
+      }
       try {
         await _firestore.collection('jewelry_inventory').doc(id).delete();
         await _firestore.collection('products').doc(id).delete();

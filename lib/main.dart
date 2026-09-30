@@ -493,13 +493,76 @@ class _AdminHomeShellState extends State<AdminHomeShell> {
   Widget build(BuildContext context) {
     final isDesktop = MediaQuery.of(context).size.width >= 900;
     final authUser = context.watch<AuthViewModel>().appUser;
-    final userEmail = authUser?.email ?? 'admin@boutique.com';
+    final userEmail = authUser?.email ?? 'admin@ritumita.com';
     final perms = authUser?.permissions ?? PermissionsModel.adminPreset();
     
     final canViewInventory = perms.viewInventory;
     final canViewBilling = perms.salesEntry; // Billing access
     final canViewReports = perms.viewReports;
     final canManageUsers = perms.manageUsers;
+    final canViewSettings = authUser?.role.toLowerCase() == 'admin' || perms.manageUsers;
+
+    // Track allowed tabs dynamically based on user permissions
+    final allowedTabs = <int>[];
+    if (canViewInventory) allowedTabs.add(1);
+    if (canViewBilling) allowedTabs.add(2);
+    if (canViewReports) allowedTabs.add(3);
+    if (canManageUsers) allowedTabs.add(4);
+    if (canViewSettings) allowedTabs.add(5);
+
+    // If no tabs are allowed at all:
+    if (allowedTabs.isEmpty) {
+      return Scaffold(
+        backgroundColor: BoutiqueColors.bgMain,
+        body: Center(
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 420),
+            padding: const EdgeInsets.all(32),
+            decoration: BoxDecoration(
+              color: BoutiqueColors.bgCard,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: BoutiqueColors.border),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.lock_person_outlined, size: 56, color: BoutiqueColors.accent),
+                const SizedBox(height: 16),
+                const Text('Access Restricted', style: TextStyle(fontFamily: 'serif', fontSize: 20, fontWeight: FontWeight.bold, color: BoutiqueColors.textPrimary)),
+                const SizedBox(height: 8),
+                const Text(
+                  'No module permissions have been assigned to your account yet. Please ask your administrator to grant permissions.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: BoutiqueColors.textSecondary, fontSize: 13),
+                ),
+                const SizedBox(height: 24),
+                ElevatedButton.icon(
+                  onPressed: _handleLogout,
+                  icon: const Icon(Icons.logout, size: 16),
+                  label: const Text('Log Out'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: BoutiqueColors.accent,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    // Auto-switch to first allowed tab if current active tab is forbidden
+    if (!allowedTabs.contains(_activeTabIndex)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && !allowedTabs.contains(_activeTabIndex)) {
+          setState(() {
+            _activeTabIndex = allowedTabs.first;
+          });
+        }
+      });
+    }
 
     // Guard to wait for init logic to assign active tab
     if (_activeTabIndex == 0) return const Scaffold(backgroundColor: BoutiqueColors.bgMain);
@@ -572,7 +635,7 @@ class _AdminHomeShellState extends State<AdminHomeShell> {
                         if (canViewBilling) _buildNavItem(2, Icons.point_of_sale_rounded, 'Billing / POS'),
                         if (canViewReports) _buildNavItem(3, Icons.analytics_outlined, 'Reports'),
                         if (canManageUsers) _buildNavItem(4, Icons.manage_accounts_outlined, 'Users'),
-                        _buildNavItem(5, Icons.settings_outlined, 'Settings'),
+                        if (canViewSettings) _buildNavItem(5, Icons.settings_outlined, 'Settings'),
                       ],
                     ),
                   ),
@@ -649,7 +712,7 @@ class _AdminHomeShellState extends State<AdminHomeShell> {
                             if (canViewBilling) const PopupMenuItem(value: 2, child: Text('Billing / POS')),
                             if (canViewReports) const PopupMenuItem(value: 3, child: Text('Reports')),
                             if (canManageUsers) const PopupMenuItem(value: 4, child: Text('Users')),
-                            const PopupMenuItem(value: 5, child: Text('Settings')),
+                            if (canViewSettings) const PopupMenuItem(value: 5, child: Text('Settings')),
                           ],
                         ),
                         const SizedBox(width: 8),

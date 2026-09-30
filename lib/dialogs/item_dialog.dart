@@ -5,7 +5,7 @@ import '../state/admin_state.dart';
 import '../utils/boutique_theme.dart';
 import '../utils/excel_generator.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:firebase_storage/firebase_storage.dart';
+import '../services/api_service.dart';
 
 class ItemDialog extends StatefulWidget {
   final String adminEmail;
@@ -477,6 +477,7 @@ class _ItemDialogState extends State<ItemDialog> {
       _isReserved = p.isReserved;
       _discountType = p.discountType.isNotEmpty ? p.discountType : '%';
       _pricingType = p.pricingType.isNotEmpty ? p.pricingType : 'Quantity-Based';
+      _imageUrl = p.imageUrl;
     } else {
       if (_availableCategories.isNotEmpty) {
         _category = _availableCategories.first;
@@ -593,13 +594,9 @@ class _ItemDialogState extends State<ItemDialog> {
     if (_imageBytes != null) {
       setState(() => _isUploading = true);
       try {
-        String fileName = '${DateTime.now().millisecondsSinceEpoch}.jpg';
-        Reference storageRef = FirebaseStorage.instance.ref().child('product_images/$fileName');
-        UploadTask uploadTask = storageRef.putData(_imageBytes!, SettableMetadata(contentType: 'image/jpeg'));
-        TaskSnapshot snapshot = await uploadTask.timeout(const Duration(seconds: 15), onTimeout: () {
-          throw Exception('Upload timed out. Please check your Firebase Storage security rules or connection.');
-        });
-        _imageUrl = await snapshot.ref.getDownloadURL();
+        final tagId = _tagIdCtrl.text.trim().replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '');
+        final fileName = '${tagId.isNotEmpty ? tagId : "prod"}_${DateTime.now().millisecondsSinceEpoch}.jpg';
+        _imageUrl = await ApiService().uploadImage(_imageBytes!, fileName, folder: 'products');
       } catch (e) {
         if (mounted) BoutiqueToast.showError(context, 'Failed to upload image: $e');
         setState(() => _isUploading = false);
@@ -716,32 +713,82 @@ class _ItemDialogState extends State<ItemDialog> {
 
                     // ── Product Image ──────────────────────────
                     Center(
-                      child: GestureDetector(
-                        onTap: _pickImage,
-                        child: Container(
-                          width: 120,
-                          height: 120,
-                          decoration: BoxDecoration(
-                            color: Colors.grey.shade200,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: _border),
-                            image: _imageBytes != null
-                                ? DecorationImage(image: MemoryImage(_imageBytes!), fit: BoxFit.cover)
-                                : (_imageUrl.isNotEmpty
-                                    ? DecorationImage(image: NetworkImage(_imageUrl), fit: BoxFit.cover)
-                                    : null),
+                      child: Column(
+                        children: [
+                          GestureDetector(
+                            onTap: _isUploading ? null : _pickImage,
+                            child: Container(
+                              width: 130,
+                              height: 130,
+                              decoration: BoxDecoration(
+                                color: Colors.grey.shade100,
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(color: BoutiqueColors.borderLight, width: 1.5),
+                                image: _imageBytes != null
+                                    ? DecorationImage(image: MemoryImage(_imageBytes!), fit: BoxFit.cover)
+                                    : (_imageUrl.isNotEmpty
+                                        ? DecorationImage(image: NetworkImage(_imageUrl), fit: BoxFit.cover)
+                                        : null),
+                              ),
+                              child: _isUploading
+                                  ? const Center(
+                                      child: CircularProgressIndicator(color: BoutiqueColors.accent),
+                                    )
+                                  : (_imageBytes == null && _imageUrl.isEmpty
+                                      ? Column(
+                                          mainAxisAlignment: MainAxisAlignment.center,
+                                          children: [
+                                            Container(
+                                              padding: const EdgeInsets.all(12),
+                                              decoration: const BoxDecoration(
+                                                color: BoutiqueColors.accentSoft,
+                                                shape: BoxShape.circle,
+                                              ),
+                                              child: const Icon(Icons.add_a_photo_outlined, color: BoutiqueColors.accent, size: 28),
+                                            ),
+                                            const SizedBox(height: 8),
+                                            const Text(
+                                              'Upload Image',
+                                              style: TextStyle(
+                                                color: BoutiqueColors.accent,
+                                                fontWeight: FontWeight.w600,
+                                                fontSize: 12,
+                                              ),
+                                            ),
+                                          ],
+                                        )
+                                      : Align(
+                                          alignment: Alignment.bottomRight,
+                                          child: Container(
+                                            margin: const EdgeInsets.all(8),
+                                            padding: const EdgeInsets.all(6),
+                                            decoration: const BoxDecoration(
+                                              color: Colors.black54,
+                                              shape: BoxShape.circle,
+                                            ),
+                                            child: const Icon(Icons.edit, color: Colors.white, size: 16),
+                                          ),
+                                        )),
+                            ),
                           ),
-                          child: _imageBytes == null && _imageUrl.isEmpty
-                              ? const Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Icon(Icons.add_a_photo, color: Colors.grey, size: 30),
-                                    SizedBox(height: 8),
-                                    Text('Add Photo', style: TextStyle(color: Colors.grey, fontSize: 12)),
-                                  ],
-                                )
-                              : null,
-                        ),
+                          if (_imageBytes != null || _imageUrl.isNotEmpty) ...[
+                            const SizedBox(height: 4),
+                            TextButton.icon(
+                              style: TextButton.styleFrom(
+                                foregroundColor: BoutiqueColors.destructive,
+                                visualDensity: VisualDensity.compact,
+                              ),
+                              icon: const Icon(Icons.delete_outline, size: 16),
+                              label: const Text('Remove Photo', style: TextStyle(fontSize: 12)),
+                              onPressed: () {
+                                setState(() {
+                                  _imageBytes = null;
+                                  _imageUrl = '';
+                                });
+                              },
+                            ),
+                          ],
+                        ],
                       ),
                     ),
                     const SizedBox(height: 24),

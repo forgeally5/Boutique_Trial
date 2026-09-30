@@ -1,9 +1,11 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/admin_user_model.dart';
 import '../models/app_user_model.dart';
 import '../repositories/auth_repository.dart';
+import '../../services/api_service.dart';
 
 // ─── Auth Status Enum ────────────────────────────────────────────────────────
 
@@ -43,6 +45,7 @@ class AuthViewModel extends ChangeNotifier {
   final AuthRepository _repository;
 
   StreamSubscription<User?>? _authSubscription;
+  StreamSubscription<AppUserModel?>? _userDocSubscription;
 
   AuthStatus _status = AuthStatus.initial;
   String? _errorMessage;
@@ -78,8 +81,8 @@ class AuthViewModel extends ChangeNotifier {
 
   Future<void> _onAuthStateChanged(User? user) async {
     if (user == null) {
-      // No Firebase session → always transition to unauthenticated.
-      // This covers both explicit logout and session expiry.
+      _userDocSubscription?.cancel();
+      _userDocSubscription = null;
       _status = AuthStatus.unauthenticated;
       _adminUser = null;
       _appUser = null;
@@ -137,6 +140,9 @@ class AuthViewModel extends ChangeNotifier {
         );
         _status = AuthStatus.authenticated;
         _errorMessage = null;
+
+        // Start real-time permissions tracking
+        _startUserDocListener(email, _appUser?.uid);
       } else {
         // ❌ Explicit non-admin role
         await _repository.signOut();
@@ -180,6 +186,43 @@ class AuthViewModel extends ChangeNotifier {
   /// Sign in with [email] and [password].
   Future<void> login(String email, String password) async {
     _setLoading();
+
+    // 1. Try Hostinger MySQL Authentication
+    try {
+      final hostingerAuth = await ApiService().login(email, password);
+      final u = hostingerAuth['user'] as Map<String, dynamic>?;
+      if (u != null) {
+        PermissionsModel perms = PermissionsModel.adminPreset();
+        if (u['permissions'] != null) {
+          try {
+            final parsed = u['permissions'] is String ? jsonDecode(u['permissions']) : u['permissions'];
+            perms = PermissionsModel.fromMap(parsed);
+          } catch (_) {}
+        }
+        _appUser = AppUserModel(
+          uid: u['uid']?.toString() ?? 'hostinger_user',
+          email: u['email']?.toString() ?? email,
+          displayName: u['name']?.toString() ?? 'Admin',
+          role: u['role']?.toString() ?? 'Admin',
+          isActive: true,
+          permissions: perms,
+        );
+        _adminUser = AdminUserModel(
+          email: email,
+          role: u['role']?.toString() ?? 'Admin',
+          createdAt: DateTime.now(),
+        );
+        _status = AuthStatus.authenticated;
+        _errorMessage = null;
+        _startUserDocListener(email, _appUser?.uid);
+        notifyListeners();
+        return;
+      }
+    } catch (e) {
+      debugPrint('Hostinger login failed, falling back: $e');
+    }
+
+    // 2. Fallback to Firebase
     try {
       final credential = await _repository.signIn(email, password);
       if (credential.user != null && credential.user!.email != null) {
@@ -192,13 +235,54 @@ class AuthViewModel extends ChangeNotifier {
     }
   }
 
-  /// Sign out the current user and reset state.
-  /// [AuthGate] will automatically navigate to [LoginView] once the
-  /// [authStateChanges] stream emits null.
+  /// Start real-time listener for current user's permissions and profile changes
+  void _startUserDocListener(String email, String? uid) {
+    _userDocSubscription?.cancel();
+    _userDocSubscription = _repository.streamAppUser(email, uid).listen((updatedUser) {
+      if (updatedUser != null) {
+        debugPrint('Real-time permission update received for ${updatedUser.email}');
+        if (!updatedUser.isActive) {
+          // Account was deactivated by administrator!
+          _status = AuthStatus.unauthorized;
+          _errorMessage = 'Your account has been deactivated by the administrator.';
+          _appUser = null;
+          _adminUser = null;
+          _userDocSubscription?.cancel();
+          _userDocSubscription = null;
+          _repository.signOut();
+          notifyListeners();
+          return;
+        }
+
+        _appUser = updatedUser;
+        _adminUser = AdminUserModel(
+          email: updatedUser.email,
+          role: updatedUser.role,
+          createdAt: updatedUser.createdAt ?? DateTime.now(),
+        );
+        if (_status != AuthStatus.authenticated) {
+          _status = AuthStatus.authenticated;
+        }
+        // Notify entire app tree to instantly refresh permissions
+        notifyListeners();
+      }
+    }, onError: (err) {
+      debugPrint('Error in user doc stream: $err');
+    });
+  }
+
+  /// Sign out the current user and reset state immediately.
   Future<void> logout() async {
-    // Do NOT set loading here — the stream handler must see a clean state
-    // so it can transition to unauthenticated when Firebase emits null.
-    await _repository.signOut();
+    _userDocSubscription?.cancel();
+    _userDocSubscription = null;
+    _appUser = null;
+    _adminUser = null;
+    _status = AuthStatus.unauthenticated;
+    _errorMessage = null;
+    try {
+      await _repository.signOut();
+    } catch (_) {}
+    notifyListeners();
   }
 
   /// Send a Firebase password reset email to [email].
@@ -215,23 +299,81 @@ class AuthViewModel extends ChangeNotifier {
   }
 
   /// Re-authenticate with [currentPassword], then update to [newPassword].
+  /// Supports both Hostinger MySQL backend and Firebase Auth.
   ///
   /// Throws an [Exception] with a human-readable message on failure.
   Future<void> changePassword({
     required String currentPassword,
     required String newPassword,
   }) async {
+    final email = _appUser?.email ?? _adminUser?.email ?? _repository.currentUser?.email;
+    final uid = _appUser?.uid ?? (_repository.currentUser != null ? _repository.currentUser!.uid : 'admin_root');
+
+    if (email == null || email.isEmpty) {
+      throw Exception('No authenticated user found. Please log in again.');
+    }
+
+    bool currentPasswordValid = false;
+
+    // 1. Verify current password with Hostinger MySQL
     try {
-      await _repository.changePassword(
-        currentPassword: currentPassword,
-        newPassword: newPassword,
-      );
-    } on FirebaseAuthException catch (e) {
-      throw Exception(_mapFirebaseError(e));
-    } catch (_) {
-      throw Exception('Failed to change password. Please try again.');
+      currentPasswordValid = await ApiService().verifyCurrentPassword(email, currentPassword);
+    } catch (e) {
+      debugPrint('Hostinger password verify check: $e');
+    }
+
+    // 2. If Hostinger didn't verify, try Firebase re-authentication if logged into Firebase
+    if (!currentPasswordValid && _repository.currentUser != null) {
+      try {
+        final credential = EmailAuthProvider.credential(
+          email: email,
+          password: currentPassword,
+        );
+        await _repository.currentUser!.reauthenticateWithCredential(credential);
+        currentPasswordValid = true;
+      } on FirebaseAuthException catch (e) {
+        throw Exception(_mapFirebaseError(e));
+      } catch (_) {}
+    }
+
+    if (!currentPasswordValid) {
+      throw Exception('Current password is incorrect. Please try again.');
+    }
+
+    // 3. Update password in Hostinger MySQL
+    bool updatedInHostinger = false;
+    try {
+      await ApiService().updateUserPassword(uid, newPassword);
+      updatedInHostinger = true;
+    } catch (e) {
+      debugPrint('Hostinger password update error: $e');
+    }
+
+    // 4. Update password in Firebase Auth and Firestore if currentUser exists
+    if (_repository.currentUser != null) {
+      try {
+        await _repository.changePassword(
+          currentPassword: currentPassword,
+          newPassword: newPassword,
+        );
+      } catch (e) {
+        debugPrint('Firebase changePassword error: $e');
+      }
+    } else {
+      // Also sync Firestore user doc directly so it stays updated
+      try {
+        await _repository.updatePasswordInFirestoreOnly(
+          email: email,
+          newPassword: newPassword,
+        );
+      } catch (_) {}
+    }
+
+    if (!updatedInHostinger && _repository.currentUser == null) {
+      throw Exception('Failed to update password. Please try again.');
     }
   }
+
 
   /// Clear any displayed error and reset status to [unauthenticated].
   void clearError() {
@@ -287,6 +429,7 @@ class AuthViewModel extends ChangeNotifier {
   @override
   void dispose() {
     _authSubscription?.cancel();
+    _userDocSubscription?.cancel();
     super.dispose();
   }
 }

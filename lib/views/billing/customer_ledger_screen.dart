@@ -5,6 +5,7 @@ import 'package:printing/printing.dart';
 import '../../state/admin_state.dart';
 import '../../utils/boutique_theme.dart';
 import '../../utils/boutique_pdf_generator.dart';
+import '../../services/api_service.dart';
 
 class CustomerLedgerScreen extends StatefulWidget {
   final AdminState state;
@@ -121,6 +122,29 @@ class _CustomerLedgerScreenState extends State<CustomerLedgerScreen> {
         data['docId'] = d.id;
         return data;
       }).toList();
+
+      // Merge Hostinger bills
+      try {
+        final hostingerBills = await ApiService().getBills();
+        for (final hb in hostingerBills) {
+          final docId = hb['doc_id'] ?? hb['docId'] ?? '';
+          final bNo = hb['bill_no'] ?? hb['billNo'] ?? '';
+          hb['docId'] = docId;
+          hb['billNo'] = bNo;
+          final bDate = hb['bill_date'] ?? hb['billDate'];
+          if (bDate is String) {
+            final parsed = DateTime.tryParse(bDate);
+            if (parsed != null) {
+              hb['billDate'] = Timestamp.fromDate(parsed);
+            }
+          }
+          if (!allDocs.any((ex) => (ex['docId'] != null && ex['docId'] == docId) || (ex['billNo'] != null && ex['billNo'] == bNo))) {
+            allDocs.add(hb);
+          }
+        }
+      } catch (e) {
+        debugPrint('Hostinger ledger getBills error: $e');
+      }
 
       _allBills = allDocs;
 

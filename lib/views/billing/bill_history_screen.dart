@@ -1,11 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'package:printing/printing.dart';
+import '../../auth/models/app_user_model.dart';
+import '../../auth/viewmodels/auth_viewmodel.dart';
 import '../../state/admin_state.dart';
 import '../../utils/boutique_theme.dart';
 import '../../utils/boutique_pdf_generator.dart';
 import '../../widgets/searchable_dropdown.dart';
+import '../../services/api_service.dart';
 
 class BillHistoryScreen extends StatefulWidget {
   final AdminState? state;
@@ -89,6 +93,29 @@ class _BillHistoryScreenState extends State<BillHistoryScreen> {
             list.add(data);
           }
         }
+      }
+
+      // Also merge bills from Hostinger MySQL
+      try {
+        final hostingerBills = await ApiService().getBills();
+        for (final hb in hostingerBills) {
+          final docId = hb['doc_id'] ?? hb['docId'] ?? '';
+          final bNo = hb['bill_no'] ?? hb['billNo'] ?? '';
+          hb['_docId'] = docId;
+          hb['billNo'] = bNo;
+          final bDate = hb['bill_date'] ?? hb['billDate'];
+          if (bDate is String) {
+            final parsed = DateTime.tryParse(bDate);
+            if (parsed != null) {
+              hb['billDate'] = Timestamp.fromDate(parsed);
+            }
+          }
+          if (!list.any((ex) => (ex['_docId'] != null && ex['_docId'] == docId) || (ex['billNo'] != null && ex['billNo'] == bNo))) {
+            list.add(hb);
+          }
+        }
+      } catch (e) {
+        debugPrint('Hostinger getBills error: $e');
       }
       list.sort((a, b) {
         final ta = a['billDate'] as Timestamp?;
@@ -265,6 +292,11 @@ class _BillHistoryScreenState extends State<BillHistoryScreen> {
   }
 
   Future<void> _deleteBill(Map<String, dynamic> bill) async {
+    final perms = context.read<AuthViewModel>().appUser?.permissions ?? PermissionsModel.adminPreset();
+    if (!perms.deleteTransactions) {
+      BoutiqueToast.showError(context, 'You do not have permission to delete bills.');
+      return;
+    }
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -596,6 +628,7 @@ class _BillHistoryScreenState extends State<BillHistoryScreen> {
 
   // ── Shared bill list tile ──────────────────────────────────────────────────
   Widget _buildBillTile(Map<String, dynamic> b) {
+    final perms = context.watch<AuthViewModel>().appUser?.permissions ?? PermissionsModel.adminPreset();
     final isAdvance = b['billType'] == 'Advance Payment';
     final totalPayable = (b['totalPayable'] as num?)?.toDouble() ?? 0.0;
     final amountReceived = (b['amountReceived'] as num?)?.toDouble() ?? totalPayable;
@@ -688,25 +721,27 @@ class _BillHistoryScreenState extends State<BillHistoryScreen> {
             ],
           ),
           const SizedBox(width: 8),
-          IconButton(
-            icon: Icon(
-              hasDue ? Icons.payments_rounded : Icons.edit_note_rounded,
-              color: hasDue ? const Color(0xFF1E7E34) : BoutiqueColors.textSecondary,
-              size: 20,
+          if (perms.editTransactions)
+            IconButton(
+              icon: Icon(
+                hasDue ? Icons.payments_rounded : Icons.edit_note_rounded,
+                color: hasDue ? const Color(0xFF1E7E34) : BoutiqueColors.textSecondary,
+                size: 20,
+              ),
+              tooltip: hasDue ? 'Settle Due Balance (₹${pendingBalance.toStringAsFixed(2)})' : 'Edit / View Payment',
+              onPressed: () => _openSettleDialog(b),
             ),
-            tooltip: hasDue ? 'Settle Due Balance (₹${pendingBalance.toStringAsFixed(2)})' : 'Edit / View Payment',
-            onPressed: () => _openSettleDialog(b),
-          ),
           IconButton(
             icon: const Icon(Icons.visibility_outlined, color: BoutiqueColors.accent, size: 19),
             tooltip: 'View Invoice',
             onPressed: () => _viewBill(b),
           ),
-          IconButton(
-            icon: const Icon(Icons.delete_outline_rounded, color: BoutiqueColors.destructive, size: 19),
-            tooltip: 'Delete Bill',
-            onPressed: () => _deleteBill(b),
-          ),
+          if (perms.deleteTransactions)
+            IconButton(
+              icon: const Icon(Icons.delete_outline_rounded, color: BoutiqueColors.destructive, size: 19),
+              tooltip: 'Delete Bill',
+              onPressed: () => _deleteBill(b),
+            ),
         ],
       ),
     ),

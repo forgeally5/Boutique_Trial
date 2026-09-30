@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../state/admin_state.dart';
+import '../auth/models/app_user_model.dart';
+import '../auth/viewmodels/auth_viewmodel.dart';
 import 'billing/create_bill_screen.dart';
 import 'billing/bill_history_screen.dart';
 import 'billing/customer_ledger_screen.dart';
@@ -30,6 +33,15 @@ class _BillingViewState extends State<BillingView> {
 
   @override
   Widget build(BuildContext context) {
+    final authUser = context.watch<AuthViewModel>().appUser;
+    final perms = authUser?.permissions ?? PermissionsModel.adminPreset();
+    final canCreateBill = perms.salesEntry;
+    final canViewHistory = perms.salesEntry || perms.viewReports;
+
+    if (!canCreateBill && _tab == 0) {
+      _tab = 1;
+    }
+
     return Column(
       children: [
         // Tab bar
@@ -41,10 +53,10 @@ class _BillingViewState extends State<BillingView> {
           ),
           child: Row(
             children: [
-              _buildTab(0, Icons.receipt_long_rounded, 'Create Bill'),
-              const SizedBox(width: 4),
-              _buildTab(1, Icons.history_rounded, 'Bill History'),
-              const SizedBox(width: 4),
+              if (canCreateBill) _buildTab(0, Icons.receipt_long_rounded, 'Create Bill'),
+              if (canCreateBill) const SizedBox(width: 4),
+              if (canViewHistory) _buildTab(1, Icons.history_rounded, 'Bill History'),
+              if (canViewHistory) const SizedBox(width: 4),
               _buildTab(2, Icons.account_balance_wallet_rounded, 'Customer Ledger'),
             ],
           ),
@@ -54,16 +66,17 @@ class _BillingViewState extends State<BillingView> {
         Expanded(
           child: Stack(
             children: [
-              Offstage(
-                offstage: _tab != 0,
-                child: CreateBillScreen(
-                  state: widget.state,
-                  onSaved: () {
-                    setState(() => _tab = 1);
-                  },
+              if (canCreateBill)
+                Offstage(
+                  offstage: _tab != 0,
+                  child: CreateBillScreen(
+                    state: widget.state,
+                    onSaved: () {
+                      setState(() => _tab = 1);
+                    },
+                  ),
                 ),
-              ),
-              if (_tab == 1)
+              if (_tab == 1 && canViewHistory)
                 BillHistoryScreen(state: widget.state),
               if (_tab == 2)
                 CustomerLedgerScreen(state: widget.state),

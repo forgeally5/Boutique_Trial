@@ -10,6 +10,8 @@ import '../../utils/boutique_theme.dart';
 import '../../widgets/searchable_dropdown.dart';
 import '../../utils/boutique_pdf_generator.dart';
 import '../widgets/scanner_dialog.dart';
+import '../widgets/batch_scanner_dialog.dart';
+import '../../services/api_service.dart';
 
 class CreateBillScreen extends StatefulWidget {
   final AdminState state;
@@ -31,7 +33,11 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
   bool _showExtraCustomerDetails = false;
   final List<Map<String, TextEditingController>> _customFields = [];
 
-  final List<BillRow> _rows = [BillRow()];
+  final List<BillRow> _rows = [];
+  int _topScanKey = 0;
+  double _topEntryQty = 1;
+  TextEditingController? _topEntryTextCtrl;
+  FocusNode? _topEntryFieldFocus;
 
   // Summary controllers — managed separately so only summary panel rebuilds
   final _extraDiscountCtrl = TextEditingController(text: '0');
@@ -275,6 +281,15 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
 
       await FirebaseFirestore.instance.collection('bills').add(billData);
 
+      // Save to Hostinger MySQL
+      try {
+        final hostingerBill = Map<String, dynamic>.from(billData);
+        hostingerBill['billDate'] = DateTime.now().toIso8601String();
+        await ApiService().createBill(hostingerBill);
+      } catch (e) {
+        debugPrint('Hostinger createBill error: $e');
+      }
+
       // Aggregate quantities for stock deduction
       final Map<String, double> deductionMap = {};
       final Map<String, double> reservedDeductionMap = {};
@@ -384,7 +399,8 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
       _customerNameCtrl.clear();
       _customerMobileCtrl.clear();
       _rows.clear();
-      _rows.add(BillRow());
+      _topScanKey++;
+      _topEntryQty = 1;
       _extraDiscountCtrl.text = '0';
       _gstCtrl.text = '0';
       _gstType = 'No GST';
@@ -740,6 +756,348 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
     );
   }
 
+  Product? _findProductByTagOrQuery(String raw) {
+    final query = raw.trim().toLowerCase();
+    if (query.isEmpty) return null;
+
+    // 1. Exact match on tagId
+    for (final p in _cachedProducts) {
+      if (p.tagId.toLowerCase().trim() == query) return p;
+    }
+    // 2. Base tag match (e.g. without [1], [2])
+    for (final p in _cachedProducts) {
+      if (getBaseTagId(p.tagId).toLowerCase() == query) return p;
+    }
+    // 3. Exact match on name
+    for (final p in _cachedProducts) {
+      if (p.name.toLowerCase().trim() == query) return p;
+    }
+    // 4. Starts with tag
+    final startsWith = _cachedProducts.where((p) => p.tagId.toLowerCase().trim().startsWith(query)).toList();
+    if (startsWith.length == 1) return startsWith.first;
+
+    // 5. Contains match on tag or name
+    final contains = _cachedProducts.where((p) =>
+      p.tagId.toLowerCase().contains(query) || p.name.toLowerCase().contains(query)).toList();
+    if (contains.length == 1) return contains.first;
+
+    return null;
+  }
+
+  void _addProductToBill(Product p, [double qty = 1]) {
+    final available = _getAvailableStock(p);
+    if (available <= 0) {
+      BoutiqueToast.showError(context, '${p.name} (${p.tagId}) is out of stock!');
+      return;
+    }
+
+    // Check if this product already exists in _rows (non-reserve and non weight-based)
+    final existingIndex = _rows.indexWhere((r) =>
+        r.product != null &&
+        r.product!.tagId.trim().toLowerCase() == p.tagId.trim().toLowerCase() &&
+        !r.isFromReserve &&
+        p.pricingType != 'Weight-Based');
+
+    if (existingIndex != -1) {
+      final existingRow = _rows[existingIndex];
+      final maxAvailable = _getAvailableStock(p, existingRow);
+      if (existingRow.qty + qty <= maxAvailable) {
+        setState(() {
+          existingRow.qty += qty;
+          _rowVersion.value++;
+        });
+        BoutiqueToast.showSuccess(context, '${p.name} qty updated to ${existingRow.qty.toInt()}');
+      } else {
+        setState(() {
+          existingRow.qty = maxAvailable.toDouble();
+          _rowVersion.value++;
+        });
+        BoutiqueToast.showWarning(context, 'Maximum available stock reached for ${p.name} ($maxAvailable)');
+      }
+    } else {
+      final emptyIndex = _rows.indexWhere((r) => r.product == null);
+      final initialQty = qty <= available ? qty : available.toDouble();
+      final newRow = BillRow(
+        product: p,
+        qty: initialQty,
+        price: p.pricingType == 'Weight-Based'
+            ? (p.ratePerGram > 0 ? p.ratePerGram : 0.0)
+            : (p.finalPrice > 0 ? p.finalPrice : p.mrp),
+        discountValue: p.discountValue,
+        discountType: p.discountType,
+        weight: p.pricingType == 'Weight-Based' ? p.netWeight : 0,
+      );
+
+      setState(() {
+        if (emptyIndex != -1) {
+          _rows[emptyIndex] = newRow;
+        } else {
+          _rows.insert(0, newRow);
+        }
+        _rowVersion.value++;
+      });
+      BoutiqueToast.showSuccess(context, '${p.name} added to bill');
+    }
+  }
+
+  Future<double?> _promptQuantityDialog(double current) async {
+    final ctrl = TextEditingController(text: current == current.toInt() ? current.toInt().toString() : current.toString());
+    return showDialog<double>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Enter Quantity', style: TextStyle(fontFamily: 'serif', color: BoutiqueColors.accent)),
+        content: TextField(
+          controller: ctrl,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          decoration: const InputDecoration(border: OutlineInputBorder(), labelText: 'Quantity'),
+          autofocus: true,
+          onSubmitted: (v) => Navigator.pop(ctx, double.tryParse(v)),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: BoutiqueColors.accent),
+            onPressed: () => Navigator.pop(ctx, double.tryParse(ctrl.text)),
+            child: const Text('Set', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _openBatchScanDialog() {
+    showDialog(
+      context: context,
+      builder: (ctx) => BatchScannerDialog(
+        products: _cachedProducts,
+        getAvailableStock: (p) => _getAvailableStock(p),
+        onProductScanned: (p) => _addProductToBill(p, 1),
+      ),
+    );
+  }
+
+  Widget _buildTopQuickScanRow() {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: BoutiqueColors.bgSubtle,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: BoutiqueColors.accentLightBorder, width: 1.2),
+      ),
+      child: Row(
+        children: [
+          // Product search / tag entry — Autocomplete with instant Enter submit
+          Expanded(
+            flex: 4,
+            child: Autocomplete<Product>(
+              key: ValueKey(_topScanKey),
+              displayStringForOption: (p) => '${p.tagId} - ${p.name}',
+              optionsBuilder: (textEditingValue) {
+                final query = textEditingValue.text.toLowerCase().trim();
+                if (query.isEmpty) return const Iterable<Product>.empty();
+                return _cachedProducts.where((p) {
+                  final inStock = _getAvailableStock(p) > 0;
+                  return inStock && (
+                    p.tagId.toLowerCase().contains(query) ||
+                    p.name.toLowerCase().contains(query)
+                  );
+                }).take(25);
+              },
+              optionsViewBuilder: (context, onSelected, options) {
+                return Align(
+                  alignment: Alignment.topLeft,
+                  child: Material(
+                    elevation: 4,
+                    borderRadius: BorderRadius.circular(8),
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxHeight: 250, maxWidth: 420),
+                      child: ListView.builder(
+                        padding: EdgeInsets.zero,
+                        shrinkWrap: true,
+                        itemCount: options.length,
+                        itemBuilder: (context, index) {
+                          final p = options.elementAt(index);
+                          final stock = _getAvailableStock(p);
+                          return InkWell(
+                            onTap: () => onSelected(p),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text('${p.tagId} - ${p.name}', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                                        Text('₹${p.finalPrice > 0 ? p.finalPrice : p.mrp} • ${p.category}', style: const TextStyle(fontSize: 11, color: BoutiqueColors.textSecondary)),
+                                      ],
+                                    ),
+                                  ),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                    decoration: BoxDecoration(
+                                      color: BoutiqueColors.accent.withValues(alpha: 0.1),
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: Text('Stock: $stock', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: BoutiqueColors.accent)),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                );
+              },
+              fieldViewBuilder: (context, textCtrl, focusNode, onFieldSubmitted) {
+                _topEntryTextCtrl = textCtrl;
+                _topEntryFieldFocus = focusNode;
+                return TextField(
+                  controller: textCtrl,
+                  focusNode: focusNode,
+                  autofocus: true,
+                  style: const TextStyle(fontSize: 13),
+                  decoration: BoutiqueInputDecoration.field(
+                    hintText: 'Search product name or scan Tag ID...',
+                    prefixIcon: const Icon(Icons.search_rounded, size: 16, color: BoutiqueColors.textSecondary),
+                  ),
+                  onSubmitted: (val) {
+                    final query = val.trim();
+                    if (query.isEmpty) return;
+                    final p = _findProductByTagOrQuery(query);
+                    if (p != null) {
+                      _addProductToBill(p, _topEntryQty);
+                      setState(() {
+                        _topScanKey++;
+                        _topEntryQty = 1;
+                      });
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        _topEntryFieldFocus?.requestFocus();
+                      });
+                    } else {
+                      BoutiqueToast.showError(context, 'No product found with tag: "$query"');
+                      _topEntryFieldFocus?.requestFocus();
+                    }
+                  },
+                );
+              },
+              onSelected: (p) {
+                _addProductToBill(p, _topEntryQty);
+                setState(() {
+                  _topScanKey++;
+                  _topEntryQty = 1;
+                });
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  _topEntryFieldFocus?.requestFocus();
+                });
+              },
+            ),
+          ),
+          const SizedBox(width: 8),
+
+          // Scan QR/Barcode Camera Button
+          IconButton(
+            tooltip: 'Scan QR / Barcode',
+            icon: const Icon(Icons.qr_code_scanner_rounded, color: BoutiqueColors.accent),
+            onPressed: () async {
+              final scannedCode = await showDialog<String>(
+                context: context,
+                builder: (ctx) => const ScannerDialog(),
+              );
+              if (scannedCode != null && scannedCode.isNotEmpty) {
+                final p = _findProductByTagOrQuery(scannedCode);
+                if (p != null) {
+                  _addProductToBill(p, _topEntryQty);
+                  setState(() {
+                    _topScanKey++;
+                    _topEntryQty = 1;
+                  });
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    _topEntryFieldFocus?.requestFocus();
+                  });
+                } else {
+                  if (mounted) BoutiqueToast.showError(context, 'No product found with tag: $scannedCode');
+                }
+              }
+            },
+          ),
+          const SizedBox(width: 12),
+
+          // Qty Stepper
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: BoutiqueColors.border),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.remove, size: 14, color: BoutiqueColors.textSecondary),
+                  onPressed: _topEntryQty > 1 ? () => setState(() => _topEntryQty--) : null,
+                ),
+                InkWell(
+                  onTap: () async {
+                    final val = await _promptQuantityDialog(_topEntryQty);
+                    if (val != null && val > 0) setState(() => _topEntryQty = val);
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4.0),
+                    child: Text(
+                      'Qty: ${_topEntryQty == _topEntryQty.toInt() ? _topEntryQty.toInt() : _topEntryQty.toStringAsFixed(1)} Piece',
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, decoration: TextDecoration.underline, decorationStyle: TextDecorationStyle.dashed),
+                    ),
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.add, size: 14, color: BoutiqueColors.accent),
+                  onPressed: () => setState(() => _topEntryQty++),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+
+          // Price & Total (@ ₹0.0 / ₹0.00 as in Image 2)
+          const SizedBox(
+            width: 110,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text('₹0.00',
+                    style: TextStyle(fontFamily: 'serif', fontSize: 15, fontWeight: FontWeight.bold, color: BoutiqueColors.textPrimary)),
+                Text('@ ₹0.0',
+                    style: TextStyle(fontSize: 11, color: BoutiqueColors.textSecondary)),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+
+          // Reset / Clear button
+          IconButton(
+            icon: const Icon(Icons.delete_outline_rounded, color: BoutiqueColors.destructive, size: 20),
+            tooltip: 'Clear',
+            onPressed: () {
+              _topEntryTextCtrl?.clear();
+              setState(() {
+                _topScanKey++;
+                _topEntryQty = 1;
+              });
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                _topEntryFieldFocus?.requestFocus();
+              });
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildItemTable() {
     return Container(
       padding: const EdgeInsets.all(24),
@@ -756,6 +1114,17 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   OutlinedButton.icon(
+                    onPressed: _openBatchScanDialog,
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: BoutiqueColors.accent,
+                      side: const BorderSide(color: BoutiqueColors.accent),
+                      backgroundColor: BoutiqueColors.accentSoft.withValues(alpha: 0.5),
+                    ),
+                    icon: const Icon(Icons.qr_code_scanner_rounded, size: 16),
+                    label: const Text('Scan'),
+                  ),
+                  const SizedBox(width: 10),
+                  OutlinedButton.icon(
                     onPressed: _showReservedItemsList,
                     style: OutlinedButton.styleFrom(
                       foregroundColor: const Color(0xFFB45309),
@@ -765,9 +1134,9 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
                     icon: const Icon(Icons.bookmark_added_rounded, size: 16),
                     label: const Text('Reserved List'),
                   ),
-                  const SizedBox(width: 12),
+                  const SizedBox(width: 10),
                   ElevatedButton.icon(
-                    onPressed: () => setState(() => _rows.add(BillRow())),
+                    onPressed: () => setState(() => _rows.insert(0, BillRow())),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: BoutiqueColors.accentSoft,
                       foregroundColor: BoutiqueColors.accent,
@@ -781,24 +1150,38 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
             ],
           ),
           const SizedBox(height: 16),
-          // Each row is its own StatefulWidget — changes in one row don't rebuild others
-          for (int i = 0; i < _rows.length; i++)
-            _BillRowWidget(
-              key: ObjectKey(_rows[i]),
-              row: _rows[i],
-              products: _cachedProducts,
-              getAvailableStock: _getAvailableStock,
-              onChanged: () {
-                _rowVersion.value++; // notify summary panel
-                setState(() {});    // refresh row display (qty, line amount)
-              },
-              onDelete: _rows.length > 1
-                  ? () {
-                      _rowVersion.value++;
-                      setState(() => _rows.removeAt(i));
-                    }
-                  : null,
-            ),
+
+          // ── Persistent Top Entry Row (Image 2) ────────────────────────
+          _buildTopQuickScanRow(),
+          const SizedBox(height: 12),
+
+          // ── Added Billed Products (Image 1) ───────────────────────────
+          if (_rows.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 20),
+              child: Center(
+                child: Text(
+                  'No products added yet. Enter Tag ID or scan barcode above to add items to bill.',
+                  style: TextStyle(color: BoutiqueColors.textSecondary, fontSize: 13),
+                ),
+              ),
+            )
+          else
+            for (int i = 0; i < _rows.length; i++)
+              _BillRowWidget(
+                key: ObjectKey(_rows[i]),
+                row: _rows[i],
+                products: _cachedProducts,
+                getAvailableStock: _getAvailableStock,
+                onChanged: () {
+                  _rowVersion.value++; // notify summary panel
+                  setState(() {});    // refresh row display (qty, line amount)
+                },
+                onDelete: () {
+                  _rowVersion.value++;
+                  setState(() => _rows.removeAt(i));
+                },
+              ),
         ],
       ),
     );
@@ -908,7 +1291,7 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
                                             if (num.length >= 10) _customerMobileCtrl.text = num;
                                           }
                                         }
-                                        _rows.add(row);
+                                        _rows.insert(0, row);
                                         _rowVersion.value++;
                                       });
                                       Navigator.pop(ctx);
