@@ -125,9 +125,8 @@ class _BillHistoryScreenState extends State<BillHistoryScreen> {
         if (_paymentModeFilter != 'All' && e['paymentMode'] != _paymentModeFilter) return false;
         // View filter
         if (_viewFilter == 'Balance Due') {
-          if (e['billType'] != 'Advance Payment') return false;
           final total = (e['totalPayable'] as num?)?.toDouble() ?? 0.0;
-          final received = (e['amountReceived'] as num?)?.toDouble() ?? 0.0;
+          final received = (e['amountReceived'] as num?)?.toDouble() ?? total;
           final pending = (e['pendingBalance'] as num?)?.toDouble() ?? (total - received).clamp(0.0, double.infinity);
           if (pending <= 0) return false;
         } else if (_viewFilter == 'Advance Bills') {
@@ -320,16 +319,15 @@ class _BillHistoryScreenState extends State<BillHistoryScreen> {
   double get _totalSales => _filtered.fold(0.0, (s, e) => s + ((e['totalPayable'] as num?)?.toDouble() ?? 0));
 
   List<Map<String, dynamic>> get _pendingBills => _filtered.where((b) {
-    if (b['billType'] != 'Advance Payment') return false;
     final total = (b['totalPayable'] as num?)?.toDouble() ?? 0.0;
-    final received = (b['amountReceived'] as num?)?.toDouble() ?? 0.0;
+    final received = (b['amountReceived'] as num?)?.toDouble() ?? total;
     final pending = (b['pendingBalance'] as num?)?.toDouble() ?? (total - received).clamp(0.0, double.infinity);
     return pending > 0;
   }).toList();
 
   double get _totalPendingBalance => _pendingBills.fold(0.0, (s, b) {
     final total = (b['totalPayable'] as num?)?.toDouble() ?? 0.0;
-    final received = (b['amountReceived'] as num?)?.toDouble() ?? 0.0;
+    final received = (b['amountReceived'] as num?)?.toDouble() ?? total;
     final pending = (b['pendingBalance'] as num?)?.toDouble() ?? (total - received).clamp(0.0, double.infinity);
     return s + pending;
   });
@@ -580,14 +578,35 @@ class _BillHistoryScreenState extends State<BillHistoryScreen> {
     );
   }
 
+  String _formatPaymentBreakdown(Map<String, dynamic> b) {
+    final mode = b['paymentMode']?.toString() ?? 'Cash';
+    final rawPayments = (b['payments'] as List<dynamic>?) ?? [];
+    final valid = rawPayments
+        .whereType<Map>()
+        .where((p) => ((p['amount'] as num?)?.toDouble() ?? 0.0) > 0)
+        .toList();
+    if (valid.length > 1 || mode.toLowerCase().contains('split')) {
+      final parts = valid
+          .map((p) => '${p['mode'] ?? 'Cash'}: ₹${((p['amount'] as num?)?.toDouble() ?? 0.0).toStringAsFixed(0)}')
+          .join(', ');
+      if (parts.isNotEmpty) return '$mode ($parts)';
+    }
+    return mode;
+  }
+
   // ── Shared bill list tile ──────────────────────────────────────────────────
   Widget _buildBillTile(Map<String, dynamic> b) {
     final isAdvance = b['billType'] == 'Advance Payment';
     final totalPayable = (b['totalPayable'] as num?)?.toDouble() ?? 0.0;
-    final amountReceived = (b['amountReceived'] as num?)?.toDouble() ?? 0.0;
+    final amountReceived = (b['amountReceived'] as num?)?.toDouble() ?? totalPayable;
     final pendingBalance = (b['pendingBalance'] as num?)?.toDouble() ?? (totalPayable - amountReceived).clamp(0.0, double.infinity);
-    final isFullySettled = isAdvance && pendingBalance <= 0;
-    final hasDue = isAdvance && pendingBalance > 0;
+    final hasDue = pendingBalance > 0.01;
+    final hadSettlements = ((b['paymentHistory'] as List?)?.length ?? 0) > 1;
+    final isFullySettled = !hasDue && (isAdvance || hadSettlements);
+    final customerName = (b['customerName']?.toString().trim().isNotEmpty ?? false)
+        ? b['customerName'].toString().trim()
+        : 'Walk-in Customer';
+
     return Material(
       color: Colors.transparent,
       child: ListTile(
@@ -621,7 +640,7 @@ class _BillHistoryScreenState extends State<BillHistoryScreen> {
         children: [
           Text(b['billNo'] ?? '—', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: BoutiqueColors.accent)),
           const SizedBox(width: 8),
-          if (isAdvance)
+          if (hasDue || isFullySettled)
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
               decoration: BoxDecoration(
@@ -637,7 +656,7 @@ class _BillHistoryScreenState extends State<BillHistoryScreen> {
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              b['customerName'] ?? 'Walk-in Customer',
+              customerName,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: BoutiqueColors.textPrimary),
             ),
@@ -647,7 +666,7 @@ class _BillHistoryScreenState extends State<BillHistoryScreen> {
       subtitle: Padding(
         padding: const EdgeInsets.only(top: 3),
         child: Text(
-          'Date: ${_fmt.format((b['billDate'] as Timestamp).toDate())} • Mode: ${b['paymentMode'] ?? 'Cash'}',
+          'Date: ${_fmt.format((b['billDate'] as Timestamp).toDate())} • Mode: ${_formatPaymentBreakdown(b)}${hasDue ? ' • Paid: ₹${amountReceived.toStringAsFixed(0)}' : ''}',
           style: const TextStyle(fontSize: 11, color: BoutiqueColors.textSecondary),
         ),
       ),
@@ -669,16 +688,15 @@ class _BillHistoryScreenState extends State<BillHistoryScreen> {
             ],
           ),
           const SizedBox(width: 8),
-          if (isAdvance)
-            IconButton(
-              icon: Icon(
-                hasDue ? Icons.payments_rounded : Icons.edit_note_rounded,
-                color: hasDue ? const Color(0xFF1E7E34) : BoutiqueColors.textSecondary,
-                size: 20,
-              ),
-              tooltip: hasDue ? 'Settle Balance (₹${pendingBalance.toStringAsFixed(2)})' : 'Edit Payment',
-              onPressed: () => _openSettleDialog(b),
+          IconButton(
+            icon: Icon(
+              hasDue ? Icons.payments_rounded : Icons.edit_note_rounded,
+              color: hasDue ? const Color(0xFF1E7E34) : BoutiqueColors.textSecondary,
+              size: 20,
             ),
+            tooltip: hasDue ? 'Settle Due Balance (₹${pendingBalance.toStringAsFixed(2)})' : 'Edit / View Payment',
+            onPressed: () => _openSettleDialog(b),
+          ),
           IconButton(
             icon: const Icon(Icons.visibility_outlined, color: BoutiqueColors.accent, size: 19),
             tooltip: 'View Invoice',
@@ -858,23 +876,75 @@ class _BillDetailDialogState extends State<_BillDetailDialog> {
     final billDate = bill['billDate'] ?? bill['date'];
     final dateStr = billDate is Timestamp ? fmt.format(billDate.toDate()) : '—';
     final items = (bill['items'] as List?) ?? [];
-    final total = (bill['totalPayable'] as num?)?.toDouble() ?? 0;
-    final subtotal = (bill['subtotal'] as num?)?.toDouble() ?? 0;
-    final extraDisc = (bill['extraDiscountAmount'] as num?)?.toDouble() ?? 0;
-    final tax = (bill['taxAmount'] as num?)?.toDouble() ?? 0;
-    final isAdvance = bill['billType'] == 'Advance Payment';
-    final amountReceived = (bill['amountReceived'] as num?)?.toDouble() ?? 0.0;
+    final total = (bill['totalPayable'] as num?)?.toDouble() ?? 0.0;
+    final subtotal = (bill['subtotal'] as num?)?.toDouble() ?? 0.0;
+    final extraDisc = (bill['extraDiscountAmount'] as num?)?.toDouble() ?? 0.0;
+    final tax = (bill['taxAmount'] as num?)?.toDouble() ?? 0.0;
+    final billType = bill['billType']?.toString() ?? 'Sale';
+    final amountReceived = (bill['amountReceived'] as num?)?.toDouble() ?? total;
     final pendingBalance = (bill['pendingBalance'] as num?)?.toDouble() ?? (total - amountReceived).clamp(0.0, double.infinity);
-    final isFullySettled = isAdvance && pendingBalance <= 0;
+    final hasDue = pendingBalance > 0.01;
     final paymentHistory = (bill['paymentHistory'] as List?) ?? [];
+    final rawPayments = (bill['payments'] as List<dynamic>?) ?? [];
+    final validPayments = rawPayments
+        .whereType<Map>()
+        .where((p) => ((p['amount'] as num?)?.toDouble() ?? 0.0) > 0)
+        .toList();
+
+    final customerName = (bill['customerName']?.toString().trim().isNotEmpty ?? false)
+        ? bill['customerName'].toString().trim()
+        : 'Walk-in Customer';
+    final customerMobile = bill['customerMobile']?.toString().trim() ?? '';
+    final customerAddress = bill['customerAddress']?.toString().trim() ?? '';
+    final narration = bill['narration']?.toString().trim() ?? '';
+    final paymentMode = bill['paymentMode']?.toString() ?? 'Cash';
+
+    const bgCream = Color(0xFFF9F6F0);
+    const maroon = Color(0xFF5A121A);
+    const goldLine = Color(0xFFC7B492);
+    const textDark = Color(0xFF333333);
+    const textLight = Color(0xFF666666);
+
+    Widget underlineBox(String text, {bool bold = false, Color color = textDark, Alignment alignment = Alignment.centerLeft}) {
+      return Container(
+        alignment: alignment,
+        padding: const EdgeInsets.only(bottom: 3),
+        decoration: const BoxDecoration(
+          border: Border(bottom: BorderSide(color: goldLine, width: 0.8)),
+        ),
+        child: Text(
+          text.isEmpty ? ' ' : text,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: bold ? FontWeight.bold : FontWeight.normal,
+            color: color,
+          ),
+        ),
+      );
+    }
+
+    Widget tableCell(String text, {bool isHeader = false, Alignment align = Alignment.center, bool bold = false}) {
+      return Container(
+        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
+        alignment: align,
+        child: Text(
+          text,
+          style: TextStyle(
+            fontSize: 11.5,
+            fontWeight: (isHeader || bold) ? FontWeight.bold : FontWeight.normal,
+            color: isHeader ? Colors.white : textDark,
+          ),
+        ),
+      );
+    }
 
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       backgroundColor: BoutiqueColors.bgCard,
       child: Container(
-        width: 660,
-        constraints: const BoxConstraints(maxHeight: 780),
-        padding: const EdgeInsets.all(28),
+        width: 680,
+        constraints: const BoxConstraints(maxHeight: 860),
+        padding: const EdgeInsets.all(24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -886,59 +956,55 @@ class _BillDetailDialogState extends State<_BillDetailDialog> {
                 Row(
                   children: [
                     const Text(
-                      'Invoice Preview', 
-                      style: TextStyle(fontFamily: 'serif', fontSize: 20, fontWeight: FontWeight.bold, color: BoutiqueColors.textPrimary)
+                      'Invoice Preview',
+                      style: TextStyle(fontFamily: 'serif', fontSize: 20, fontWeight: FontWeight.bold, color: BoutiqueColors.textPrimary),
                     ),
-                    if (isAdvance) ...[
-                      const SizedBox(width: 10),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: isFullySettled ? const Color(0xFFE8F5E9) : const Color(0xFFFFF3E0),
-                          borderRadius: BorderRadius.circular(6),
-                          border: Border.all(color: isFullySettled ? const Color(0xFFA5D6A7) : const Color(0xFFFFE082)),
-                        ),
-                        child: Text(
-                          isFullySettled ? 'FULLY PAID ✓' : 'BALANCE DUE: ₹${pendingBalance.toStringAsFixed(2)}',
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                            color: isFullySettled ? const Color(0xFF2E7D32) : const Color(0xFFB45309),
-                          ),
+                    const SizedBox(width: 10),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: !hasDue ? const Color(0xFFE8F5E9) : const Color(0xFFFFF3E0),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: !hasDue ? const Color(0xFFA5D6A7) : const Color(0xFFFFE082)),
+                      ),
+                      child: Text(
+                        !hasDue ? 'FULLY PAID ✓' : 'DUE AMOUNT: ₹${pendingBalance.toStringAsFixed(2)}',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                          color: !hasDue ? const Color(0xFF2E7D32) : const Color(0xFFB45309),
                         ),
                       ),
-                    ],
+                    ),
                   ],
                 ),
                 Row(
                   children: [
-                    if (isAdvance) ...[
-                      if (!isFullySettled)
-                        ElevatedButton.icon(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF1E7E34),
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                          ),
-                          icon: const Icon(Icons.payments_rounded, size: 16),
-                          label: Text('Settle Balance (₹${pendingBalance.toStringAsFixed(2)})', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                          onPressed: _openSettleDialog,
-                        )
-                      else
-                        OutlinedButton.icon(
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: BoutiqueColors.accent,
-                            side: const BorderSide(color: BoutiqueColors.border),
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                          ),
-                          icon: const Icon(Icons.edit_note_rounded, size: 16),
-                          label: const Text('Edit Payment', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                          onPressed: _openSettleDialog,
+                    if (hasDue)
+                      ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF1E7E34),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                         ),
-                      const SizedBox(width: 8),
-                    ],
+                        icon: const Icon(Icons.payments_rounded, size: 16),
+                        label: Text('Pay Due (₹${pendingBalance.toStringAsFixed(2)})', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                        onPressed: _openSettleDialog,
+                      )
+                    else
+                      OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: BoutiqueColors.accent,
+                          side: const BorderSide(color: BoutiqueColors.border),
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        ),
+                        icon: const Icon(Icons.edit_note_rounded, size: 16),
+                        label: const Text('Edit Payment', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                        onPressed: _openSettleDialog,
+                      ),
+                    const SizedBox(width: 8),
                     IconButton(
                       icon: const Icon(Icons.print_outlined, color: BoutiqueColors.accent),
                       onPressed: () => _handlePrintPdf(context),
@@ -958,177 +1024,488 @@ class _BillDetailDialogState extends State<_BillDetailDialog> {
                 ),
               ],
             ),
-            const Divider(height: 20, color: BoutiqueColors.border),
+            const Divider(height: 16, color: BoutiqueColors.border),
 
-            // Printable Receipt Content Box (Scrollable if tall)
+            // ── Exact Bill / Invoice Replica Card ──────────────────────────
             Expanded(
               child: SingleChildScrollView(
                 child: Container(
-                  padding: const EdgeInsets.all(24),
+                  padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 32),
                   decoration: BoxDecoration(
-                    color: BoutiqueColors.bgSubtle,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: BoutiqueColors.border),
+                    color: bgCream,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: goldLine, width: 1),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.05),
+                        blurRadius: 10,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Boutique Header Logo & Address
-                      const Center(
-                        child: Column(
-                          children: [
-                            Text(
-                              'RituMita',
-                              style: TextStyle(
-                                fontFamily: 'serif',
-                                fontSize: 22,
-                                fontWeight: FontWeight.bold,
-                                letterSpacing: 2.0,
-                                color: BoutiqueColors.accent,
-                              ),
-                            ),
-                            SizedBox(height: 4),
-                            Text('High-End Fashion & Custom Couture', style: TextStyle(fontSize: 12, color: BoutiqueColors.textSecondary)),
-                            Text('Ph: +91 98765 43210 | www.ritumita.com', style: TextStyle(fontSize: 11, color: BoutiqueColors.textMuted)),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      const Divider(color: BoutiqueColors.border),
-
-                      // Bill & Customer Info
+                      // 1. TOP SECTION: RITUMITA BOUTIQUE | INVOICE
                       Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text('Invoice No: ${bill['billNo'] ?? '—'}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: BoutiqueColors.textPrimary)),
-                              Text('Date: $dateStr', style: const TextStyle(fontSize: 12, color: BoutiqueColors.textSecondary)),
-                            ],
-                          ),
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.end,
-                            children: [
-                              Text('Customer: ${bill['customerName'] ?? 'Walk-in Customer'}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: BoutiqueColors.textPrimary)),
-                              Text('Payment: ${bill['paymentMode'] ?? 'Cash'}', style: const TextStyle(fontSize: 12, color: BoutiqueColors.textSecondary)),
-                            ],
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 16),
-
-                      // Itemized Table
-                      Container(
-                        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(8), border: Border.all(color: BoutiqueColors.border)),
-                        child: Column(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                              color: BoutiqueColors.bgSubtle,
-                              child: const Row(
+                          Expanded(
+                            flex: 6,
+                            child: Center(
+                              child: Column(
                                 children: [
-                                  Expanded(flex: 4, child: Text('Item Description', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: BoutiqueColors.textSecondary))),
-                                  Expanded(flex: 1, child: Text('Qty', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: BoutiqueColors.textSecondary))),
-                                  Expanded(flex: 2, child: Text('Price', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: BoutiqueColors.textSecondary))),
-                                  Expanded(flex: 2, child: Text('Amount', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: BoutiqueColors.textSecondary))),
+                                  Image.asset(
+                                    'assets/logo.png',
+                                    height: 55,
+                                    fit: BoxFit.contain,
+                                    errorBuilder: (_, _, _) => const Text(
+                                      'RITUMITA BOUTIQUE',
+                                      style: TextStyle(
+                                        fontFamily: 'serif',
+                                        color: maroon,
+                                        fontSize: 22,
+                                        fontWeight: FontWeight.bold,
+                                        letterSpacing: 1.5,
+                                      ),
+                                      textAlign: TextAlign.center,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Container(height: 1, color: goldLine, width: 150),
                                 ],
                               ),
                             ),
-                            ...items.map((item) => Padding(
-                                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                                  child: Row(
+                          ),
+                          const SizedBox(width: 24),
+                          Expanded(
+                            flex: 4,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  billType == 'Advance Payment' ? 'ADVANCE' : 'INVOICE',
+                                  style: const TextStyle(
+                                    fontFamily: 'serif',
+                                    fontSize: 24,
+                                    color: maroon,
+                                    letterSpacing: 2.0,
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                Container(height: 1, color: goldLine, width: double.infinity),
+                                const SizedBox(height: 12),
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    const Text('INVOICE NO.', style: TextStyle(fontSize: 10, color: textLight, letterSpacing: 0.5)),
+                                    underlineBox(bill['billNo']?.toString() ?? '—', bold: true, alignment: Alignment.centerRight),
+                                  ],
+                                ),
+                                const SizedBox(height: 8),
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    const Text('DATE', style: TextStyle(fontSize: 10, color: textLight, letterSpacing: 0.5)),
+                                    underlineBox(dateStr, alignment: Alignment.centerRight),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 24),
+
+                      // 2. INVOICE TO
+                      const Text(
+                        'INVOICE TO',
+                        style: TextStyle(fontSize: 12, letterSpacing: 1.2, color: textDark, fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 8),
+                      SizedBox(width: 220, child: underlineBox(customerName, bold: true)),
+                      if (customerMobile.isNotEmpty) ...[
+                        const SizedBox(height: 6),
+                        SizedBox(width: 220, child: underlineBox('Phone: $customerMobile')),
+                      ],
+                      if (customerAddress.isNotEmpty) ...[
+                        const SizedBox(height: 6),
+                        SizedBox(width: 260, child: underlineBox(customerAddress)),
+                      ],
+                      const SizedBox(height: 24),
+
+                      // 3. PRODUCT TABLE (Matches PDF Bill)
+                      Table(
+                        border: TableBorder.all(color: goldLine, width: 0.8),
+                        columnWidths: const {
+                          0: FlexColumnWidth(0.8),
+                          1: FlexColumnWidth(3.2),
+                          2: FlexColumnWidth(1.2),
+                          3: FlexColumnWidth(0.8),
+                          4: FlexColumnWidth(1.3),
+                        },
+                        children: [
+                          TableRow(
+                            decoration: const BoxDecoration(color: maroon),
+                            children: [
+                              tableCell('NO', isHeader: true),
+                              tableCell('PRODUCT DESCRIPTION', isHeader: true, align: Alignment.centerLeft),
+                              tableCell('PRICE', isHeader: true),
+                              tableCell('QTY', isHeader: true),
+                              tableCell('TOTAL', isHeader: true),
+                            ],
+                          ),
+                          ...items.asMap().entries.map((e) {
+                            final i = e.key + 1;
+                            final r = e.value as Map<String, dynamic>;
+                            final itemName = r['name']?.toString() ?? '';
+                            final qty = (r['qty'] as num?)?.toDouble() ?? 1.0;
+                            final price = (r['price'] as num?)?.toDouble() ?? 0.0;
+                            final lineAmt = (r['lineAmount'] as num?)?.toDouble() ?? 0.0;
+                            return TableRow(
+                              children: [
+                                tableCell('$i'),
+                                tableCell(itemName, align: Alignment.centerLeft),
+                                tableCell(price.toStringAsFixed(2)),
+                                tableCell('${qty.toInt()}'),
+                                tableCell(lineAmt.toStringAsFixed(2), bold: true),
+                              ],
+                            );
+                          }),
+                          if (items.length < 5)
+                            ...List.generate(5 - items.length, (_) {
+                              return TableRow(
+                                children: [
+                                  tableCell(' '),
+                                  tableCell(' '),
+                                  tableCell(' '),
+                                  tableCell(' '),
+                                  tableCell(' '),
+                                ],
+                              );
+                            }),
+                        ],
+                      ),
+                      const SizedBox(height: 24),
+
+                      // 4. BOTTOM SECTION: PAYMENT DETAILS (Left) | TOTALS & DUE (Right)
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Left: Payment Details + Split Breakdown
+                          Expanded(
+                            flex: 5,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'PAYMENT DETAILS',
+                                  style: TextStyle(fontSize: 12, letterSpacing: 1.2, color: textDark, fontWeight: FontWeight.bold),
+                                ),
+                                const SizedBox(height: 12),
+                                Row(
+                                  children: [
+                                    const SizedBox(
+                                      width: 65,
+                                      child: Text('MODE', style: TextStyle(fontSize: 11, color: textLight)),
+                                    ),
+                                    Expanded(child: underlineBox(paymentMode, bold: true)),
+                                  ],
+                                ),
+                                if (validPayments.isNotEmpty) ...[
+                                  const SizedBox(height: 8),
+                                  Container(
+                                    padding: const EdgeInsets.all(8),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withValues(alpha: 0.6),
+                                      borderRadius: BorderRadius.circular(6),
+                                      border: Border.all(color: goldLine.withValues(alpha: 0.6)),
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        const Text(
+                                          'PAYMENT BREAKDOWN:',
+                                          style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold, color: textLight, letterSpacing: 0.6),
+                                        ),
+                                        const SizedBox(height: 4),
+                                        ...validPayments.map((p) {
+                                          final m = p['mode']?.toString() ?? 'Cash';
+                                          final a = (p['amount'] as num?)?.toDouble() ?? 0.0;
+                                          return Padding(
+                                            padding: const EdgeInsets.symmetric(vertical: 2),
+                                            child: Row(
+                                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                              children: [
+                                                Text('• $m', style: const TextStyle(fontSize: 11, color: textDark)),
+                                                Text('₹${a.toStringAsFixed(2)}', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: maroon)),
+                                              ],
+                                            ),
+                                          );
+                                        }),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                                const SizedBox(height: 10),
+                                Row(
+                                  children: [
+                                    const SizedBox(
+                                      width: 65,
+                                      child: Text('REMARKS', style: TextStyle(fontSize: 11, color: textLight)),
+                                    ),
+                                    Expanded(child: underlineBox(narration)),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+
+                          // Right: Totals, Received, Due Amount
+                          Expanded(
+                            flex: 5,
+                            child: Container(
+                              decoration: const BoxDecoration(
+                                border: Border(left: BorderSide(color: goldLine, width: 1.2)),
+                              ),
+                              padding: const EdgeInsets.only(left: 16),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                     children: [
-                                      Expanded(flex: 4, child: Text('${item['tagId'] ?? ''} - ${item['name'] ?? ''}', style: const TextStyle(fontSize: 12, color: BoutiqueColors.textPrimary))),
-                                      Expanded(flex: 1, child: Text('${item['qty']}', style: const TextStyle(fontSize: 12, color: BoutiqueColors.textPrimary))),
-                                      Expanded(flex: 2, child: Text('₹${(item['price'] as num?)?.toStringAsFixed(2) ?? '0'}', style: const TextStyle(fontSize: 12, color: BoutiqueColors.textPrimary))),
-                                      Expanded(flex: 2, child: Text('₹${(item['lineAmount'] as num?)?.toStringAsFixed(2) ?? '0'}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: BoutiqueColors.textPrimary))),
+                                      const Text('SUBTOTAL', style: TextStyle(fontSize: 11, color: textLight, letterSpacing: 1)),
+                                      underlineBox(subtotal.toStringAsFixed(2), alignment: Alignment.centerRight),
                                     ],
                                   ),
-                                )),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-
-                      // Totals Breakdown
-                      _detailRow('Subtotal', '₹${subtotal.toStringAsFixed(2)}'),
-                      if (extraDisc > 0) _detailRow('Discount', '− ₹${extraDisc.toStringAsFixed(2)}'),
-                      if (tax > 0) _detailRow('GST Tax', '+ ₹${tax.toStringAsFixed(2)}'),
-                      const Divider(color: BoutiqueColors.border),
-                      if (isAdvance) ...[
-                        _detailRow('TOTAL AMOUNT', '₹${total.toStringAsFixed(2)}', large: true),
-                        _detailRow('Advance Paid', '₹${amountReceived.toStringAsFixed(2)}', color: BoutiqueColors.accent),
-                        if (pendingBalance > 0) ...[
-                          _detailRow('Balance Due', '₹${pendingBalance.toStringAsFixed(2)}', color: const Color(0xFFD32F2F)),
-                          const SizedBox(height: 8),
-                          InkWell(
-                            onTap: _openSettleDialog,
-                            borderRadius: BorderRadius.circular(6),
-                            child: Container(
-                              width: double.infinity,
-                              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFFFF3E0),
-                                borderRadius: BorderRadius.circular(6),
-                                border: Border.all(color: const Color(0xFFFFCC80)),
-                              ),
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  const Icon(Icons.payment_rounded, size: 16, color: Color(0xFFB45309)),
-                                  const SizedBox(width: 6),
-                                  Text(
-                                    'Customer Paid Balance? Click here to Settle ₹${pendingBalance.toStringAsFixed(2)} →',
-                                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFFB45309)),
+                                  if (tax > 0) ...[
+                                    const SizedBox(height: 8),
+                                    Row(
+                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        const Text('TAX', style: TextStyle(fontSize: 11, color: textLight, letterSpacing: 1)),
+                                        underlineBox(tax.toStringAsFixed(2), alignment: Alignment.centerRight),
+                                      ],
+                                    ),
+                                  ],
+                                  const SizedBox(height: 8),
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      const Text('DISCOUNT', style: TextStyle(fontSize: 11, color: textLight, letterSpacing: 1)),
+                                      underlineBox(extraDisc.toStringAsFixed(2), alignment: Alignment.centerRight),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 12),
+                                  Container(height: 1, color: goldLine, width: double.infinity),
+                                  const SizedBox(height: 10),
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      const Text('TOTAL', style: TextStyle(fontSize: 15, color: maroon, fontWeight: FontWeight.bold, letterSpacing: 1.2)),
+                                      underlineBox(total.toStringAsFixed(2), bold: true, color: maroon, alignment: Alignment.centerRight),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      const Text('RECEIVED', style: TextStyle(fontSize: 11.5, color: textLight, fontWeight: FontWeight.bold, letterSpacing: 1)),
+                                      underlineBox(amountReceived.toStringAsFixed(2), bold: true, color: const Color(0xFF15803D), alignment: Alignment.centerRight),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Text(
+                                        'DUE AMOUNT',
+                                        style: TextStyle(
+                                          fontSize: 12.5,
+                                          color: hasDue ? const Color(0xFFD32F2F) : textLight,
+                                          fontWeight: FontWeight.bold,
+                                          letterSpacing: 1,
+                                        ),
+                                      ),
+                                      underlineBox(
+                                        pendingBalance.toStringAsFixed(2),
+                                        bold: true,
+                                        color: hasDue ? const Color(0xFFD32F2F) : textDark,
+                                        alignment: Alignment.centerRight,
+                                      ),
+                                    ],
                                   ),
                                 ],
                               ),
                             ),
                           ),
-                        ] else ...[
-                          _detailRow('Balance Due', '₹0.00 (Fully Settled ✓)', color: const Color(0xFF2E7D32)),
                         ],
-                      ] else ...[
-                        _detailRow('TOTAL PAID', '₹${total.toStringAsFixed(2)}', large: true),
+                      ),
+
+                      if (hasDue) ...[
+                        const SizedBox(height: 18),
+                        InkWell(
+                          onTap: _openSettleDialog,
+                          borderRadius: BorderRadius.circular(8),
+                          child: Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 14),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFFF3E0),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: const Color(0xFFFFCC80)),
+                            ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                const Icon(Icons.payment_rounded, size: 16, color: Color(0xFFB45309)),
+                                const SizedBox(width: 8),
+                                Text(
+                                  'Pending Due: ₹${pendingBalance.toStringAsFixed(2)} — Click here to Record / Split Due Payment →',
+                                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFFB45309)),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
                       ],
 
-                      // Payment Settlement History Log (if any settlements recorded)
+                      // Payment History & Due Receipts Log
                       if (paymentHistory.isNotEmpty) ...[
-                        const SizedBox(height: 16),
-                        const Text('Payment Settlement History', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: BoutiqueColors.textSecondary)),
+                        const SizedBox(height: 18),
+                        Text(
+                          'DUE PAYMENT RECEIPTS (REF: #${widget.bill['billNo'] ?? '-'})',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: textLight,
+                            letterSpacing: 0.6,
+                          ),
+                        ),
                         const SizedBox(height: 6),
                         Container(
                           padding: const EdgeInsets.all(10),
                           decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: BoutiqueColors.border),
+                            color: Colors.white.withValues(alpha: 0.7),
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(
+                              color: goldLine.withValues(alpha: 0.6),
+                            ),
                           ),
                           child: Column(
-                            children: paymentHistory.map((rec) {
+                            children: paymentHistory.asMap().entries.map((entry) {
+                              final idx = entry.key;
+                              final rec = entry.value;
                               final pDate = rec['date'];
-                              final pDateStr = pDate is Timestamp ? fmt.format(pDate.toDate()) : '—';
-                              final pAmt = (rec['amount'] as num?)?.toDouble() ?? 0.0;
+                              final pDateStr = pDate is Timestamp
+                                  ? fmt.format(pDate.toDate())
+                                  : '—';
+                              final pAmt =
+                                  (rec['amount'] as num?)?.toDouble() ?? 0.0;
                               final pMode = rec['mode'] ?? 'Cash';
-                              final pNotes = (rec['notes'] ?? '').toString();
+                              final pNotes =
+                                  (rec['notes'] ?? rec['note'] ?? '').toString();
+                              final rNo = (rec['receiptNo']?.toString() ?? '')
+                                      .isNotEmpty
+                                  ? rec['receiptNo'].toString()
+                                  : 'DR-${(idx + 1).toString().padLeft(3, '0')}';
+
                               return Padding(
-                                padding: const EdgeInsets.symmetric(vertical: 3),
+                                padding: const EdgeInsets.symmetric(vertical: 4),
                                 child: Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
                                   children: [
-                                    Row(
-                                      children: [
-                                        const Icon(Icons.check_circle_rounded, size: 14, color: Color(0xFF2E7D32)),
-                                        const SizedBox(width: 6),
-                                        Text('$pDateStr • $pMode', style: const TextStyle(fontSize: 11, color: BoutiqueColors.textPrimary)),
-                                        if (pNotes.isNotEmpty) ...[
-                                          const SizedBox(width: 4),
-                                          Text('($pNotes)', style: const TextStyle(fontSize: 10, fontStyle: FontStyle.italic, color: BoutiqueColors.textMuted)),
+                                    Expanded(
+                                      child: Wrap(
+                                        crossAxisAlignment:
+                                            WrapCrossAlignment.center,
+                                        spacing: 6,
+                                        children: [
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 6,
+                                              vertical: 2,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: maroon,
+                                              borderRadius:
+                                                  BorderRadius.circular(4),
+                                            ),
+                                            child: Text(
+                                              '#$rNo',
+                                              style: const TextStyle(
+                                                fontSize: 10,
+                                                fontWeight: FontWeight.bold,
+                                                color: Colors.white,
+                                              ),
+                                            ),
+                                          ),
+                                          Text(
+                                            '$pDateStr • $pMode',
+                                            style: const TextStyle(
+                                              fontSize: 11,
+                                              color: textDark,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                          if (pNotes.isNotEmpty)
+                                            Text(
+                                              '($pNotes)',
+                                              style: const TextStyle(
+                                                fontSize: 10,
+                                                fontStyle: FontStyle.italic,
+                                                color: textLight,
+                                              ),
+                                            ),
                                         ],
+                                      ),
+                                    ),
+                                    Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Text(
+                                          '+ ₹${pAmt.toStringAsFixed(2)}',
+                                          style: const TextStyle(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.bold,
+                                            color: Color(0xFF2E7D32),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 6),
+                                        InkWell(
+                                          onTap: () async {
+                                            final receiptMap =
+                                                Map<String, dynamic>.from(rec);
+                                            receiptMap['receiptNo'] = rNo;
+                                            receiptMap['refBillNo'] =
+                                                widget.bill['billNo']
+                                                    ?.toString() ??
+                                                'SB';
+                                            final bytes =
+                                                await BoutiquePdfGenerator
+                                                    .generateDueReceipt(
+                                              bill: widget.bill,
+                                              receipt: receiptMap,
+                                            );
+                                            await Printing.layoutPdf(
+                                              onLayout: (_) async => bytes,
+                                            );
+                                          },
+                                          child: const Padding(
+                                            padding: EdgeInsets.all(4.0),
+                                            child: Icon(
+                                              Icons.print_outlined,
+                                              size: 15,
+                                              color: maroon,
+                                            ),
+                                          ),
+                                        ),
                                       ],
                                     ),
-                                    Text('+ ₹${pAmt.toStringAsFixed(2)}', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF2E7D32))),
                                   ],
                                 ),
                               );
@@ -1137,12 +1514,44 @@ class _BillDetailDialogState extends State<_BillDetailDialog> {
                         ),
                       ],
 
-                      const SizedBox(height: 20),
-                      const Center(
-                        child: Text(
-                          'Thank you for shopping with RituMita! ✨',
-                          style: TextStyle(fontFamily: 'serif', fontSize: 13, fontStyle: FontStyle.italic, color: BoutiqueColors.accent),
-                        ),
+                      const SizedBox(height: 32),
+
+                      // 5. FOOTER: Thank You & Address Block
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          const Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Thank You',
+                                style: TextStyle(
+                                  fontFamily: 'serif',
+                                  fontSize: 34,
+                                  fontStyle: FontStyle.italic,
+                                  fontWeight: FontWeight.bold,
+                                  color: maroon,
+                                ),
+                              ),
+                              SizedBox(height: 4),
+                              Text(
+                                'FOR YOUR TRUST & SUPPORT',
+                                style: TextStyle(fontSize: 9, color: textLight, letterSpacing: 1.5),
+                              ),
+                            ],
+                          ),
+                          const Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Text('RituMita', style: TextStyle(fontSize: 12, color: maroon, fontWeight: FontWeight.bold)),
+                              SizedBox(height: 2),
+                              Text('+91 98765 43210', style: TextStyle(fontSize: 11, color: textLight)),
+                              Text('www.ritumita.com', style: TextStyle(fontSize: 11, color: textLight)),
+                              Text('123 Fashion St., Chennai', style: TextStyle(fontSize: 11, color: textLight)),
+                            ],
+                          ),
+                        ],
                       ),
                     ],
                   ),
@@ -1154,22 +1563,9 @@ class _BillDetailDialogState extends State<_BillDetailDialog> {
       ),
     );
   }
-
-  Widget _detailRow(String label, String value, {bool large = false, Color? color}) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(label, style: TextStyle(fontSize: large ? 15 : 13, fontWeight: large ? FontWeight.bold : FontWeight.normal, color: color ?? BoutiqueColors.textPrimary)),
-          Text(value, style: TextStyle(fontFamily: 'serif', fontSize: large ? 20 : 13, fontWeight: FontWeight.bold, color: color ?? (large ? BoutiqueColors.accent : BoutiqueColors.textPrimary))),
-        ],
-      ),
-    );
-  }
 }
 
-// ── Settle Balance / Edit Payment Modal Dialog ─────────────────────────────────
+// ── Settle Balance / Edit Payment Modal Dialog (Supports Single & Split) ──────
 
 class _SettleBalanceDialog extends StatefulWidget {
   final Map<String, dynamic> bill;
@@ -1184,26 +1580,44 @@ class _SettleBalanceDialogState extends State<_SettleBalanceDialog> {
   final _amountCtrl = TextEditingController();
   final _notesCtrl = TextEditingController();
   String _paymentMode = 'Cash';
+  bool _isSplit = false;
+  final List<Map<String, dynamic>> _splitRows = [
+    {'mode': 'Cash', 'ctrl': TextEditingController(text: '0')},
+    {'mode': 'UPI', 'ctrl': TextEditingController(text: '0')},
+  ];
   DateTime _paymentDate = DateTime.now();
-  int _modeTab = 0; // 0: Settle Due Balance, 1: Direct Override
+  int _modeTab = 0; // 0: Pay Due Balance (Installment/Full), 1: Direct Total Override
   bool _saving = false;
 
-  final List<String> _modes = ['Cash', 'UPI / GPay', 'Card', 'Bank Transfer', 'Cheque'];
+  final List<String> _modes = ['Cash', 'UPI', 'GPay', 'Card', 'Bank Transfer', 'Cheque'];
 
   @override
   void initState() {
     super.initState();
     final total = (widget.bill['totalPayable'] as num?)?.toDouble() ?? 0.0;
-    final received = (widget.bill['amountReceived'] as num?)?.toDouble() ?? 0.0;
+    final received = (widget.bill['amountReceived'] as num?)?.toDouble() ?? total;
     final pending = (widget.bill['pendingBalance'] as num?)?.toDouble() ?? (total - received).clamp(0.0, double.infinity);
     _amountCtrl.text = pending > 0 ? pending.toStringAsFixed(2) : received.toStringAsFixed(2);
+    (_splitRows[0]['ctrl'] as TextEditingController).text =
+        pending > 0 ? pending.toStringAsFixed(2) : '0';
   }
 
   @override
   void dispose() {
     _amountCtrl.dispose();
     _notesCtrl.dispose();
+    for (final r in _splitRows) {
+      (r['ctrl'] as TextEditingController).dispose();
+    }
     super.dispose();
+  }
+
+  double get _splitTotal {
+    double sum = 0;
+    for (final r in _splitRows) {
+      sum += double.tryParse((r['ctrl'] as TextEditingController).text.trim()) ?? 0.0;
+    }
+    return sum;
   }
 
   Future<void> _pickPaymentDate() async {
@@ -1221,15 +1635,17 @@ class _SettleBalanceDialogState extends State<_SettleBalanceDialog> {
   Future<void> _submitPayment() async {
     final total = (widget.bill['totalPayable'] as num?)?.toDouble() ?? 0.0;
     final currReceived = (widget.bill['amountReceived'] as num?)?.toDouble() ?? 0.0;
+    final currPending = (total - currReceived).clamp(0.0, double.infinity);
 
-    final inputVal = double.tryParse(_amountCtrl.text.trim()) ?? 0.0;
+    final inputVal = (_modeTab == 0 && _isSplit)
+        ? _splitTotal
+        : (double.tryParse(_amountCtrl.text.trim()) ?? 0.0);
 
     double payNow = 0.0;
     double newAmountReceived = 0.0;
     double newPendingBalance = 0.0;
 
     if (_modeTab == 0) {
-      // Settle Due Balance mode
       if (inputVal <= 0) {
         BoutiqueToast.showError(context, 'Please enter a valid payment amount greater than 0');
         return;
@@ -1238,7 +1654,6 @@ class _SettleBalanceDialogState extends State<_SettleBalanceDialog> {
       newAmountReceived = currReceived + payNow;
       newPendingBalance = (total - newAmountReceived).clamp(0.0, double.infinity);
     } else {
-      // Direct Override mode
       if (inputVal < 0) {
         BoutiqueToast.showError(context, 'Amount cannot be negative');
         return;
@@ -1250,39 +1665,109 @@ class _SettleBalanceDialogState extends State<_SettleBalanceDialog> {
 
     setState(() => _saving = true);
     try {
-      final docId = widget.bill['_docId'];
+      final docId = widget.bill['_docId'] ?? widget.bill['docId'];
       if (docId == null) throw 'Missing bill document reference';
 
-      final paymentRecord = {
-        'amount': payNow,
-        'mode': _paymentMode,
-        'date': Timestamp.fromDate(_paymentDate),
-        'notes': _notesCtrl.text.trim(),
-        'recordedAt': Timestamp.now(),
-        'type': _modeTab == 0 ? 'Balance Settlement' : 'Amount Adjustment',
-      };
+      final existingPayments = List<Map<String, dynamic>>.from(
+        ((widget.bill['payments'] as List?) ?? []).map((e) => Map<String, dynamic>.from(e as Map)),
+      );
+      final historyList = List<Map<String, dynamic>>.from(
+        ((widget.bill['paymentHistory'] as List?) ?? []).map((e) => Map<String, dynamic>.from(e as Map)),
+      );
+
+      final payTs = Timestamp.fromDate(_paymentDate);
+      final refBillNo = widget.bill['billNo']?.toString() ?? 'SB';
+      final nextDrIndex = historyList.length + 1;
+      final receiptNo = 'DR-${nextDrIndex.toString().padLeft(3, '0')}';
+
+      if (_modeTab == 0 && _isSplit) {
+        final List<Map<String, dynamic>> splitBreakdown = [];
+        for (final r in _splitRows) {
+          final amt =
+              double.tryParse((r['ctrl'] as TextEditingController).text.trim()) ??
+              0.0;
+          if (amt > 0) {
+            final m = r['mode']?.toString() ?? 'Cash';
+            existingPayments.add({
+              'mode': m,
+              'amount': amt,
+              'date': payTs,
+              'receiptNo': receiptNo,
+            });
+            splitBreakdown.add({'mode': m, 'amount': amt});
+          }
+        }
+        historyList.add({
+          'receiptNo': receiptNo,
+          'refBillNo': refBillNo,
+          'amount': payNow,
+          'mode': splitBreakdown.length > 1
+              ? 'Split'
+              : (splitBreakdown.first['mode'] ?? 'Cash'),
+          'breakdown': splitBreakdown,
+          'previousDue': currPending,
+          'remainingDue': newPendingBalance,
+          'date': payTs,
+          'note': _notesCtrl.text.trim().isNotEmpty
+              ? _notesCtrl.text.trim()
+              : (newPendingBalance <= 0
+                  ? 'Final Settlement'
+                  : 'Installment Payment'),
+          'notes': _notesCtrl.text.trim(),
+          'recordedAt': Timestamp.now(),
+          'type': 'Split Due Settlement',
+        });
+      } else {
+        existingPayments.add({
+          'mode': _paymentMode,
+          'amount': payNow,
+          'date': payTs,
+          'receiptNo': receiptNo,
+        });
+        historyList.add({
+          'receiptNo': receiptNo,
+          'refBillNo': refBillNo,
+          'amount': payNow,
+          'mode': _paymentMode,
+          'breakdown': [
+            {'mode': _paymentMode, 'amount': payNow},
+          ],
+          'previousDue': currPending,
+          'remainingDue': newPendingBalance,
+          'date': payTs,
+          'note': _notesCtrl.text.trim().isNotEmpty
+              ? _notesCtrl.text.trim()
+              : (newPendingBalance <= 0
+                  ? 'Final Settlement'
+                  : 'Installment Payment'),
+          'notes': _notesCtrl.text.trim(),
+          'recordedAt': Timestamp.now(),
+          'type': _modeTab == 0 ? 'Balance Settlement' : 'Amount Adjustment',
+        });
+      }
+
+      final updatedMode = existingPayments.length > 1 ? 'Split Payment' : _paymentMode;
 
       await FirebaseFirestore.instance.collection('bills').doc(docId).update({
         'amountReceived': newAmountReceived,
         'pendingBalance': newPendingBalance,
+        'paymentMode': updatedMode,
+        'payments': existingPayments,
+        'paymentHistory': historyList,
         'isFullyPaid': newPendingBalance <= 0,
         'paymentStatus': newPendingBalance <= 0 ? 'Paid' : 'Partial',
-        'lastPaymentDate': Timestamp.fromDate(_paymentDate),
-        'lastPaymentMode': _paymentMode,
-        'paymentHistory': FieldValue.arrayUnion([paymentRecord]),
+        'lastPaymentDate': payTs,
+        'lastPaymentMode': (_modeTab == 0 && _isSplit) ? 'Split Payment' : _paymentMode,
       });
 
-      // Update in-memory bill object
       widget.bill['amountReceived'] = newAmountReceived;
       widget.bill['pendingBalance'] = newPendingBalance;
+      widget.bill['paymentMode'] = updatedMode;
+      widget.bill['payments'] = existingPayments;
+      widget.bill['paymentHistory'] = historyList;
       widget.bill['isFullyPaid'] = newPendingBalance <= 0;
       widget.bill['paymentStatus'] = newPendingBalance <= 0 ? 'Paid' : 'Partial';
-      widget.bill['lastPaymentDate'] = Timestamp.fromDate(_paymentDate);
-      widget.bill['lastPaymentMode'] = _paymentMode;
-
-      final historyList = List<dynamic>.from(widget.bill['paymentHistory'] ?? []);
-      historyList.add(paymentRecord);
-      widget.bill['paymentHistory'] = historyList;
+      widget.bill['lastPaymentDate'] = payTs;
 
       widget.onPaymentUpdated();
 
@@ -1310,7 +1795,9 @@ class _SettleBalanceDialogState extends State<_SettleBalanceDialog> {
     final received = (widget.bill['amountReceived'] as num?)?.toDouble() ?? 0.0;
     final pending = (widget.bill['pendingBalance'] as num?)?.toDouble() ?? (total - received).clamp(0.0, double.infinity);
 
-    final inputVal = double.tryParse(_amountCtrl.text.trim()) ?? 0.0;
+    final inputVal = (_modeTab == 0 && _isSplit)
+        ? _splitTotal
+        : (double.tryParse(_amountCtrl.text.trim()) ?? 0.0);
     final previewReceived = _modeTab == 0 ? (received + inputVal) : inputVal;
     final previewPending = (total - previewReceived).clamp(0.0, double.infinity);
 
@@ -1318,316 +1805,395 @@ class _SettleBalanceDialogState extends State<_SettleBalanceDialog> {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       backgroundColor: BoutiqueColors.bgCard,
       child: Container(
-        width: 520,
+        width: 540,
         padding: const EdgeInsets.all(28),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Header
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Row(
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Header
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(color: BoutiqueColors.accentSoft, borderRadius: BorderRadius.circular(8)),
+                        child: const Icon(Icons.payments_rounded, color: BoutiqueColors.accent, size: 22),
+                      ),
+                      const SizedBox(width: 12),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('Receive / Settle Due Payment', style: TextStyle(fontFamily: 'serif', fontSize: 18, fontWeight: FontWeight.bold, color: BoutiqueColors.textPrimary)),
+                          Text('Bill: ${widget.bill['billNo'] ?? '—'} • Customer: ${widget.bill['customerName'] ?? 'Walk-in'}', style: const TextStyle(fontSize: 12, color: BoutiqueColors.textSecondary)),
+                        ],
+                      ),
+                    ],
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close_rounded, color: BoutiqueColors.textSecondary),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
+              ),
+              const Divider(height: 24, color: BoutiqueColors.border),
+
+              // Stat Summary Cards
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: BoutiqueColors.bgSubtle,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: BoutiqueColors.border),
+                ),
+                child: Row(
                   children: [
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(color: BoutiqueColors.accentSoft, borderRadius: BorderRadius.circular(8)),
-                      child: const Icon(Icons.payments_rounded, color: BoutiqueColors.accent, size: 22),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('Total Bill', style: TextStyle(fontSize: 11, color: BoutiqueColors.textSecondary)),
+                          const SizedBox(height: 2),
+                          Text('₹${total.toStringAsFixed(2)}', style: const TextStyle(fontFamily: 'serif', fontSize: 15, fontWeight: FontWeight.bold, color: BoutiqueColors.textPrimary)),
+                        ],
+                      ),
                     ),
-                    const SizedBox(width: 12),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text('Settle Balance Payment', style: TextStyle(fontFamily: 'serif', fontSize: 18, fontWeight: FontWeight.bold, color: BoutiqueColors.textPrimary)),
-                        Text('Bill: ${widget.bill['billNo'] ?? '—'} • Customer: ${widget.bill['customerName'] ?? 'Walk-in'}', style: const TextStyle(fontSize: 12, color: BoutiqueColors.textSecondary)),
-                      ],
+                    Container(width: 1, height: 32, color: BoutiqueColors.border),
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.only(left: 12),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('Already Paid', style: TextStyle(fontSize: 11, color: BoutiqueColors.textSecondary)),
+                            const SizedBox(height: 2),
+                            Text('₹${received.toStringAsFixed(2)}', style: const TextStyle(fontFamily: 'serif', fontSize: 15, fontWeight: FontWeight.bold, color: BoutiqueColors.accent)),
+                          ],
+                        ),
+                      ),
+                    ),
+                    Container(width: 1, height: 32, color: BoutiqueColors.border),
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.only(left: 12),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('Current Balance Due', style: TextStyle(fontSize: 11, color: BoutiqueColors.textSecondary)),
+                            const SizedBox(height: 2),
+                            Text(
+                              '₹${pending.toStringAsFixed(2)}', 
+                              style: TextStyle(
+                                fontFamily: 'serif', 
+                                fontSize: 15, 
+                                fontWeight: FontWeight.bold, 
+                                color: pending > 0 ? const Color(0xFFD32F2F) : const Color(0xFF2E7D32),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
                   ],
                 ),
-                IconButton(
-                  icon: const Icon(Icons.close_rounded, color: BoutiqueColors.textSecondary),
-                  onPressed: () => Navigator.pop(context),
-                ),
-              ],
-            ),
-            const Divider(height: 24, color: BoutiqueColors.border),
-
-            // Stat Summary Cards
-            Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: BoutiqueColors.bgSubtle,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: BoutiqueColors.border),
               ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text('Total Bill', style: TextStyle(fontSize: 11, color: BoutiqueColors.textSecondary)),
-                        const SizedBox(height: 2),
-                        Text('₹${total.toStringAsFixed(2)}', style: const TextStyle(fontFamily: 'serif', fontSize: 15, fontWeight: FontWeight.bold, color: BoutiqueColors.textPrimary)),
-                      ],
-                    ),
-                  ),
-                  Container(width: 1, height: 32, color: BoutiqueColors.border),
-                  Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.only(left: 12),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text('Already Paid', style: TextStyle(fontSize: 11, color: BoutiqueColors.textSecondary)),
-                          const SizedBox(height: 2),
-                          Text('₹${received.toStringAsFixed(2)}', style: const TextStyle(fontFamily: 'serif', fontSize: 15, fontWeight: FontWeight.bold, color: BoutiqueColors.accent)),
-                        ],
-                      ),
-                    ),
-                  ),
-                  Container(width: 1, height: 32, color: BoutiqueColors.border),
-                  Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.only(left: 12),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text('Current Balance Due', style: TextStyle(fontSize: 11, color: BoutiqueColors.textSecondary)),
-                          const SizedBox(height: 2),
-                          Text(
-                            '₹${pending.toStringAsFixed(2)}', 
-                            style: TextStyle(
-                              fontFamily: 'serif', 
-                              fontSize: 15, 
-                              fontWeight: FontWeight.bold, 
-                              color: pending > 0 ? const Color(0xFFD32F2F) : const Color(0xFF2E7D32)
-                            )
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 16),
+              const SizedBox(height: 16),
 
-            // Tab Selector: Settle Balance vs Override Total
-            Container(
-              decoration: BoxDecoration(color: BoutiqueColors.bgSubtle, borderRadius: BorderRadius.circular(8)),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: InkWell(
-                      onTap: () {
-                        setState(() {
-                          _modeTab = 0;
-                          _amountCtrl.text = pending > 0 ? pending.toStringAsFixed(2) : '0.00';
-                        });
-                      },
-                      borderRadius: BorderRadius.circular(8),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(vertical: 8),
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(
-                          color: _modeTab == 0 ? BoutiqueColors.accent : Colors.transparent,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          'Pay Balance Due',
-                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: _modeTab == 0 ? Colors.white : BoutiqueColors.textSecondary),
-                        ),
-                      ),
-                    ),
-                  ),
-                  Expanded(
-                    child: InkWell(
-                      onTap: () {
-                        setState(() {
-                          _modeTab = 1;
-                          _amountCtrl.text = received.toStringAsFixed(2);
-                        });
-                      },
-                      borderRadius: BorderRadius.circular(8),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(vertical: 8),
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(
-                          color: _modeTab == 1 ? BoutiqueColors.accent : Colors.transparent,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          'Direct Total Override',
-                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: _modeTab == 1 ? Colors.white : BoutiqueColors.textSecondary),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 16),
-
-            // Amount Input & Quick Chips
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  _modeTab == 0 ? 'Amount Paying Now (₹)' : 'Total Received Amount (₹)',
-                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: BoutiqueColors.textPrimary),
-                ),
-                if (_modeTab == 0 && pending > 0)
-                  InkWell(
-                    onTap: () {
-                      setState(() => _amountCtrl.text = pending.toStringAsFixed(2));
-                    },
-                    child: Text(
-                      'Pay Full Due (₹${pending.toStringAsFixed(2)})',
-                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: BoutiqueColors.accent),
-                    ),
-                  ),
-              ],
-            ),
-            const SizedBox(height: 6),
-            TextField(
-              controller: _amountCtrl,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
-              decoration: BoutiqueInputDecoration.field(
-                hintText: '0.00',
-                prefixIcon: const Icon(Icons.currency_rupee_rounded, size: 18, color: BoutiqueColors.accent),
-              ),
-              onChanged: (_) => setState(() {}),
-            ),
-            const SizedBox(height: 12),
-
-            // Mode & Date in 2 columns
-            Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text('Payment Mode', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: BoutiqueColors.textPrimary)),
-                      const SizedBox(height: 6),
-                      DropdownButtonFormField<String>(
-                        initialValue: _paymentMode,
-                        style: const TextStyle(fontSize: 13, color: BoutiqueColors.textPrimary),
-                        decoration: BoutiqueInputDecoration.field(hintText: 'Mode'),
-                        items: _modes.map((m) => DropdownMenuItem(value: m, child: Text(m))).toList(),
-                        onChanged: (v) {
-                          if (v != null) setState(() => _paymentMode = v);
+              // Tab Selector: Pay Balance Due vs Direct Override
+              Container(
+                decoration: BoxDecoration(color: BoutiqueColors.bgSubtle, borderRadius: BorderRadius.circular(8)),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: InkWell(
+                        onTap: () {
+                          setState(() {
+                            _modeTab = 0;
+                            _amountCtrl.text = pending > 0 ? pending.toStringAsFixed(2) : '0.00';
+                          });
                         },
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text('Payment Date', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: BoutiqueColors.textPrimary)),
-                      const SizedBox(height: 6),
-                      InkWell(
-                        onTap: _pickPaymentDate,
                         borderRadius: BorderRadius.circular(8),
                         child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          alignment: Alignment.center,
                           decoration: BoxDecoration(
-                            color: BoutiqueColors.bgCard,
+                            color: _modeTab == 0 ? BoutiqueColors.accent : Colors.transparent,
                             borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: BoutiqueColors.border),
                           ),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text(fmt.format(_paymentDate), style: const TextStyle(fontSize: 13, color: BoutiqueColors.textPrimary)),
-                              const Icon(Icons.calendar_today_rounded, size: 16, color: BoutiqueColors.textSecondary),
-                            ],
+                          child: Text(
+                            'Pay Due (Part / Full / Split)',
+                            style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: _modeTab == 0 ? Colors.white : BoutiqueColors.textSecondary),
                           ),
                         ),
                       ),
-                    ],
+                    ),
+                    Expanded(
+                      child: InkWell(
+                        onTap: () {
+                          setState(() {
+                            _modeTab = 1;
+                            _isSplit = false;
+                            _amountCtrl.text = received.toStringAsFixed(2);
+                          });
+                        },
+                        borderRadius: BorderRadius.circular(8),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            color: _modeTab == 1 ? BoutiqueColors.accent : Colors.transparent,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            'Direct Total Override',
+                            style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: _modeTab == 1 ? Colors.white : BoutiqueColors.textSecondary),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 14),
+
+              if (_modeTab == 0) ...[
+                Row(
+                  children: [
+                    const Text('Payment Method:', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: BoutiqueColors.textPrimary)),
+                    const SizedBox(width: 16),
+                    ChoiceChip(
+                      label: const Text('Single Mode', style: TextStyle(fontSize: 12)),
+                      selected: !_isSplit,
+                      selectedColor: BoutiqueColors.accentSoft,
+                      onSelected: (_) => setState(() => _isSplit = false),
+                    ),
+                    const SizedBox(width: 8),
+                    ChoiceChip(
+                      label: const Text('Split Mode (Multiple)', style: TextStyle(fontSize: 12)),
+                      selected: _isSplit,
+                      selectedColor: BoutiqueColors.accentSoft,
+                      onSelected: (_) => setState(() => _isSplit = true),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+              ],
+
+              if (!_isSplit) ...[
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      _modeTab == 0 ? 'Amount Paying Now (₹)' : 'Total Received Amount (₹)',
+                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: BoutiqueColors.textPrimary),
+                    ),
+                    if (_modeTab == 0 && pending > 0)
+                      InkWell(
+                        onTap: () {
+                          setState(() => _amountCtrl.text = pending.toStringAsFixed(2));
+                        },
+                        child: Text(
+                          'Pay Full Due (₹${pending.toStringAsFixed(2)})',
+                          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: BoutiqueColors.accent),
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                TextField(
+                  controller: _amountCtrl,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                  decoration: BoutiqueInputDecoration.field(
+                    hintText: '0.00',
+                    prefixIcon: const Icon(Icons.currency_rupee_rounded, size: 18, color: BoutiqueColors.accent),
                   ),
+                  onChanged: (_) => setState(() {}),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('Payment Mode', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: BoutiqueColors.textPrimary)),
+                          const SizedBox(height: 6),
+                          DropdownButtonFormField<String>(
+                            initialValue: _paymentMode,
+                            style: const TextStyle(fontSize: 13, color: BoutiqueColors.textPrimary),
+                            decoration: BoutiqueInputDecoration.field(hintText: 'Mode'),
+                            items: _modes.map((m) => DropdownMenuItem(value: m, child: Text(m))).toList(),
+                            onChanged: (v) {
+                              if (v != null) setState(() => _paymentMode = v);
+                            },
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('Payment Date', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: BoutiqueColors.textPrimary)),
+                          const SizedBox(height: 6),
+                          InkWell(
+                            onTap: _pickPaymentDate,
+                            borderRadius: BorderRadius.circular(8),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                              decoration: BoxDecoration(
+                                color: BoutiqueColors.bgCard,
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: BoutiqueColors.border),
+                              ),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(fmt.format(_paymentDate), style: const TextStyle(fontSize: 13, color: BoutiqueColors.textPrimary)),
+                                  const Icon(Icons.calendar_today_rounded, size: 16, color: BoutiqueColors.textSecondary),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ] else ...[
+                const Text('Split Payment Breakdown', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: BoutiqueColors.textPrimary)),
+                const SizedBox(height: 8),
+                ...List.generate(_splitRows.length, (idx) {
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          flex: 3,
+                          child: DropdownButtonFormField<String>(
+                            initialValue: _splitRows[idx]['mode'] as String,
+                            decoration: BoutiqueInputDecoration.field(hintText: 'Mode'),
+                            items: _modes.map((m) => DropdownMenuItem(value: m, child: Text(m, style: const TextStyle(fontSize: 13)))).toList(),
+                            onChanged: (v) {
+                              if (v != null) setState(() => _splitRows[idx]['mode'] = v);
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          flex: 3,
+                          child: TextField(
+                            controller: _splitRows[idx]['ctrl'] as TextEditingController,
+                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                            decoration: BoutiqueInputDecoration.field(
+                              hintText: 'Amount',
+                              prefixIcon: const Icon(Icons.currency_rupee_rounded, size: 15, color: BoutiqueColors.accent),
+                            ),
+                            onChanged: (_) => setState(() {}),
+                          ),
+                        ),
+                        if (_splitRows.length > 1)
+                          IconButton(
+                            icon: const Icon(Icons.remove_circle_outline, color: BoutiqueColors.destructive, size: 20),
+                            onPressed: () {
+                              (_splitRows[idx]['ctrl'] as TextEditingController).dispose();
+                              setState(() => _splitRows.removeAt(idx));
+                            },
+                          ),
+                      ],
+                    ),
+                  );
+                }),
+                TextButton.icon(
+                  onPressed: () {
+                    setState(() => _splitRows.add({'mode': 'Cash', 'ctrl': TextEditingController(text: '0')}));
+                  },
+                  icon: const Icon(Icons.add_circle_outline, size: 16),
+                  label: const Text('Add Another Payment Mode', style: TextStyle(fontSize: 12)),
+                  style: TextButton.styleFrom(foregroundColor: BoutiqueColors.accent),
                 ),
               ],
-            ),
-            const SizedBox(height: 12),
 
-            // Remarks / Ref Notes
-            const Text('Reference / Remarks (Optional)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: BoutiqueColors.textPrimary)),
-            const SizedBox(height: 6),
-            TextField(
-              controller: _notesCtrl,
-              style: const TextStyle(fontSize: 13),
-              decoration: BoutiqueInputDecoration.field(
-                hintText: 'e.g. UPI Ref #, GPay transaction, Cash on delivery',
-              ),
-            ),
-            const SizedBox(height: 16),
+              const SizedBox(height: 12),
 
-            // Calculation Preview Banner
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              decoration: BoxDecoration(
-                color: previewPending <= 0 ? const Color(0xFFE8F5E9) : const Color(0xFFFFF8E1),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: previewPending <= 0 ? const Color(0xFFA5D6A7) : const Color(0xFFFFE082)),
+              // Remarks / Ref Notes
+              const Text('Reference / Remarks (Optional)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: BoutiqueColors.textPrimary)),
+              const SizedBox(height: 6),
+              TextField(
+                controller: _notesCtrl,
+                style: const TextStyle(fontSize: 13),
+                decoration: BoutiqueInputDecoration.field(
+                  hintText: 'e.g. Installment 1, UPI Ref #, Cash received',
+                ),
               ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'Updated Paid: ₹${previewReceived.toStringAsFixed(2)}',
-                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: BoutiqueColors.textPrimary),
-                  ),
-                  Text(
-                    previewPending <= 0 ? 'Remaining Due: ₹0.00 (Fully Settled ✓)' : 'Remaining Due: ₹${previewPending.toStringAsFixed(2)}',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                      color: previewPending <= 0 ? const Color(0xFF2E7D32) : const Color(0xFFB45309),
+              const SizedBox(height: 16),
+
+              // Calculation Preview Banner
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(
+                  color: previewPending <= 0 ? const Color(0xFFE8F5E9) : const Color(0xFFFFF8E1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: previewPending <= 0 ? const Color(0xFFA5D6A7) : const Color(0xFFFFE082)),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Paying Now: ₹${inputVal.toStringAsFixed(2)} (Total Paid: ₹${previewReceived.toStringAsFixed(2)})',
+                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: BoutiqueColors.textPrimary),
                     ),
+                    Text(
+                      previewPending <= 0 ? 'Remaining Due: ₹0.00 (Fully Paid ✓)' : 'Remaining Due: ₹${previewPending.toStringAsFixed(2)}',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: previewPending <= 0 ? const Color(0xFF2E7D32) : const Color(0xFFD32F2F),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 20),
+
+              // Action Buttons
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  OutlinedButton(
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: BoutiqueColors.border),
+                      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                    onPressed: _saving ? null : () => Navigator.pop(context),
+                    child: const Text('Cancel', style: TextStyle(color: BoutiqueColors.textSecondary)),
+                  ),
+                  const SizedBox(width: 12),
+                  ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: previewPending <= 0 ? const Color(0xFF1E7E34) : BoutiqueColors.accent,
+                      padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 12),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                    onPressed: _saving ? null : _submitPayment,
+                    child: _saving
+                        ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                        : Text(
+                            previewPending <= 0 ? 'Save & Mark Fully Paid ✓' : 'Record Payment (₹${inputVal.toStringAsFixed(2)})',
+                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                          ),
                   ),
                 ],
               ),
-            ),
-            const SizedBox(height: 20),
-
-            // Action Buttons
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                OutlinedButton(
-                  style: OutlinedButton.styleFrom(
-                    side: const BorderSide(color: BoutiqueColors.border),
-                    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                  ),
-                  onPressed: _saving ? null : () => Navigator.pop(context),
-                  child: const Text('Cancel', style: TextStyle(color: BoutiqueColors.textSecondary)),
-                ),
-                const SizedBox(width: 12),
-                ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: previewPending <= 0 ? const Color(0xFF1E7E34) : BoutiqueColors.accent,
-                    padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 12),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                  ),
-                  onPressed: _saving ? null : _submitPayment,
-                  child: _saving
-                      ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                      : Text(
-                          previewPending <= 0 ? 'Save & Mark Fully Paid ✓' : 'Save Payment (₹${inputVal.toStringAsFixed(2)})',
-                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-                        ),
-                ),
-              ],
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

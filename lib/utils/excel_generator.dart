@@ -521,4 +521,735 @@ class ExcelGenerator {
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     );
   }
+
+  /// Generate & download Category-Wise Closing Stock Report Excel
+  static Future<void> downloadCategoryClosingStockExcel({
+    required List<Map<String, dynamic>> rows,
+    String statusFilter = 'All',
+  }) async {
+    final Workbook workbook = Workbook();
+    final Worksheet sheet = workbook.worksheets[0];
+    sheet.name = 'Closing Stock Category-Wise';
+
+    // Title Banner
+    final titleRange = sheet.getRangeByName('A1:J1');
+    titleRange.merge();
+    titleRange.setText('CLOSING STOCK REPORT — CATEGORY WISE');
+    titleRange.cellStyle.bold = true;
+    titleRange.cellStyle.fontSize = 13;
+    titleRange.cellStyle.backColor = '#5A121A';
+    titleRange.cellStyle.fontColor = '#FFFFFF';
+    titleRange.cellStyle.hAlign = HAlignType.center;
+    titleRange.cellStyle.vAlign = VAlignType.center;
+
+    // Metadata
+    final metaFilter = sheet.getRangeByName('A2:E2');
+    metaFilter.merge();
+    metaFilter.setText(
+      statusFilter != 'All'
+          ? 'Category Closing Summary (Filter: $statusFilter)'
+          : 'Category Closing Stock Statement (All Categories)',
+    );
+    metaFilter.cellStyle.bold = true;
+    metaFilter.cellStyle.fontSize = 10;
+    metaFilter.cellStyle.backColor = '#FDFBF7';
+    metaFilter.cellStyle.vAlign = VAlignType.center;
+
+    final metaDate = sheet.getRangeByName('F2:J2');
+    metaDate.merge();
+    metaDate.setText('Generated: ${_dateTimeFmt.format(DateTime.now())}');
+    metaDate.cellStyle.bold = true;
+    metaDate.cellStyle.fontSize = 10;
+    metaDate.cellStyle.backColor = '#FDFBF7';
+    metaDate.cellStyle.hAlign = HAlignType.right;
+    metaDate.cellStyle.vAlign = VAlignType.center;
+
+    // Headers
+    final headers = [
+      'S.No',
+      'Category Name',
+      'Total Items (SKUs)',
+      'Purchased Qty',
+      'Issued Qty',
+      'Sold Qty',
+      'Closing Stock Qty',
+      'Closing Value (Rs.)',
+      'Stock Share (%)',
+      'Status',
+    ];
+
+    for (int col = 0; col < headers.length; col++) {
+      final cell = sheet.getRangeByIndex(3, col + 1);
+      cell.setText(headers[col]);
+      cell.cellStyle.bold = true;
+      cell.cellStyle.fontSize = 10;
+      cell.cellStyle.backColor = '#8B263E';
+      cell.cellStyle.fontColor = '#FFFFFF';
+      cell.cellStyle.hAlign =
+          (col == 0 || col >= 2 && col <= 6 || col == 8 || col == 9)
+              ? HAlignType.center
+              : (col == 7 ? HAlignType.right : HAlignType.left);
+      cell.cellStyle.vAlign = VAlignType.center;
+    }
+
+    int rowIndex = 4;
+    int totalSkus = 0;
+    int totalPurchased = 0;
+    int totalIssued = 0;
+    int totalSold = 0;
+    int totalClosingQty = 0;
+    double totalClosingValue = 0.0;
+
+    for (final r in rows) {
+      totalClosingValue += (r['closingValue'] as num?)?.toDouble() ?? 0.0;
+    }
+
+    for (int i = 0; i < rows.length; i++) {
+      final r = rows[i];
+      final skus = (r['skuCount'] as num?)?.toInt() ?? 0;
+      final purchased = (r['totalPurchased'] as num?)?.toInt() ?? 0;
+      final issued = (r['totalIssued'] as num?)?.toInt() ?? 0;
+      final sold = (r['totalSold'] as num?)?.toInt() ?? 0;
+      final closing = (r['closingQty'] as num?)?.toInt() ?? 0;
+      final val = (r['closingValue'] as num?)?.toDouble() ?? 0.0;
+      final share = totalClosingValue > 0
+          ? (val / totalClosingValue) * 100
+          : 0.0;
+
+      totalSkus += skus;
+      totalPurchased += purchased;
+      totalIssued += issued;
+      totalSold += sold;
+      totalClosingQty += closing;
+
+      sheet.getRangeByIndex(rowIndex, 1).setNumber((i + 1).toDouble());
+      sheet.getRangeByIndex(rowIndex, 1).cellStyle.hAlign = HAlignType.center;
+
+      sheet
+          .getRangeByIndex(rowIndex, 2)
+          .setText(r['category']?.toString() ?? '—');
+      sheet.getRangeByIndex(rowIndex, 2).cellStyle.hAlign = HAlignType.left;
+
+      sheet.getRangeByIndex(rowIndex, 3).setNumber(skus.toDouble());
+      sheet.getRangeByIndex(rowIndex, 3).cellStyle.hAlign = HAlignType.center;
+
+      sheet.getRangeByIndex(rowIndex, 4).setNumber(purchased.toDouble());
+      sheet.getRangeByIndex(rowIndex, 4).cellStyle.hAlign = HAlignType.center;
+
+      sheet.getRangeByIndex(rowIndex, 5).setNumber(issued.toDouble());
+      sheet.getRangeByIndex(rowIndex, 5).cellStyle.hAlign = HAlignType.center;
+
+      sheet.getRangeByIndex(rowIndex, 6).setNumber(sold.toDouble());
+      sheet.getRangeByIndex(rowIndex, 6).cellStyle.hAlign = HAlignType.center;
+
+      sheet.getRangeByIndex(rowIndex, 7).setNumber(closing.toDouble());
+      sheet.getRangeByIndex(rowIndex, 7).cellStyle.hAlign = HAlignType.center;
+      sheet.getRangeByIndex(rowIndex, 7).cellStyle.bold = true;
+
+      sheet.getRangeByIndex(rowIndex, 8).setNumber(val);
+      sheet.getRangeByIndex(rowIndex, 8).cellStyle.hAlign = HAlignType.right;
+      sheet.getRangeByIndex(rowIndex, 8).cellStyle.bold = true;
+
+      sheet
+          .getRangeByIndex(rowIndex, 9)
+          .setText('${share.toStringAsFixed(1)}%');
+      sheet.getRangeByIndex(rowIndex, 9).cellStyle.hAlign = HAlignType.center;
+
+      sheet
+          .getRangeByIndex(rowIndex, 10)
+          .setText(r['status']?.toString() ?? 'In Stock');
+      sheet.getRangeByIndex(rowIndex, 10).cellStyle.hAlign = HAlignType.center;
+
+      if (i % 2 == 1) {
+        sheet.getRangeByIndex(rowIndex, 1, rowIndex, 10).cellStyle.backColor =
+            '#FAF7F2';
+      }
+      rowIndex++;
+    }
+
+    // Grand Total Row
+    final totalRange = sheet.getRangeByIndex(rowIndex, 1, rowIndex, 2);
+    totalRange.merge();
+    totalRange.setText('GRAND TOTAL');
+    totalRange.cellStyle.bold = true;
+    totalRange.cellStyle.hAlign = HAlignType.right;
+
+    sheet.getRangeByIndex(rowIndex, 3).setNumber(totalSkus.toDouble());
+    sheet.getRangeByIndex(rowIndex, 3).cellStyle.bold = true;
+    sheet.getRangeByIndex(rowIndex, 3).cellStyle.hAlign = HAlignType.center;
+
+    sheet.getRangeByIndex(rowIndex, 4).setNumber(totalPurchased.toDouble());
+    sheet.getRangeByIndex(rowIndex, 4).cellStyle.bold = true;
+    sheet.getRangeByIndex(rowIndex, 4).cellStyle.hAlign = HAlignType.center;
+
+    sheet.getRangeByIndex(rowIndex, 5).setNumber(totalIssued.toDouble());
+    sheet.getRangeByIndex(rowIndex, 5).cellStyle.bold = true;
+    sheet.getRangeByIndex(rowIndex, 5).cellStyle.hAlign = HAlignType.center;
+
+    sheet.getRangeByIndex(rowIndex, 6).setNumber(totalSold.toDouble());
+    sheet.getRangeByIndex(rowIndex, 6).cellStyle.bold = true;
+    sheet.getRangeByIndex(rowIndex, 6).cellStyle.hAlign = HAlignType.center;
+
+    sheet.getRangeByIndex(rowIndex, 7).setNumber(totalClosingQty.toDouble());
+    sheet.getRangeByIndex(rowIndex, 7).cellStyle.bold = true;
+    sheet.getRangeByIndex(rowIndex, 7).cellStyle.hAlign = HAlignType.center;
+
+    sheet.getRangeByIndex(rowIndex, 8).setNumber(totalClosingValue);
+    sheet.getRangeByIndex(rowIndex, 8).cellStyle.bold = true;
+    sheet.getRangeByIndex(rowIndex, 8).cellStyle.hAlign = HAlignType.right;
+
+    sheet.getRangeByIndex(rowIndex, 9).setText('100.0%');
+    sheet.getRangeByIndex(rowIndex, 9).cellStyle.bold = true;
+    sheet.getRangeByIndex(rowIndex, 9).cellStyle.hAlign = HAlignType.center;
+
+    sheet.getRangeByIndex(rowIndex, 1, rowIndex, 10).cellStyle.backColor =
+        '#F0E5D8';
+
+    // Column widths
+    sheet.getRangeByIndex(1, 1).columnWidth = 6.0;
+    sheet.getRangeByIndex(1, 2).columnWidth = 24.0;
+    sheet.getRangeByIndex(1, 3).columnWidth = 16.0;
+    sheet.getRangeByIndex(1, 4).columnWidth = 14.0;
+    sheet.getRangeByIndex(1, 5).columnWidth = 12.0;
+    sheet.getRangeByIndex(1, 6).columnWidth = 12.0;
+    sheet.getRangeByIndex(1, 7).columnWidth = 16.0;
+    sheet.getRangeByIndex(1, 8).columnWidth = 18.0;
+    sheet.getRangeByIndex(1, 9).columnWidth = 14.0;
+    sheet.getRangeByIndex(1, 10).columnWidth = 14.0;
+
+    final List<int> bytes = workbook.saveAsStream();
+    workbook.dispose();
+
+    await downloadFile(
+      bytes,
+      'closing_stock_category_wise_${DateTime.now().millisecondsSinceEpoch}.xlsx',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
+  }
+
+  /// Generate & download Product-Wise Stock Report Excel
+  static Future<void> downloadProductStockReportExcel({
+    required List<Map<String, dynamic>> rows,
+    String categoryFilter = 'All',
+    String statusFilter = 'All',
+  }) async {
+    final Workbook workbook = Workbook();
+    final Worksheet sheet = workbook.worksheets[0];
+    sheet.name = 'Stock Report';
+
+    final titleRange = sheet.getRangeByName('A1:L1');
+    titleRange.merge();
+    titleRange.setText('PRODUCT-WISE STOCK REPORT');
+    titleRange.cellStyle.bold = true;
+    titleRange.cellStyle.fontSize = 13;
+    titleRange.cellStyle.backColor = '#5A121A';
+    titleRange.cellStyle.fontColor = '#FFFFFF';
+    titleRange.cellStyle.hAlign = HAlignType.center;
+    titleRange.cellStyle.vAlign = VAlignType.center;
+
+    final metaRange = sheet.getRangeByName('A2:F2');
+    metaRange.merge();
+    metaRange.setText(
+      'Category: $categoryFilter • Status: $statusFilter',
+    );
+    metaRange.cellStyle.bold = true;
+    metaRange.cellStyle.fontSize = 10;
+    metaRange.cellStyle.backColor = '#FDFBF7';
+    metaRange.cellStyle.vAlign = VAlignType.center;
+
+    final metaDate = sheet.getRangeByName('G2:L2');
+    metaDate.merge();
+    metaDate.setText('Generated: ${_dateTimeFmt.format(DateTime.now())}');
+    metaDate.cellStyle.bold = true;
+    metaDate.cellStyle.fontSize = 10;
+    metaDate.cellStyle.backColor = '#FDFBF7';
+    metaDate.cellStyle.hAlign = HAlignType.right;
+    metaDate.cellStyle.vAlign = VAlignType.center;
+
+    final headers = [
+      'S.No',
+      'Tag ID',
+      'Product Name',
+      'Category',
+      'Total Recv',
+      'Issued',
+      'Sold',
+      'Stock Balance',
+      'Unit',
+      'Sell Price (Rs.)',
+      'Stock Value (Rs.)',
+      'Status',
+    ];
+
+    for (int col = 0; col < headers.length; col++) {
+      final cell = sheet.getRangeByIndex(3, col + 1);
+      cell.setText(headers[col]);
+      cell.cellStyle.bold = true;
+      cell.cellStyle.fontSize = 10;
+      cell.cellStyle.backColor = '#8B263E';
+      cell.cellStyle.fontColor = '#FFFFFF';
+      cell.cellStyle.hAlign =
+          (col == 0 || col == 1 || col >= 4 && col <= 8 || col == 11)
+              ? HAlignType.center
+              : (col == 9 || col == 10 ? HAlignType.right : HAlignType.left);
+      cell.cellStyle.vAlign = VAlignType.center;
+    }
+
+    int rowIndex = 4;
+    int totalBalance = 0;
+    double totalStockVal = 0.0;
+
+    for (int i = 0; i < rows.length; i++) {
+      final r = rows[i];
+      final balance =
+          (r['balance'] as num?)?.toInt() ??
+          (r['quantity'] as num?)?.toInt() ??
+          0;
+      final totalRec = (r['totalReceived'] as num?)?.toInt() ?? 0;
+      final issue = (r['issueQty'] as num?)?.toInt() ?? 0;
+      final sold = (r['soldQty'] as num?)?.toInt() ?? 0;
+      final sp = (r['sellingPrice'] as num?)?.toDouble() ?? 0.0;
+      final stockVal = balance * sp;
+
+      totalBalance += balance;
+      totalStockVal += stockVal;
+
+      sheet.getRangeByIndex(rowIndex, 1).setNumber((i + 1).toDouble());
+      sheet.getRangeByIndex(rowIndex, 1).cellStyle.hAlign = HAlignType.center;
+
+      sheet
+          .getRangeByIndex(rowIndex, 2)
+          .setText(r['tagId']?.toString() ?? '—');
+      sheet.getRangeByIndex(rowIndex, 2).cellStyle.hAlign = HAlignType.center;
+      sheet.getRangeByIndex(rowIndex, 2).cellStyle.bold = true;
+
+      sheet
+          .getRangeByIndex(rowIndex, 3)
+          .setText(r['name']?.toString() ?? '—');
+      sheet.getRangeByIndex(rowIndex, 3).cellStyle.hAlign = HAlignType.left;
+
+      sheet
+          .getRangeByIndex(rowIndex, 4)
+          .setText(r['category']?.toString() ?? '—');
+      sheet.getRangeByIndex(rowIndex, 4).cellStyle.hAlign = HAlignType.left;
+
+      sheet.getRangeByIndex(rowIndex, 5).setNumber(totalRec.toDouble());
+      sheet.getRangeByIndex(rowIndex, 5).cellStyle.hAlign = HAlignType.center;
+
+      sheet.getRangeByIndex(rowIndex, 6).setNumber(issue.toDouble());
+      sheet.getRangeByIndex(rowIndex, 6).cellStyle.hAlign = HAlignType.center;
+
+      sheet.getRangeByIndex(rowIndex, 7).setNumber(sold.toDouble());
+      sheet.getRangeByIndex(rowIndex, 7).cellStyle.hAlign = HAlignType.center;
+
+      sheet.getRangeByIndex(rowIndex, 8).setNumber(balance.toDouble());
+      sheet.getRangeByIndex(rowIndex, 8).cellStyle.hAlign = HAlignType.center;
+      sheet.getRangeByIndex(rowIndex, 8).cellStyle.bold = true;
+
+      sheet
+          .getRangeByIndex(rowIndex, 9)
+          .setText(r['unit']?.toString() ?? 'Piece');
+      sheet.getRangeByIndex(rowIndex, 9).cellStyle.hAlign = HAlignType.center;
+
+      sheet.getRangeByIndex(rowIndex, 10).setNumber(sp);
+      sheet.getRangeByIndex(rowIndex, 10).cellStyle.hAlign = HAlignType.right;
+
+      sheet.getRangeByIndex(rowIndex, 11).setNumber(stockVal);
+      sheet.getRangeByIndex(rowIndex, 11).cellStyle.hAlign = HAlignType.right;
+      sheet.getRangeByIndex(rowIndex, 11).cellStyle.bold = true;
+
+      sheet
+          .getRangeByIndex(rowIndex, 12)
+          .setText(r['status']?.toString() ?? 'In Stock');
+      sheet.getRangeByIndex(rowIndex, 12).cellStyle.hAlign = HAlignType.center;
+
+      if (i % 2 == 1) {
+        sheet.getRangeByIndex(rowIndex, 1, rowIndex, 12).cellStyle.backColor =
+            '#FAF7F2';
+      }
+      rowIndex++;
+    }
+
+    // Total Row
+    final totalRange = sheet.getRangeByIndex(rowIndex, 1, rowIndex, 7);
+    totalRange.merge();
+    totalRange.setText('TOTAL');
+    totalRange.cellStyle.bold = true;
+    totalRange.cellStyle.hAlign = HAlignType.right;
+
+    sheet.getRangeByIndex(rowIndex, 8).setNumber(totalBalance.toDouble());
+    sheet.getRangeByIndex(rowIndex, 8).cellStyle.bold = true;
+    sheet.getRangeByIndex(rowIndex, 8).cellStyle.hAlign = HAlignType.center;
+
+    sheet.getRangeByIndex(rowIndex, 11).setNumber(totalStockVal);
+    sheet.getRangeByIndex(rowIndex, 11).cellStyle.bold = true;
+    sheet.getRangeByIndex(rowIndex, 11).cellStyle.hAlign = HAlignType.right;
+
+    sheet.getRangeByIndex(rowIndex, 1, rowIndex, 12).cellStyle.backColor =
+        '#F0E5D8';
+
+    // Widths
+    sheet.getRangeByIndex(1, 1).columnWidth = 6.0;
+    sheet.getRangeByIndex(1, 2).columnWidth = 14.0;
+    sheet.getRangeByIndex(1, 3).columnWidth = 24.0;
+    sheet.getRangeByIndex(1, 4).columnWidth = 16.0;
+    sheet.getRangeByIndex(1, 5).columnWidth = 12.0;
+    sheet.getRangeByIndex(1, 6).columnWidth = 10.0;
+    sheet.getRangeByIndex(1, 7).columnWidth = 10.0;
+    sheet.getRangeByIndex(1, 8).columnWidth = 14.0;
+    sheet.getRangeByIndex(1, 9).columnWidth = 10.0;
+    sheet.getRangeByIndex(1, 10).columnWidth = 14.0;
+    sheet.getRangeByIndex(1, 11).columnWidth = 16.0;
+    sheet.getRangeByIndex(1, 12).columnWidth = 12.0;
+
+    final List<int> bytes = workbook.saveAsStream();
+    workbook.dispose();
+
+    await downloadFile(
+      bytes,
+      'stock_report_${DateTime.now().millisecondsSinceEpoch}.xlsx',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
+  }
+
+  /// Generate & download Bill-Wise Sales Report Excel
+  static Future<void> downloadBillWiseSalesExcel({
+    required List<Map<String, dynamic>> rows,
+    required DateTime dateFrom,
+    required DateTime dateTo,
+  }) async {
+    final Workbook workbook = Workbook();
+    final Worksheet sheet = workbook.worksheets[0];
+    sheet.name = 'Sales Register';
+
+    final titleRange = sheet.getRangeByName('A1:J1');
+    titleRange.merge();
+    titleRange.setText('SALES REPORT — BILL-WISE REGISTER');
+    titleRange.cellStyle.bold = true;
+    titleRange.cellStyle.fontSize = 13;
+    titleRange.cellStyle.backColor = '#5A121A';
+    titleRange.cellStyle.fontColor = '#FFFFFF';
+    titleRange.cellStyle.hAlign = HAlignType.center;
+    titleRange.cellStyle.vAlign = VAlignType.center;
+
+    final metaPeriod = sheet.getRangeByName('A2:E2');
+    metaPeriod.merge();
+    metaPeriod.setText(
+      'Period: ${_fmt.format(dateFrom)} to ${_fmt.format(dateTo)}',
+    );
+    metaPeriod.cellStyle.bold = true;
+    metaPeriod.cellStyle.fontSize = 10;
+    metaPeriod.cellStyle.backColor = '#FDFBF7';
+
+    final metaGen = sheet.getRangeByName('F2:J2');
+    metaGen.merge();
+    metaGen.setText('Generated: ${_dateTimeFmt.format(DateTime.now())}');
+    metaGen.cellStyle.bold = true;
+    metaGen.cellStyle.fontSize = 10;
+    metaGen.cellStyle.backColor = '#FDFBF7';
+    metaGen.cellStyle.hAlign = HAlignType.right;
+
+    final headers = [
+      'S.No',
+      'Bill No',
+      'Date',
+      'Customer',
+      'Subtotal (Rs.)',
+      'Discount (Rs.)',
+      'Tax (Rs.)',
+      'Total Payable (Rs.)',
+      'Payment Mode',
+      'Received (Rs.)',
+    ];
+
+    for (int col = 0; col < headers.length; col++) {
+      final cell = sheet.getRangeByIndex(3, col + 1);
+      cell.setText(headers[col]);
+      cell.cellStyle.bold = true;
+      cell.cellStyle.fontSize = 10;
+      cell.cellStyle.backColor = '#8B263E';
+      cell.cellStyle.fontColor = '#FFFFFF';
+      cell.cellStyle.hAlign = (col == 0 || col == 1 || col == 2 || col == 8)
+          ? HAlignType.center
+          : (col >= 4 && col <= 7 || col == 9
+              ? HAlignType.right
+              : HAlignType.left);
+      cell.cellStyle.vAlign = VAlignType.center;
+    }
+
+    int rowIndex = 4;
+    double totalSub = 0.0;
+    double totalDisc = 0.0;
+    double totalTax = 0.0;
+    double totalPay = 0.0;
+    double totalRec = 0.0;
+
+    for (int i = 0; i < rows.length; i++) {
+      final r = rows[i];
+      final sub = (r['subtotal'] as num?)?.toDouble() ?? 0.0;
+      final disc = (r['discount'] as num?)?.toDouble() ?? 0.0;
+      final tax = (r['tax'] as num?)?.toDouble() ?? 0.0;
+      final pay = (r['totalPayable'] as num?)?.toDouble() ?? 0.0;
+      final rec = (r['amountReceived'] as num?)?.toDouble() ?? 0.0;
+
+      totalSub += sub;
+      totalDisc += disc;
+      totalTax += tax;
+      totalPay += pay;
+      totalRec += rec;
+
+      sheet.getRangeByIndex(rowIndex, 1).setNumber((i + 1).toDouble());
+      sheet.getRangeByIndex(rowIndex, 1).cellStyle.hAlign = HAlignType.center;
+
+      sheet.getRangeByIndex(rowIndex, 2).setText(r['billNo']?.toString() ?? '');
+      sheet.getRangeByIndex(rowIndex, 2).cellStyle.hAlign = HAlignType.center;
+      sheet.getRangeByIndex(rowIndex, 2).cellStyle.bold = true;
+
+      sheet.getRangeByIndex(rowIndex, 3).setText(r['date']?.toString() ?? '');
+      sheet.getRangeByIndex(rowIndex, 3).cellStyle.hAlign = HAlignType.center;
+
+      sheet
+          .getRangeByIndex(rowIndex, 4)
+          .setText(r['customer']?.toString() ?? 'Walk-in');
+      sheet.getRangeByIndex(rowIndex, 4).cellStyle.hAlign = HAlignType.left;
+
+      sheet.getRangeByIndex(rowIndex, 5).setNumber(sub);
+      sheet.getRangeByIndex(rowIndex, 5).cellStyle.hAlign = HAlignType.right;
+
+      sheet.getRangeByIndex(rowIndex, 6).setNumber(disc);
+      sheet.getRangeByIndex(rowIndex, 6).cellStyle.hAlign = HAlignType.right;
+
+      sheet.getRangeByIndex(rowIndex, 7).setNumber(tax);
+      sheet.getRangeByIndex(rowIndex, 7).cellStyle.hAlign = HAlignType.right;
+
+      sheet.getRangeByIndex(rowIndex, 8).setNumber(pay);
+      sheet.getRangeByIndex(rowIndex, 8).cellStyle.hAlign = HAlignType.right;
+      sheet.getRangeByIndex(rowIndex, 8).cellStyle.bold = true;
+
+      sheet
+          .getRangeByIndex(rowIndex, 9)
+          .setText(r['paymentMode']?.toString() ?? 'Cash');
+      sheet.getRangeByIndex(rowIndex, 9).cellStyle.hAlign = HAlignType.center;
+
+      sheet.getRangeByIndex(rowIndex, 10).setNumber(rec);
+      sheet.getRangeByIndex(rowIndex, 10).cellStyle.hAlign = HAlignType.right;
+
+      if (i % 2 == 1) {
+        sheet.getRangeByIndex(rowIndex, 1, rowIndex, 10).cellStyle.backColor =
+            '#FAF7F2';
+      }
+      rowIndex++;
+    }
+
+    // Totals
+    final totalRange = sheet.getRangeByIndex(rowIndex, 1, rowIndex, 4);
+    totalRange.merge();
+    totalRange.setText('TOTAL');
+    totalRange.cellStyle.bold = true;
+    totalRange.cellStyle.hAlign = HAlignType.right;
+
+    sheet.getRangeByIndex(rowIndex, 5).setNumber(totalSub);
+    sheet.getRangeByIndex(rowIndex, 5).cellStyle.bold = true;
+    sheet.getRangeByIndex(rowIndex, 5).cellStyle.hAlign = HAlignType.right;
+
+    sheet.getRangeByIndex(rowIndex, 6).setNumber(totalDisc);
+    sheet.getRangeByIndex(rowIndex, 6).cellStyle.bold = true;
+    sheet.getRangeByIndex(rowIndex, 6).cellStyle.hAlign = HAlignType.right;
+
+    sheet.getRangeByIndex(rowIndex, 7).setNumber(totalTax);
+    sheet.getRangeByIndex(rowIndex, 7).cellStyle.bold = true;
+    sheet.getRangeByIndex(rowIndex, 7).cellStyle.hAlign = HAlignType.right;
+
+    sheet.getRangeByIndex(rowIndex, 8).setNumber(totalPay);
+    sheet.getRangeByIndex(rowIndex, 8).cellStyle.bold = true;
+    sheet.getRangeByIndex(rowIndex, 8).cellStyle.hAlign = HAlignType.right;
+
+    sheet.getRangeByIndex(rowIndex, 10).setNumber(totalRec);
+    sheet.getRangeByIndex(rowIndex, 10).cellStyle.bold = true;
+    sheet.getRangeByIndex(rowIndex, 10).cellStyle.hAlign = HAlignType.right;
+
+    sheet.getRangeByIndex(rowIndex, 1, rowIndex, 10).cellStyle.backColor =
+        '#F0E5D8';
+
+    sheet.getRangeByIndex(1, 1).columnWidth = 6.0;
+    sheet.getRangeByIndex(1, 2).columnWidth = 14.0;
+    sheet.getRangeByIndex(1, 3).columnWidth = 13.0;
+    sheet.getRangeByIndex(1, 4).columnWidth = 20.0;
+    sheet.getRangeByIndex(1, 5).columnWidth = 14.0;
+    sheet.getRangeByIndex(1, 6).columnWidth = 14.0;
+    sheet.getRangeByIndex(1, 7).columnWidth = 12.0;
+    sheet.getRangeByIndex(1, 8).columnWidth = 16.0;
+    sheet.getRangeByIndex(1, 9).columnWidth = 14.0;
+    sheet.getRangeByIndex(1, 10).columnWidth = 14.0;
+
+    final List<int> bytes = workbook.saveAsStream();
+    workbook.dispose();
+
+    await downloadFile(
+      bytes,
+      'sales_report_${_fmt.format(dateFrom)}_${_fmt.format(dateTo)}.xlsx',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
+  }
+
+  /// Generate & download Product-Wise Sales Report Excel
+  static Future<void> downloadProductWiseSalesExcel({
+    required List<Map<String, dynamic>> rows,
+    required DateTime dateFrom,
+    required DateTime dateTo,
+  }) async {
+    final Workbook workbook = Workbook();
+    final Worksheet sheet = workbook.worksheets[0];
+    sheet.name = 'Product Sales';
+
+    final titleRange = sheet.getRangeByName('A1:I1');
+    titleRange.merge();
+    titleRange.setText('SALES REPORT — PRODUCT-WISE SUMMARY');
+    titleRange.cellStyle.bold = true;
+    titleRange.cellStyle.fontSize = 13;
+    titleRange.cellStyle.backColor = '#5A121A';
+    titleRange.cellStyle.fontColor = '#FFFFFF';
+    titleRange.cellStyle.hAlign = HAlignType.center;
+    titleRange.cellStyle.vAlign = VAlignType.center;
+
+    final metaPeriod = sheet.getRangeByName('A2:E2');
+    metaPeriod.merge();
+    metaPeriod.setText(
+      'Period: ${_fmt.format(dateFrom)} to ${_fmt.format(dateTo)}',
+    );
+    metaPeriod.cellStyle.bold = true;
+    metaPeriod.cellStyle.fontSize = 10;
+    metaPeriod.cellStyle.backColor = '#FDFBF7';
+
+    final metaGen = sheet.getRangeByName('F2:I2');
+    metaGen.merge();
+    metaGen.setText('Generated: ${_dateTimeFmt.format(DateTime.now())}');
+    metaGen.cellStyle.bold = true;
+    metaGen.cellStyle.fontSize = 10;
+    metaGen.cellStyle.backColor = '#FDFBF7';
+    metaGen.cellStyle.hAlign = HAlignType.right;
+
+    final headers = [
+      'S.No',
+      'Tag ID',
+      'Product Name',
+      'Category',
+      'Qty Sold',
+      'Revenue (Rs.)',
+      'Discount (Rs.)',
+      'Avg Price (Rs.)',
+      'Orders',
+    ];
+
+    for (int col = 0; col < headers.length; col++) {
+      final cell = sheet.getRangeByIndex(3, col + 1);
+      cell.setText(headers[col]);
+      cell.cellStyle.bold = true;
+      cell.cellStyle.fontSize = 10;
+      cell.cellStyle.backColor = '#8B263E';
+      cell.cellStyle.fontColor = '#FFFFFF';
+      cell.cellStyle.hAlign =
+          (col == 0 || col == 1 || col == 4 || col == 8)
+              ? HAlignType.center
+              : (col >= 5 && col <= 7 ? HAlignType.right : HAlignType.left);
+      cell.cellStyle.vAlign = VAlignType.center;
+    }
+
+    int rowIndex = 4;
+    int totalQty = 0;
+    double totalRevenue = 0.0;
+    double totalDiscount = 0.0;
+
+    for (int i = 0; i < rows.length; i++) {
+      final r = rows[i];
+      final qty = (r['qty'] as num?)?.toInt() ?? 0;
+      final rev = (r['revenue'] as num?)?.toDouble() ?? 0.0;
+      final disc = (r['discount'] as num?)?.toDouble() ?? 0.0;
+      final avg = (r['avgPrice'] as num?)?.toDouble() ?? 0.0;
+      final orders = (r['orders'] as num?)?.toInt() ?? 0;
+
+      totalQty += qty;
+      totalRevenue += rev;
+      totalDiscount += disc;
+
+      sheet.getRangeByIndex(rowIndex, 1).setNumber((i + 1).toDouble());
+      sheet.getRangeByIndex(rowIndex, 1).cellStyle.hAlign = HAlignType.center;
+
+      sheet.getRangeByIndex(rowIndex, 2).setText(r['tagId']?.toString() ?? '—');
+      sheet.getRangeByIndex(rowIndex, 2).cellStyle.hAlign = HAlignType.center;
+      sheet.getRangeByIndex(rowIndex, 2).cellStyle.bold = true;
+
+      sheet
+          .getRangeByIndex(rowIndex, 3)
+          .setText(r['productName']?.toString() ?? '—');
+      sheet.getRangeByIndex(rowIndex, 3).cellStyle.hAlign = HAlignType.left;
+
+      sheet
+          .getRangeByIndex(rowIndex, 4)
+          .setText(r['category']?.toString() ?? '—');
+      sheet.getRangeByIndex(rowIndex, 4).cellStyle.hAlign = HAlignType.left;
+
+      sheet.getRangeByIndex(rowIndex, 5).setNumber(qty.toDouble());
+      sheet.getRangeByIndex(rowIndex, 5).cellStyle.hAlign = HAlignType.center;
+
+      sheet.getRangeByIndex(rowIndex, 6).setNumber(rev);
+      sheet.getRangeByIndex(rowIndex, 6).cellStyle.hAlign = HAlignType.right;
+      sheet.getRangeByIndex(rowIndex, 6).cellStyle.bold = true;
+
+      sheet.getRangeByIndex(rowIndex, 7).setNumber(disc);
+      sheet.getRangeByIndex(rowIndex, 7).cellStyle.hAlign = HAlignType.right;
+
+      sheet.getRangeByIndex(rowIndex, 8).setNumber(avg);
+      sheet.getRangeByIndex(rowIndex, 8).cellStyle.hAlign = HAlignType.right;
+
+      sheet.getRangeByIndex(rowIndex, 9).setNumber(orders.toDouble());
+      sheet.getRangeByIndex(rowIndex, 9).cellStyle.hAlign = HAlignType.center;
+
+      if (i % 2 == 1) {
+        sheet.getRangeByIndex(rowIndex, 1, rowIndex, 9).cellStyle.backColor =
+            '#FAF7F2';
+      }
+      rowIndex++;
+    }
+
+    final totalRange = sheet.getRangeByIndex(rowIndex, 1, rowIndex, 4);
+    totalRange.merge();
+    totalRange.setText('TOTAL');
+    totalRange.cellStyle.bold = true;
+    totalRange.cellStyle.hAlign = HAlignType.right;
+
+    sheet.getRangeByIndex(rowIndex, 5).setNumber(totalQty.toDouble());
+    sheet.getRangeByIndex(rowIndex, 5).cellStyle.bold = true;
+    sheet.getRangeByIndex(rowIndex, 5).cellStyle.hAlign = HAlignType.center;
+
+    sheet.getRangeByIndex(rowIndex, 6).setNumber(totalRevenue);
+    sheet.getRangeByIndex(rowIndex, 6).cellStyle.bold = true;
+    sheet.getRangeByIndex(rowIndex, 6).cellStyle.hAlign = HAlignType.right;
+
+    sheet.getRangeByIndex(rowIndex, 7).setNumber(totalDiscount);
+    sheet.getRangeByIndex(rowIndex, 7).cellStyle.bold = true;
+    sheet.getRangeByIndex(rowIndex, 7).cellStyle.hAlign = HAlignType.right;
+
+    sheet.getRangeByIndex(rowIndex, 1, rowIndex, 9).cellStyle.backColor =
+        '#F0E5D8';
+
+    sheet.getRangeByIndex(1, 1).columnWidth = 6.0;
+    sheet.getRangeByIndex(1, 2).columnWidth = 14.0;
+    sheet.getRangeByIndex(1, 3).columnWidth = 24.0;
+    sheet.getRangeByIndex(1, 4).columnWidth = 16.0;
+    sheet.getRangeByIndex(1, 5).columnWidth = 12.0;
+    sheet.getRangeByIndex(1, 6).columnWidth = 16.0;
+    sheet.getRangeByIndex(1, 7).columnWidth = 14.0;
+    sheet.getRangeByIndex(1, 8).columnWidth = 14.0;
+    sheet.getRangeByIndex(1, 9).columnWidth = 10.0;
+
+    final List<int> bytes = workbook.saveAsStream();
+    workbook.dispose();
+
+    await downloadFile(
+      bytes,
+      'product_wise_sales_${_fmt.format(dateFrom)}_${_fmt.format(dateTo)}.xlsx',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
+  }
 }

@@ -74,27 +74,34 @@ class _LoginPageState extends State<LoginPage> {
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        Column(
-                          children: [
-                            Text(
-                              'RituMita',
-                              style: GoogleFonts.cormorantGaramond(
-                                fontWeight: FontWeight.w600,
-                                fontSize: 34,
-                                letterSpacing: 0.03 * 34,
-                                color: inkColor,
-                              ),
+                        Center(
+                          child: Image.asset(
+                            'assets/logo.png',
+                            height: 75,
+                            fit: BoxFit.contain,
+                            errorBuilder: (_, _, _) => Column(
+                              children: [
+                                Text(
+                                  'RituMita',
+                                  style: GoogleFonts.cormorantGaramond(
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 34,
+                                    letterSpacing: 0.03 * 34,
+                                    color: inkColor,
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                Text(
+                                  'BOUTIQUE PORTAL',
+                                  style: GoogleFonts.workSans(
+                                    fontSize: 11.5,
+                                    letterSpacing: 0.12 * 11.5,
+                                    color: inkSoftColor,
+                                  ),
+                                ),
+                              ],
                             ),
-                            const SizedBox(height: 6),
-                            Text(
-                              'BOUTIQUE PORTAL',
-                              style: GoogleFonts.workSans(
-                                fontSize: 11.5,
-                                letterSpacing: 0.12 * 11.5,
-                                color: inkSoftColor,
-                              ),
-                            ),
-                          ],
+                          ),
                         ),
                         const SizedBox(height: 38),
                         Text(

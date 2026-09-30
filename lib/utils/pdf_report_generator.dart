@@ -2,130 +2,106 @@ import 'dart:typed_data';
 import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
+
+import 'package:flutter/services.dart' show rootBundle;
 
 // ─── Theme Constants ────────────────────────────────────────────────────────
 const _kBurgundyPdf = PdfColor.fromInt(0xFF8B263E);
 const _kTextDark = PdfColor.fromInt(0xFF2C2523);
 const _kTextMid = PdfColor.fromInt(0xFF706663);
 const _kBgLight = PdfColor.fromInt(0xFFF7F3ED);
-const _kBgHeader = PdfColor.fromInt(0xFF8B263E);
 const _kBorderColor = PdfColor.fromInt(0xFFE8E2D9);
 const _kRowAlt = PdfColor.fromInt(0xFFFAF7F2);
-const _kWhite70 = PdfColor(1, 1, 1, 0.7);
 
 const _kCompanyName = 'RITUMITA BOUTIQUE';
-const _kCompanySubtitle = 'High-End Fashion & Custom Couture';
-const _kCompanyGstin = 'GSTIN: 33AAAAA0000A1Z5';
-const _kCompanyPhone = 'Ph: +91 98765 43210';
 
 final _numFmt = NumberFormat('#,##,##0.00', 'en_IN');
 final _dateFmt = DateFormat('dd/MM/yyyy');
 
-// ─── Shared PDF Header Widget ───────────────────────────────────────────────
+pw.MemoryImage? _cachedPdfLogo;
+Future<pw.MemoryImage?> _getPdfLogo() async {
+  if (_cachedPdfLogo != null) return _cachedPdfLogo;
+  try {
+    final bytes =
+        (await rootBundle.load('assets/logo.png')).buffer.asUint8List();
+    _cachedPdfLogo = pw.MemoryImage(bytes);
+    return _cachedPdfLogo;
+  } catch (_) {
+    return null;
+  }
+}
+
+// ─── Shared PDF Header Widget (Image 2 Format) ──────────────────────────────
 pw.Widget _buildPdfHeader({
   required String reportTitle,
   required String subtitle,
   required pw.Font boldFont,
   required pw.Font regularFont,
+  pw.MemoryImage? logoImage,
 }) {
+  final nowStr = DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now());
   return pw.Column(
     crossAxisAlignment: pw.CrossAxisAlignment.stretch,
     children: [
-      pw.Container(
-        padding: const pw.EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-        decoration: const pw.BoxDecoration(color: _kBgHeader),
-        child: pw.Row(
-          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-          children: [
-            pw.Column(
-              crossAxisAlignment: pw.CrossAxisAlignment.start,
-              children: [
-                pw.Text(
-                  _kCompanyName,
-                  style: pw.TextStyle(
-                    font: boldFont,
-                    fontSize: 18,
-                    color: PdfColors.white,
-                    letterSpacing: 2,
-                  ),
-                ),
-                pw.SizedBox(height: 2),
-                pw.Text(
-                  _kCompanySubtitle,
-                  style: pw.TextStyle(
-                    font: regularFont,
-                    fontSize: 9,
-                    color: _kWhite70,
-                  ),
-                ),
-              ],
+      pw.Row(
+        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+        crossAxisAlignment: pw.CrossAxisAlignment.end,
+        children: [
+          // Left: Brand Logo
+          if (logoImage != null)
+            pw.Image(logoImage, height: 42, fit: pw.BoxFit.contain)
+          else
+            pw.Text(
+              'RituMita Boutique',
+              style: pw.TextStyle(
+                font: boldFont,
+                fontSize: 18,
+                color: _kBurgundyPdf,
+              ),
             ),
-            pw.Column(
-              crossAxisAlignment: pw.CrossAxisAlignment.end,
-              children: [
-                pw.Text(
-                  _kCompanyGstin,
-                  style: pw.TextStyle(
-                    font: regularFont,
-                    fontSize: 8,
-                    color: _kWhite70,
-                  ),
+          // Right: Report title & Period / Date
+          pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.end,
+            children: [
+              pw.Text(
+                reportTitle,
+                style: pw.TextStyle(
+                  font: boldFont,
+                  fontSize: 13,
+                  color: _kTextDark,
                 ),
-                pw.Text(
-                  _kCompanyPhone,
-                  style: pw.TextStyle(
-                    font: regularFont,
-                    fontSize: 8,
-                    color: _kWhite70,
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-      pw.Container(
-        padding: const pw.EdgeInsets.symmetric(horizontal: 24, vertical: 10),
-        decoration: const pw.BoxDecoration(
-          color: _kBgLight,
-          border: pw.Border(bottom: pw.BorderSide(color: _kBorderColor)),
-        ),
-        child: pw.Row(
-          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-          children: [
-            pw.Column(
-              crossAxisAlignment: pw.CrossAxisAlignment.start,
-              children: [
-                pw.Text(
-                  reportTitle,
-                  style: pw.TextStyle(
-                    font: boldFont,
-                    fontSize: 14,
-                    color: _kBurgundyPdf,
-                  ),
-                ),
-                if (subtitle.isNotEmpty)
-                  pw.Text(
+              ),
+              if (subtitle.isNotEmpty)
+                pw.Padding(
+                  padding: const pw.EdgeInsets.only(top: 2),
+                  child: pw.Text(
                     subtitle,
                     style: pw.TextStyle(
                       font: regularFont,
-                      fontSize: 9,
+                      fontSize: 7.5,
                       color: _kTextMid,
                     ),
                   ),
-              ],
-            ),
-            pw.Text(
-              'Generated: ${_dateFmt.format(DateTime.now())}',
-              style: pw.TextStyle(
-                font: regularFont,
-                fontSize: 8,
-                color: _kTextMid,
+                ),
+              pw.Padding(
+                padding: const pw.EdgeInsets.only(top: 2),
+                child: pw.Text(
+                  'Date: $nowStr',
+                  style: pw.TextStyle(
+                    font: regularFont,
+                    fontSize: 7.5,
+                    color: _kTextMid,
+                  ),
+                ),
               ),
-            ),
-          ],
-        ),
+            ],
+          ),
+        ],
       ),
+      pw.SizedBox(height: 6),
+      pw.Container(height: 1.5, color: _kBurgundyPdf),
+      pw.SizedBox(height: 10),
     ],
   );
 }
@@ -181,23 +157,23 @@ pw.Widget _buildTableRow(
   );
 }
 
-// ─── Summary Footer ──────────────────────────────────────────────────────────
+// ─── Summary Footer (Image 2 Format) ─────────────────────────────────────────
 pw.Widget _buildSummaryBox(
   Map<String, String> summaryFields,
   pw.Font boldFont,
   pw.Font regularFont,
 ) {
   return pw.Container(
-    margin: const pw.EdgeInsets.only(top: 12),
-    padding: const pw.EdgeInsets.all(12),
+    margin: const pw.EdgeInsets.only(top: 10),
+    padding: const pw.EdgeInsets.symmetric(horizontal: 12, vertical: 7),
     decoration: pw.BoxDecoration(
       color: _kBgLight,
-      border: pw.Border.all(color: _kBorderColor),
-      borderRadius: const pw.BorderRadius.all(pw.Radius.circular(6)),
+      border: pw.Border.all(color: _kBorderColor, width: 0.5),
+      borderRadius: const pw.BorderRadius.all(pw.Radius.circular(4)),
     ),
     child: pw.Wrap(
-      spacing: 24,
-      runSpacing: 8,
+      spacing: 18,
+      runSpacing: 5,
       children: summaryFields.entries.map((e) {
         return pw.Row(
           mainAxisSize: pw.MainAxisSize.min,
@@ -206,7 +182,7 @@ pw.Widget _buildSummaryBox(
               '${e.key}: ',
               style: pw.TextStyle(
                 font: regularFont,
-                fontSize: 9,
+                fontSize: 8,
                 color: _kTextMid,
               ),
             ),
@@ -214,13 +190,52 @@ pw.Widget _buildSummaryBox(
               e.value,
               style: pw.TextStyle(
                 font: boldFont,
-                fontSize: 9,
+                fontSize: 8.5,
                 color: _kBurgundyPdf,
               ),
             ),
           ],
         );
       }).toList(),
+    ),
+  );
+}
+
+// ─── Footer (Image 2 Format - No Unicode Bullets) ───────────────────────────
+pw.Widget _buildFooter(pw.Font regularFont, pw.Context context) {
+  return pw.Container(
+    margin: const pw.EdgeInsets.only(top: 8),
+    padding: const pw.EdgeInsets.only(top: 4),
+    decoration: const pw.BoxDecoration(
+      border: pw.Border(top: pw.BorderSide(color: _kBorderColor, width: 0.5)),
+    ),
+    child: pw.Column(
+      children: [
+        pw.Row(
+          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+          children: [
+            pw.Text(
+              '$_kCompanyName - Confidential Report',
+              style:
+                  pw.TextStyle(font: regularFont, fontSize: 7, color: _kTextMid),
+            ),
+            pw.Text(
+              'This is a computer-generated report. No signature required.',
+              style:
+                  pw.TextStyle(font: regularFont, fontSize: 7, color: _kTextMid),
+            ),
+          ],
+        ),
+        pw.SizedBox(height: 2),
+        pw.Align(
+          alignment: pw.Alignment.centerRight,
+          child: pw.Text(
+            '${context.pageNumber}/${context.pagesCount}',
+            style:
+                pw.TextStyle(font: regularFont, fontSize: 7, color: _kTextMid),
+          ),
+        ),
+      ],
     ),
   );
 }
@@ -257,7 +272,7 @@ Future<Uint8List> generateUnifiedIssueReportPdf({
 
   const columns = [
     'S.No', 'Date', 'Type', 'Product',
-    'Qty', 'Issue / Reason', 'Refund (₹)', 'Status'
+    'Qty', 'Issue / Reason', 'Refund (Rs.)', 'Status'
   ];
   const flexes = [1, 2, 2, 4, 1, 3, 2, 2];
 
@@ -267,16 +282,20 @@ Future<Uint8List> generateUnifiedIssueReportPdf({
   const kCustomerBlueBg = PdfColor.fromInt(0xFFE3F2FD);
   const kVendorAmberBg = PdfColor.fromInt(0xFFFFF3E0);
 
+  final logoImage = await _getPdfLogo();
+
   pdf.addPage(
     pw.MultiPage(
       pageFormat: PdfPageFormat.a4.landscape,
       margin: const pw.EdgeInsets.all(24),
+      footer: (context) => _buildFooter(regularFont, context),
       build: (context) => [
         _buildPdfHeader(
           reportTitle: 'ISSUE REPORT — All Returns & Vendor Issues',
           subtitle: subtitle,
           boldFont: boldFont,
           regularFont: regularFont,
+          logoImage: logoImage,
         ),
         pw.SizedBox(height: 12),
         pw.Container(
@@ -356,7 +375,7 @@ Future<Uint8List> generateUnifiedIssueReportPdf({
                       pw.Expanded(
                           flex: flexes[6],
                           child: pw.Text(
-                              '₹${_numFmt.format((r['refundAmount'] as num?)?.toDouble() ?? 0)}',
+                              'Rs. ${_numFmt.format((r['refundAmount'] as num?)?.toDouble() ?? 0)}',
                               style: pw.TextStyle(
                                   font: boldFont,
                                   fontSize: 7.5,
@@ -380,10 +399,8 @@ Future<Uint8List> generateUnifiedIssueReportPdf({
           'Customer Returns': '$customerCount',
           'Vendor Issues': '$vendorCount',
           'Total Qty Affected': '$totalQty',
-          'Total Refund': '₹${_numFmt.format(totalRefund)}',
+          'Total Refund': 'Rs. ${_numFmt.format(totalRefund)}',
         }, boldFont, regularFont),
-        pw.SizedBox(height: 8),
-        _buildFooter(regularFont),
       ],
     ),
   );
@@ -402,6 +419,7 @@ Future<Uint8List> generateIssueReportPdf({
   final pdf = pw.Document();
   final boldFont = await _boldFont();
   final regularFont = await _regularFont();
+  final logoImage = await _getPdfLogo();
 
   final subtitle =
       'Period: ${_dateFmt.format(dateFrom)} → ${_dateFmt.format(dateTo)}';
@@ -413,7 +431,7 @@ Future<Uint8List> generateIssueReportPdf({
 
   final columns = [
     'S.No', 'Return Bill No', 'Orig. Bill', 'Date',
-    'Customer', 'Product', 'Qty', 'Value (₹)', 'Reason', 'Status'
+    'Customer', 'Product', 'Qty', 'Value (Rs.)', 'Reason', 'Status'
   ];
   final flexes = [1, 2, 2, 2, 3, 3, 1, 2, 2, 2];
 
@@ -421,12 +439,14 @@ Future<Uint8List> generateIssueReportPdf({
     pw.MultiPage(
       pageFormat: PdfPageFormat.a4.landscape,
       margin: const pw.EdgeInsets.all(24),
+      footer: (context) => _buildFooter(regularFont, context),
       build: (context) => [
         _buildPdfHeader(
           reportTitle: 'ISSUE / RETURN REPORT',
           subtitle: subtitle,
           boldFont: boldFont,
           regularFont: regularFont,
+          logoImage: logoImage,
         ),
         pw.SizedBox(height: 12),
         pw.Container(
@@ -447,7 +467,7 @@ Future<Uint8List> generateIssueReportPdf({
                   r['customerName']?.toString() ?? '—',
                   r['productName']?.toString() ?? '—',
                   r['qty']?.toString() ?? '0',
-                  '₹${_numFmt.format((r['refundAmount'] as num?)?.toDouble() ?? 0)}',
+                  'Rs. ${_numFmt.format((r['refundAmount'] as num?)?.toDouble() ?? 0)}',
                   r['reason']?.toString() ?? '—',
                   r['status']?.toString() ?? '—',
                 ], flexes, regularFont, i.isOdd);
@@ -457,10 +477,8 @@ Future<Uint8List> generateIssueReportPdf({
         ),
         _buildSummaryBox({
           'Total Returns': '${rows.length}',
-          'Total Refund': '₹${_numFmt.format(totalRefund)}',
+          'Total Refund': 'Rs. ${_numFmt.format(totalRefund)}',
         }, boldFont, regularFont),
-        pw.SizedBox(height: 8),
-        _buildFooter(regularFont),
       ],
     ),
   );
@@ -479,6 +497,7 @@ Future<Uint8List> generateStockReportPdf({
   final pdf = pw.Document();
   final boldFont = await _boldFont();
   final regularFont = await _regularFont();
+  final logoImage = await _getPdfLogo();
 
   double totalStockValue = 0;
   int totalPurchased = 0;
@@ -512,7 +531,7 @@ Future<Uint8List> generateStockReportPdf({
   final columns = [
     'S.No', 'Tag ID', 'Product Name', 'Category',
     'Tot. Purchased', 'Issued Qty', 'Sold Qty', 'Balance Qty',
-    'Unit', 'Sell Price (₹)', 'Stock Value (₹)', 'Status'
+    'Unit', 'Sell Price (Rs.)', 'Stock Value (Rs.)', 'Status'
   ];
   final flexes = [1, 2, 4, 2, 2, 2, 2, 2, 1, 2, 2, 2];
 
@@ -520,12 +539,14 @@ Future<Uint8List> generateStockReportPdf({
     pw.MultiPage(
       pageFormat: PdfPageFormat.a4.landscape,
       margin: const pw.EdgeInsets.all(24),
+      footer: (context) => _buildFooter(regularFont, context),
       build: (context) => [
         _buildPdfHeader(
           reportTitle: 'STOCK REPORT',
-          subtitle: filters.isNotEmpty ? filters : 'All Categories • All Status',
+          subtitle: filters.isNotEmpty ? filters : 'All Categories | All Status',
           boldFont: boldFont,
           regularFont: regularFont,
+          logoImage: logoImage,
         ),
         pw.SizedBox(height: 12),
         pw.Container(
@@ -554,8 +575,8 @@ Future<Uint8List> generateStockReportPdf({
                   '$sold',
                   '$balance',
                   r['unit']?.toString() ?? '—',
-                  '₹${_numFmt.format(sp)}',
-                  '₹${_numFmt.format(balance * sp)}',
+                  'Rs. ${_numFmt.format(sp)}',
+                  'Rs. ${_numFmt.format(balance * sp)}',
                   r['status']?.toString() ?? '—',
                 ], flexes, regularFont, i.isOdd);
               }),
@@ -568,11 +589,191 @@ Future<Uint8List> generateStockReportPdf({
           'Total Issued': '$totalIssued',
           'Total Sold': '$totalSold',
           'Balance Stock': '$totalBalance',
-          'Stock Value': '₹${_numFmt.format(totalStockValue)}',
+          'Stock Value': 'Rs. ${_numFmt.format(totalStockValue)}',
           'Low Stock Items': '$lowStockCount',
         }, boldFont, regularFont),
-        pw.SizedBox(height: 8),
-        _buildFooter(regularFont),
+      ],
+    ),
+  );
+
+  return pdf.save();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CATEGORY-WISE CLOSING STOCK REPORT PDF
+// ═══════════════════════════════════════════════════════════════════════════
+Future<Uint8List> generateCategoryClosingStockPdf({
+  required List<Map<String, dynamic>> rows,
+  required String statusFilter,
+}) async {
+  final pdf = pw.Document();
+  final boldFont = await _boldFont();
+  final regularFont = await _regularFont();
+  final logoImage = await _getPdfLogo();
+
+  double totalClosingValue = 0;
+  int totalSkus = 0;
+  int totalPurchased = 0;
+  int totalIssued = 0;
+  int totalSold = 0;
+  int totalClosingQty = 0;
+
+  for (final r in rows) {
+    totalSkus += (r['skuCount'] as num?)?.toInt() ?? 0;
+    totalPurchased += (r['totalPurchased'] as num?)?.toInt() ?? 0;
+    totalIssued += (r['totalIssued'] as num?)?.toInt() ?? 0;
+    totalSold += (r['totalSold'] as num?)?.toInt() ?? 0;
+    totalClosingQty += (r['closingQty'] as num?)?.toInt() ?? 0;
+    totalClosingValue += (r['closingValue'] as num?)?.toDouble() ?? 0.0;
+  }
+
+  final subtitle = statusFilter != 'All'
+      ? 'Category-wise Summary | Status: $statusFilter'
+      : 'Category-wise Closing Stock Statement | All Categories';
+
+  const columns = [
+    'S.No',
+    'Category Name',
+    'Total Items (SKUs)',
+    'Purchased Qty',
+    'Issued Qty',
+    'Sold Qty',
+    'Closing Stock Qty',
+    'Closing Stock Value (Rs.)',
+    'Stock Share (%)',
+    'Status'
+  ];
+  const flexes = [1, 3, 2, 2, 2, 2, 2, 3, 2, 2];
+
+  pdf.addPage(
+    pw.MultiPage(
+      pageFormat: PdfPageFormat.a4.landscape,
+      margin: const pw.EdgeInsets.all(24),
+      footer: (context) => _buildFooter(regularFont, context),
+      build: (context) => [
+        _buildPdfHeader(
+          reportTitle: 'CLOSING STOCK REPORT — CATEGORY WISE',
+          subtitle: subtitle,
+          boldFont: boldFont,
+          regularFont: regularFont,
+          logoImage: logoImage,
+        ),
+        pw.SizedBox(height: 12),
+        pw.Container(
+          decoration: pw.BoxDecoration(
+            border: pw.Border.all(color: _kBorderColor),
+            borderRadius: const pw.BorderRadius.all(pw.Radius.circular(4)),
+          ),
+          child: pw.Column(
+            children: [
+              _buildTableHeader(columns, flexes, boldFont),
+              ...List.generate(rows.length, (i) {
+                final r = rows[i];
+                final closingVal =
+                    (r['closingValue'] as num?)?.toDouble() ?? 0.0;
+                final share = totalClosingValue > 0
+                    ? (closingVal / totalClosingValue) * 100
+                    : 0.0;
+
+                return _buildTableRow([
+                  '${i + 1}',
+                  r['category']?.toString() ?? '—',
+                  '${r['skuCount'] ?? 0}',
+                  '${r['totalPurchased'] ?? 0}',
+                  '${r['totalIssued'] ?? 0}',
+                  '${r['totalSold'] ?? 0}',
+                  '${r['closingQty'] ?? 0}',
+                  'Rs. ${_numFmt.format(closingVal)}',
+                  '${share.toStringAsFixed(1)}%',
+                  r['status']?.toString() ?? '—',
+                ], flexes, regularFont, i.isOdd);
+              }),
+              // Grand Total Row
+              pw.Container(
+                color: _kBgLight,
+                padding:
+                    const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                child: pw.Row(
+                  children: [
+                    pw.Expanded(
+                      flex: flexes[0],
+                      child: pw.Text('',
+                          style: pw.TextStyle(font: boldFont, fontSize: 8)),
+                    ),
+                    pw.Expanded(
+                      flex: flexes[1],
+                      child: pw.Text('GRAND TOTAL',
+                          style: pw.TextStyle(
+                              font: boldFont,
+                              fontSize: 8,
+                              color: _kBurgundyPdf)),
+                    ),
+                    pw.Expanded(
+                      flex: flexes[2],
+                      child: pw.Text('$totalSkus',
+                          style: pw.TextStyle(
+                              font: boldFont, fontSize: 8, color: _kTextDark)),
+                    ),
+                    pw.Expanded(
+                      flex: flexes[3],
+                      child: pw.Text('$totalPurchased',
+                          style: pw.TextStyle(
+                              font: boldFont, fontSize: 8, color: _kTextDark)),
+                    ),
+                    pw.Expanded(
+                      flex: flexes[4],
+                      child: pw.Text('$totalIssued',
+                          style: pw.TextStyle(
+                              font: boldFont, fontSize: 8, color: _kTextDark)),
+                    ),
+                    pw.Expanded(
+                      flex: flexes[5],
+                      child: pw.Text('$totalSold',
+                          style: pw.TextStyle(
+                              font: boldFont, fontSize: 8, color: _kTextDark)),
+                    ),
+                    pw.Expanded(
+                      flex: flexes[6],
+                      child: pw.Text('$totalClosingQty',
+                          style: pw.TextStyle(
+                              font: boldFont,
+                              fontSize: 8,
+                              color: _kBurgundyPdf)),
+                    ),
+                    pw.Expanded(
+                      flex: flexes[7],
+                      child: pw.Text('Rs. ${_numFmt.format(totalClosingValue)}',
+                          style: pw.TextStyle(
+                              font: boldFont,
+                              fontSize: 8,
+                              color: _kBurgundyPdf)),
+                    ),
+                    pw.Expanded(
+                      flex: flexes[8],
+                      child: pw.Text('100.0%',
+                          style: pw.TextStyle(
+                              font: boldFont, fontSize: 8, color: _kTextDark)),
+                    ),
+                    pw.Expanded(
+                      flex: flexes[9],
+                      child: pw.Text('',
+                          style: pw.TextStyle(font: boldFont, fontSize: 8)),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        _buildSummaryBox({
+          'Total Categories': '${rows.length}',
+          'Total SKUs': '$totalSkus',
+          'Total Purchased': '$totalPurchased',
+          'Total Issued': '$totalIssued',
+          'Total Sold': '$totalSold',
+          'Closing Stock Qty': '$totalClosingQty',
+          'Total Closing Stock Value': 'Rs. ${_numFmt.format(totalClosingValue)}',
+        }, boldFont, regularFont),
       ],
     ),
   );
@@ -591,6 +792,7 @@ Future<Uint8List> generateSalesIndividualPdf({
   final pdf = pw.Document();
   final boldFont = await _boldFont();
   final regularFont = await _regularFont();
+  final logoImage = await _getPdfLogo();
 
   final subtitle =
       'Period: ${_dateFmt.format(dateFrom)} → ${_dateFmt.format(dateTo)}';
@@ -607,7 +809,7 @@ Future<Uint8List> generateSalesIndividualPdf({
 
   final columns = [
     'S.No', 'Bill No', 'Date', 'Customer', 'Tag ID',
-    'Product', 'Category', 'Qty', 'Unit Price (₹)', 'Discount (₹)', 'Total (₹)', 'Payment'
+    'Product', 'Category', 'Qty', 'Unit Price (Rs.)', 'Discount (Rs.)', 'Total (Rs.)', 'Payment'
   ];
   final flexes = [1, 2, 2, 3, 2, 3, 2, 1, 2, 2, 2, 2];
 
@@ -615,12 +817,14 @@ Future<Uint8List> generateSalesIndividualPdf({
     pw.MultiPage(
       pageFormat: PdfPageFormat.a4.landscape,
       margin: const pw.EdgeInsets.all(24),
+      footer: (context) => _buildFooter(regularFont, context),
       build: (context) => [
         _buildPdfHeader(
           reportTitle: 'INDIVIDUAL PRODUCT SALES REPORT',
           subtitle: subtitle,
           boldFont: boldFont,
           regularFont: regularFont,
+          logoImage: logoImage,
         ),
         pw.SizedBox(height: 12),
         pw.Container(
@@ -642,9 +846,9 @@ Future<Uint8List> generateSalesIndividualPdf({
                   r['productName']?.toString() ?? '—',
                   r['category']?.toString() ?? '—',
                   '${(r['qty'] as num?)?.toInt() ?? 0}',
-                  '₹${_numFmt.format((r['price'] as num?)?.toDouble() ?? 0)}',
-                  '₹${_numFmt.format((r['discountAmt'] as num?)?.toDouble() ?? 0)}',
-                  '₹${_numFmt.format((r['lineAmount'] as num?)?.toDouble() ?? 0)}',
+                  'Rs. ${_numFmt.format((r['price'] as num?)?.toDouble() ?? 0)}',
+                  'Rs. ${_numFmt.format((r['discountAmt'] as num?)?.toDouble() ?? 0)}',
+                  'Rs. ${_numFmt.format((r['lineAmount'] as num?)?.toDouble() ?? 0)}',
                   r['paymentMode']?.toString() ?? '—',
                 ], flexes, regularFont, i.isOdd);
               }),
@@ -654,11 +858,9 @@ Future<Uint8List> generateSalesIndividualPdf({
         _buildSummaryBox({
           'Total Line Items': '${rows.length}',
           'Total Qty Sold': '${totalQty.toInt()}',
-          'Total Revenue': '₹${_numFmt.format(totalRevenue)}',
-          'Total Discount': '₹${_numFmt.format(totalDiscount)}',
+          'Total Revenue': 'Rs. ${_numFmt.format(totalRevenue)}',
+          'Total Discount': 'Rs. ${_numFmt.format(totalDiscount)}',
         }, boldFont, regularFont),
-        pw.SizedBox(height: 8),
-        _buildFooter(regularFont),
       ],
     ),
   );
@@ -674,6 +876,7 @@ Future<Uint8List> generateSalesTotalPdf({
   final pdf = pw.Document();
   final boldFont = await _boldFont();
   final regularFont = await _regularFont();
+  final logoImage = await _getPdfLogo();
 
   final subtitle =
       'Period: ${_dateFmt.format(dateFrom)} → ${_dateFmt.format(dateTo)}';
@@ -689,8 +892,8 @@ Future<Uint8List> generateSalesTotalPdf({
   }
 
   final columns = [
-    'S.No', 'Bill No', 'Date', 'Customer', 'Subtotal (₹)',
-    'Discount (₹)', 'Tax (₹)', 'Total Payable (₹)', 'Payment Mode', 'Received (₹)'
+    'S.No', 'Bill No', 'Date', 'Customer', 'Subtotal (Rs.)',
+    'Discount (Rs.)', 'Tax (Rs.)', 'Total Payable (Rs.)', 'Payment Mode', 'Received (Rs.)'
   ];
   final flexes = [1, 2, 2, 3, 2, 2, 2, 2, 2, 2];
 
@@ -698,12 +901,14 @@ Future<Uint8List> generateSalesTotalPdf({
     pw.MultiPage(
       pageFormat: PdfPageFormat.a4.landscape,
       margin: const pw.EdgeInsets.all(24),
+      footer: (context) => _buildFooter(regularFont, context),
       build: (context) => [
         _buildPdfHeader(
           reportTitle: 'TOTAL SALES REPORT',
           subtitle: subtitle,
           boldFont: boldFont,
           regularFont: regularFont,
+          logoImage: logoImage,
         ),
         pw.SizedBox(height: 12),
         pw.Container(
@@ -721,12 +926,12 @@ Future<Uint8List> generateSalesTotalPdf({
                   r['billNo']?.toString() ?? '—',
                   r['date']?.toString() ?? '—',
                   r['customerName']?.toString() ?? '—',
-                  '₹${_numFmt.format((r['subtotal'] as num?)?.toDouble() ?? 0)}',
-                  '₹${_numFmt.format((r['discount'] as num?)?.toDouble() ?? 0)}',
-                  '₹${_numFmt.format((r['tax'] as num?)?.toDouble() ?? 0)}',
-                  '₹${_numFmt.format((r['totalPayable'] as num?)?.toDouble() ?? 0)}',
+                  'Rs. ${_numFmt.format((r['subtotal'] as num?)?.toDouble() ?? 0)}',
+                  'Rs. ${_numFmt.format((r['discount'] as num?)?.toDouble() ?? 0)}',
+                  'Rs. ${_numFmt.format((r['tax'] as num?)?.toDouble() ?? 0)}',
+                  'Rs. ${_numFmt.format((r['totalPayable'] as num?)?.toDouble() ?? 0)}',
                   r['paymentMode']?.toString() ?? '—',
-                  '₹${_numFmt.format((r['amountReceived'] as num?)?.toDouble() ?? 0)}',
+                  'Rs. ${_numFmt.format((r['amountReceived'] as num?)?.toDouble() ?? 0)}',
                 ], flexes, regularFont, i.isOdd);
               }),
             ],
@@ -734,40 +939,15 @@ Future<Uint8List> generateSalesTotalPdf({
         ),
         _buildSummaryBox({
           'Total Bills': '${rows.length}',
-          'Total Revenue': '₹${_numFmt.format(totalPayable)}',
-          'Total Discount': '₹${_numFmt.format(totalDiscount)}',
-          'Total Tax': '₹${_numFmt.format(totalTax)}',
+          'Total Revenue': 'Rs. ${_numFmt.format(totalPayable)}',
+          'Total Discount': 'Rs. ${_numFmt.format(totalDiscount)}',
+          'Total Tax': 'Rs. ${_numFmt.format(totalTax)}',
         }, boldFont, regularFont),
-        pw.SizedBox(height: 8),
-        _buildFooter(regularFont),
       ],
     ),
   );
 
   return pdf.save();
-}
-
-// ─── Footer ─────────────────────────────────────────────────────────────────
-pw.Widget _buildFooter(pw.Font regularFont) {
-  return pw.Container(
-    padding: const pw.EdgeInsets.only(top: 8),
-    decoration: const pw.BoxDecoration(
-      border: pw.Border(top: pw.BorderSide(color: _kBorderColor)),
-    ),
-    child: pw.Row(
-      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-      children: [
-        pw.Text(
-          '$_kCompanyName • Confidential Report',
-          style: pw.TextStyle(font: regularFont, fontSize: 7, color: _kTextMid),
-        ),
-        pw.Text(
-          'This is a computer-generated report. No signature required.',
-          style: pw.TextStyle(font: regularFont, fontSize: 7, color: _kTextMid),
-        ),
-      ],
-    ),
-  );
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -781,6 +961,7 @@ Future<Uint8List> generateProductWisePdf({
   final pdf = pw.Document();
   final boldFont = await _boldFont();
   final regularFont = await _regularFont();
+  final logoImage = await _getPdfLogo();
 
   final subtitle = 'Period: ${_dateFmt.format(dateFrom)} → ${_dateFmt.format(dateTo)}';
 
@@ -796,7 +977,7 @@ Future<Uint8List> generateProductWisePdf({
 
   const columns = [
     'S.No', 'Tag ID', 'Product', 'Category',
-    'Qty Sold', 'Revenue (₹)', 'Discount (₹)', 'Avg Price (₹)', 'Orders'
+    'Qty Sold', 'Revenue (Rs.)', 'Discount (Rs.)', 'Avg Price (Rs.)', 'Orders'
   ];
   const flexes = [1, 2, 4, 2, 2, 2, 2, 2, 1];
 
@@ -804,12 +985,14 @@ Future<Uint8List> generateProductWisePdf({
     pw.MultiPage(
       pageFormat: PdfPageFormat.a4.landscape,
       margin: const pw.EdgeInsets.all(24),
+      footer: (context) => _buildFooter(regularFont, context),
       build: (context) => [
         _buildPdfHeader(
           reportTitle: 'SALES REPORT — Product-wise Summary',
           subtitle: subtitle,
           boldFont: boldFont,
           regularFont: regularFont,
+          logoImage: logoImage,
         ),
         pw.SizedBox(height: 12),
         pw.Container(
@@ -828,9 +1011,9 @@ Future<Uint8List> generateProductWisePdf({
                   r['productName']?.toString() ?? '—',
                   r['category']?.toString() ?? '—',
                   r['qty']?.toString() ?? '0',
-                  '₹${_numFmt.format((r['revenue'] as num?)?.toDouble() ?? 0)}',
-                  '₹${_numFmt.format((r['discount'] as num?)?.toDouble() ?? 0)}',
-                  '₹${_numFmt.format((r['avgPrice'] as num?)?.toDouble() ?? 0)}',
+                  'Rs. ${_numFmt.format((r['revenue'] as num?)?.toDouble() ?? 0)}',
+                  'Rs. ${_numFmt.format((r['discount'] as num?)?.toDouble() ?? 0)}',
+                  'Rs. ${_numFmt.format((r['avgPrice'] as num?)?.toDouble() ?? 0)}',
                   r['orders']?.toString() ?? '0',
                 ], flexes, regularFont, i.isOdd);
               }),
@@ -840,11 +1023,9 @@ Future<Uint8List> generateProductWisePdf({
         _buildSummaryBox({
           'Unique Products': '${rows.length}',
           'Total Qty Sold': '$totalQty',
-          'Total Revenue': '₹${_numFmt.format(totalRevenue)}',
-          'Total Discount': '₹${_numFmt.format(totalDiscount)}',
+          'Total Revenue': 'Rs. ${_numFmt.format(totalRevenue)}',
+          'Total Discount': 'Rs. ${_numFmt.format(totalDiscount)}',
         }, boldFont, regularFont),
-        pw.SizedBox(height: 8),
-        _buildFooter(regularFont),
       ],
     ),
   );
@@ -853,5 +1034,23 @@ Future<Uint8List> generateProductWisePdf({
 }
 
 // ─── Font Helpers ────────────────────────────────────────────────────────────
-Future<pw.Font> _boldFont() async => pw.Font.helveticaBold();
-Future<pw.Font> _regularFont() async => pw.Font.helvetica();
+pw.Font? _cachedRobotoBold;
+pw.Font? _cachedRobotoRegular;
+
+Future<pw.Font> _boldFont() async {
+  try {
+    _cachedRobotoBold ??= await PdfGoogleFonts.robotoBold();
+    return _cachedRobotoBold!;
+  } catch (_) {
+    return pw.Font.helveticaBold();
+  }
+}
+
+Future<pw.Font> _regularFont() async {
+  try {
+    _cachedRobotoRegular ??= await PdfGoogleFonts.robotoRegular();
+    return _cachedRobotoRegular!;
+  } catch (_) {
+    return pw.Font.helvetica();
+  }
+}

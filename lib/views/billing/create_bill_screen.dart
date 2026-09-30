@@ -210,11 +210,31 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
           : (double.tryParse(_amountReceivedCtrl.text) ?? totalPayable);
       final pendingBalance = (totalPayable - amountReceived).clamp(0.0, double.infinity);
 
+      final nowTs = Timestamp.fromDate(_billDate);
+      final formattedPayments = isSplit
+          ? [
+              for (final p in splitPayments)
+                if ((double.tryParse(p['amount'].toString()) ?? 0) > 0)
+                  {
+                    'mode': p['mode'],
+                    'amount': double.tryParse(p['amount'].toString()) ?? 0.0,
+                    'date': nowTs,
+                  }
+            ]
+          : [
+              if (amountReceived > 0)
+                {
+                  'mode': singleMode,
+                  'amount': amountReceived,
+                  'date': nowTs,
+                }
+            ];
+
       final billData = {
         'billNo': _billNoCtrl.text.trim(),
         'billType': _billType,
         'narration': _narrationCtrl.text.trim(),
-        'billDate': Timestamp.fromDate(_billDate),
+        'billDate': nowTs,
         'customerName': _customerNameCtrl.text.trim(),
         'customerMobile': _customerMobileCtrl.text.trim(),
         'customerAddress': _customerAddressCtrl.text.trim(),
@@ -233,9 +253,22 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
         'adjustmentAmount': adjustment,
         'totalPayable': totalPayable,
         'paymentMode': isSplit ? 'Split Payment' : singleMode,
-        'payments': isSplit ? splitPayments : [{'mode': singleMode, 'amount': amountReceived}],
+        'payments': formattedPayments,
+        'paymentHistory': [
+          for (final p in formattedPayments)
+            {
+              'amount': p['amount'],
+              'mode': p['mode'],
+              'date': nowTs,
+              'notes': 'Initial Bill Payment',
+              'recordedAt': Timestamp.now(),
+              'type': 'Initial Payment',
+            }
+        ],
         'amountReceived': amountReceived,
         'pendingBalance': pendingBalance,
+        'isFullyPaid': pendingBalance <= 0,
+        'paymentStatus': pendingBalance <= 0 ? 'Paid' : 'Partial',
         'balanceReturned': 0.0,
         'createdAt': FieldValue.serverTimestamp(),
       };
@@ -363,7 +396,7 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
     });
   }
 
-  Future<void> _downloadInvoice() async {
+  Future<void> _downloadInvoice(bool isSplit, String singleMode, List<Map<String, dynamic>> splitPayments) async {
     final validRows = _rows.where((r) => r.isValid).toList();
     if (validRows.isEmpty) return;
 
@@ -376,9 +409,10 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
     final manualTotal = double.tryParse(_adjustmentCtrl.text);
     final adjustment = manualTotal != null ? manualTotal - computedTotal : 0.0;
     final totalPayable = (computedTotal + adjustment).clamp(0.0, double.infinity);
-    final amountReceived = _billType == 'Advance Payment'
-        ? (double.tryParse(_amountReceivedCtrl.text) ?? totalPayable)
-        : totalPayable;
+    final splitSum = splitPayments.fold<double>(0, (s, p) => s + (double.tryParse(p['amount'].toString()) ?? 0));
+    final amountReceived = isSplit
+        ? splitSum
+        : (double.tryParse(_amountReceivedCtrl.text) ?? totalPayable);
     final pendingBalance = (totalPayable - amountReceived).clamp(0.0, double.infinity);
 
     final billData = {
@@ -388,12 +422,19 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
       'billDate': Timestamp.fromDate(_billDate),
       'customerName': _customerNameCtrl.text.trim(),
       'customerMobile': _customerMobileCtrl.text.trim(),
+      'customerAddress': _customerAddressCtrl.text.trim(),
       'items': validRows.map((r) => r.toMap()).toList(),
       'subtotal': subtotal,
       'extraDiscountAmount': discAmt,
       'taxAmount': taxAmt,
       'adjustmentAmount': adjustment,
       'totalPayable': totalPayable,
+      'paymentMode': isSplit ? 'Split Payment' : singleMode,
+      'payments': isSplit
+          ? splitPayments
+          : [
+              {'mode': singleMode, 'amount': amountReceived}
+            ],
       'amountReceived': amountReceived,
       'pendingBalance': pendingBalance,
     };
@@ -467,7 +508,7 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
                     });
                   },
                   onSave: (isSplit, singleMode, splitPayments) => _saveBill(isSplit, singleMode, splitPayments),
-                  onDownload: _downloadInvoice,
+                  onDownload: (isSplit, singleMode, splitPayments) => _downloadInvoice(isSplit, singleMode, splitPayments),
                 ),
               ),
             ),
@@ -1198,8 +1239,9 @@ class _ProductAutocomplete extends StatelessWidget {
       displayStringForOption: (p) => '${p.tagId} - ${p.name}',
       optionsBuilder: (textEditingValue) {
         final query = textEditingValue.text.toLowerCase().trim();
-        if (query.isEmpty) return products.take(30); // show first 30 when empty
-        return products.where(
+        final inStockProducts = products.where((p) => getAvailableStock(p) > 0);
+        if (query.isEmpty) return inStockProducts.take(30); // show first 30 in-stock when empty
+        return inStockProducts.where(
           (p) =>
               p.tagId.toLowerCase().contains(query) ||
               p.name.toLowerCase().contains(query),
@@ -1306,7 +1348,7 @@ class _BillSummaryPanel extends StatefulWidget {
   final ValueChanged<String> onDiscountTypeChanged;
   final ValueChanged<String> onGstTypeChanged;
   final void Function(bool isSplit, String singleMode, List<Map<String, dynamic>> splitPayments) onSave;
-  final VoidCallback onDownload;
+  final void Function(bool isSplit, String singleMode, List<Map<String, dynamic>> splitPayments) onDownload;
 
   const _BillSummaryPanel({
     required this.rows,
@@ -1344,6 +1386,16 @@ class _BillSummaryPanelState extends State<_BillSummaryPanel> {
     super.dispose();
   }
 
+  List<Map<String, dynamic>> _getParsedSplits() {
+    return [
+      for (final e in _splitPayments)
+        {
+          'mode': e['mode'],
+          'amount': double.tryParse((e['amountCtrl'] as TextEditingController).text) ?? 0.0,
+        }
+    ];
+  }
+
   @override
   Widget build(BuildContext context) {
     // AnimatedBuilder listens to discount/tax/adjustment controllers AND rowVersion
@@ -1365,17 +1417,17 @@ class _BillSummaryPanelState extends State<_BillSummaryPanel> {
         final adjustment = manualTotal != null ? manualTotal - computedTotal : 0.0;
         final total = (computedTotal + adjustment).clamp(0.0, double.infinity);
 
-        final targetAmount = _isSplitPayment 
-            ? total 
-            : (double.tryParse(widget.amountReceivedCtrl.text) ?? total);
-
         double allocated = 0;
         if (_isSplitPayment) {
           for (var p in _splitPayments) {
             allocated += double.tryParse((p['amountCtrl'] as TextEditingController).text) ?? 0;
           }
         }
-        double remaining = targetAmount - allocated;
+
+        final effectiveReceived = _isSplitPayment
+            ? allocated
+            : (double.tryParse(widget.amountReceivedCtrl.text) ?? total);
+        final dueAmount = (total - effectiveReceived).clamp(0.0, double.infinity);
 
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1492,7 +1544,7 @@ class _BillSummaryPanelState extends State<_BillSummaryPanel> {
                     style: const TextStyle(fontFamily: 'serif', fontSize: 24, fontWeight: FontWeight.bold, color: BoutiqueColors.accent)),
               ],
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 20),
             
             if (!_isSplitPayment) ...[
               Row(
@@ -1511,8 +1563,59 @@ class _BillSummaryPanelState extends State<_BillSummaryPanel> {
                   ),
                 ],
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 12),
             ],
+
+            // Live Due Amount / Balance Banner
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              decoration: BoxDecoration(
+                color: dueAmount > 0 ? const Color(0xFFFFF3E0) : const Color(0xFFE8F5E9),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: dueAmount > 0 ? const Color(0xFFFFCC80) : const Color(0xFFA5D6A7),
+                ),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Received: ₹${effectiveReceived.toStringAsFixed(2)}',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: BoutiqueColors.textPrimary,
+                        ),
+                      ),
+                    ],
+                  ),
+                  Row(
+                    children: [
+                      Icon(
+                        dueAmount > 0 ? Icons.pending_actions_rounded : Icons.check_circle_rounded,
+                        size: 16,
+                        color: dueAmount > 0 ? const Color(0xFFD32F2F) : const Color(0xFF2E7D32),
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        dueAmount > 0
+                            ? 'DUE AMOUNT: ₹${dueAmount.toStringAsFixed(2)}'
+                            : 'DUE: ₹0.00 (Full Paid)',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                          color: dueAmount > 0 ? const Color(0xFFD32F2F) : const Color(0xFF2E7D32),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
 
             const Text('Payment Details',
                 style: TextStyle(fontFamily: 'serif', fontSize: 16, fontWeight: FontWeight.bold, color: BoutiqueColors.textPrimary)),
@@ -1640,12 +1743,21 @@ class _BillSummaryPanelState extends State<_BillSummaryPanel> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text('Remaining:', style: TextStyle(fontSize: 13, color: BoutiqueColors.textSecondary)),
-                  Text('₹${remaining.toStringAsFixed(2)}', 
+                  const Text('Total Split Paid:', style: TextStyle(fontSize: 13, color: BoutiqueColors.textSecondary)),
+                  Text('₹${allocated.toStringAsFixed(2)}',
+                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: BoutiqueColors.accent)),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text('Remaining (Due Amount):', style: TextStyle(fontSize: 13, color: BoutiqueColors.textSecondary)),
+                  Text('₹${dueAmount.toStringAsFixed(2)}', 
                     style: TextStyle(
                       fontSize: 13, 
                       fontWeight: FontWeight.bold, 
-                      color: remaining.abs() < 0.01 ? Colors.green : BoutiqueColors.destructive
+                      color: dueAmount < 0.01 ? Colors.green : const Color(0xFFD32F2F)
                     )
                   ),
                 ],
@@ -1655,22 +1767,14 @@ class _BillSummaryPanelState extends State<_BillSummaryPanel> {
 
             ElevatedButton.icon(
               onPressed: widget.isSaving ? null : () {
-                if (_isSplitPayment && remaining.abs() >= 0.01) {
+                if (_isSplitPayment && allocated > total + 0.01) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Please allocate the exact remaining amount (₹${remaining.toStringAsFixed(2)})'), backgroundColor: Colors.red),
+                    SnackBar(content: Text('Split amount (₹${allocated.toStringAsFixed(2)}) cannot exceed Total Payable (₹${total.toStringAsFixed(2)})'), backgroundColor: Colors.red),
                   );
                   return;
                 }
                 
-                final List<Map<String, dynamic>> parsedSplitPayments = [
-                  for (final e in _splitPayments)
-                    {
-                      'mode': e['mode'],
-                      'amount': double.tryParse((e['amountCtrl'] as TextEditingController).text) ?? 0.0
-                    }
-                ];
-                
-                widget.onSave(_isSplitPayment, _singlePaymentMode, parsedSplitPayments);
+                widget.onSave(_isSplitPayment, _singlePaymentMode, _getParsedSplits());
               },
               style: ElevatedButton.styleFrom(
                 backgroundColor: BoutiqueColors.accent,
@@ -1688,7 +1792,9 @@ class _BillSummaryPanelState extends State<_BillSummaryPanel> {
             const SizedBox(height: 12),
 
             ElevatedButton.icon(
-              onPressed: widget.hasValidRows ? widget.onDownload : null,
+              onPressed: widget.hasValidRows
+                  ? () => widget.onDownload(_isSplitPayment, _singlePaymentMode, _getParsedSplits())
+                  : null,
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFF2E7D32),
                 foregroundColor: Colors.white,

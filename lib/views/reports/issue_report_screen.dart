@@ -10,6 +10,7 @@ import '../../utils/pdf_report_generator.dart';
 import '../../state/admin_state.dart';
 import '../../utils/boutique_theme.dart';
 import '../../utils/excel_generator.dart';
+import '../../widgets/report_export_dialog.dart';
 
 class IssueReportScreen extends StatefulWidget {
   const IssueReportScreen({super.key});
@@ -273,15 +274,29 @@ class _IssueReportScreenState extends State<IssueReportScreen> {
       BoutiqueToast.showError(context, 'No data to download.');
       return;
     }
-    final bytes = await generateUnifiedIssueReportPdf(
-      rows: _filtered,
-      dateFrom: _dateFrom,
-      dateTo: _dateTo,
-    );
-    await Printing.sharePdf(
-      bytes: bytes,
-      filename:
-          'issue_report_${_fmt.format(_dateFrom)}_${_fmt.format(_dateTo)}.pdf',
+    await ReportExportDialog.show(
+      context: context,
+      title: 'Issue & Returns Register',
+      onDownloadPdf: () async {
+        final bytes = await generateUnifiedIssueReportPdf(
+          rows: _filtered,
+          dateFrom: _dateFrom,
+          dateTo: _dateTo,
+        );
+        await Printing.sharePdf(
+          bytes: bytes,
+          filename:
+              'issue_report_${_fmt.format(_dateFrom)}_${_fmt.format(_dateTo)}.pdf',
+        );
+      },
+      onDownloadExcel: () async {
+        await ExcelGenerator.downloadIssueReportExcel(
+          rows: _filtered,
+          dateFrom: _dateFrom,
+          dateTo: _dateTo,
+          filterType: _typeFilter,
+        );
+      },
     );
   }
 

@@ -95,15 +95,19 @@ class _SplashScreen extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Logo removed by request
-            const Text(
-              'RituMita Boutique',
-              style: TextStyle(
-                fontFamily: 'serif',
-                fontSize: 32,
-                fontWeight: FontWeight.bold,
-                letterSpacing: 2.0,
-                color: BoutiqueColors.textPrimary,
+            Image.asset(
+              'assets/logo.png',
+              height: 70,
+              fit: BoxFit.contain,
+              errorBuilder: (_, _, _) => const Text(
+                'RituMita Boutique',
+                style: TextStyle(
+                  fontFamily: 'serif',
+                  fontSize: 32,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 2.0,
+                  color: BoutiqueColors.textPrimary,
+                ),
               ),
             ),
             const SizedBox(height: 8),
@@ -519,33 +523,38 @@ class _AdminHomeShellState extends State<AdminHomeShell> {
                     padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
                     child: Row(
                       children: [
-                        // Logo removed by request
                         Flexible(
-                          child: const Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                'RituMita Boutique',
-                                style: TextStyle(
-                                  fontFamily: 'serif',
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
-                                  color: BoutiqueColors.textPrimary,
-                                  letterSpacing: 0.5,
+                          child: Image.asset(
+                            'assets/logo.png',
+                            height: 48,
+                            fit: BoxFit.contain,
+                            alignment: Alignment.centerLeft,
+                            errorBuilder: (_, _, _) => const Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  'RituMita Boutique',
+                                  style: TextStyle(
+                                    fontFamily: 'serif',
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                    color: BoutiqueColors.textPrimary,
+                                    letterSpacing: 0.5,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
                                 ),
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                              Text(
-                                'BOUTIQUE RETAIL',
-                                style: TextStyle(
-                                  fontSize: 9,
-                                  fontWeight: FontWeight.w600,
-                                  letterSpacing: 1.5,
-                                  color: BoutiqueColors.accent,
+                                Text(
+                                  'BOUTIQUE RETAIL',
+                                  style: TextStyle(
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.w600,
+                                    letterSpacing: 1.5,
+                                    color: BoutiqueColors.accent,
+                                  ),
                                 ),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
                         ),
                       ],
@@ -644,13 +653,18 @@ class _AdminHomeShellState extends State<AdminHomeShell> {
                           ],
                         ),
                         const SizedBox(width: 8),
-                        const Text(
-                          'RituMita Boutique',
-                          style: TextStyle(
-                            fontFamily: 'serif',
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            color: BoutiqueColors.textPrimary,
+                        Image.asset(
+                          'assets/logo.png',
+                          height: 32,
+                          fit: BoxFit.contain,
+                          errorBuilder: (_, _, _) => const Text(
+                            'RituMita Boutique',
+                            style: TextStyle(
+                              fontFamily: 'serif',
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: BoutiqueColors.textPrimary,
+                            ),
                           ),
                         ),
                         const Spacer(),

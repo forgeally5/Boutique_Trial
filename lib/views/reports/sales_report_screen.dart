@@ -6,6 +6,8 @@ import 'package:provider/provider.dart';
 import '../../state/admin_state.dart';
 import '../../utils/pdf_report_generator.dart';
 import '../../utils/boutique_theme.dart';
+import '../../utils/excel_generator.dart';
+import '../../widgets/report_export_dialog.dart';
 import '../../widgets/searchable_dropdown.dart';
 
 class SalesReportScreen extends StatefulWidget {
@@ -273,15 +275,28 @@ class _IndividualSalesTabState extends State<_IndividualSalesTab> {
       BoutiqueToast.showError(context, 'No data to download.');
       return;
     }
-    final bytes = await generateSalesIndividualPdf(
-      rows: _filtered,
-      dateFrom: _dateFrom,
-      dateTo: _dateTo,
-    );
-    await Printing.sharePdf(
-      bytes: bytes,
-      filename:
-          'individual_sales_${_fmt.format(_dateFrom)}_${_fmt.format(_dateTo)}.pdf',
+    await ReportExportDialog.show(
+      context: context,
+      title: 'Individual Product Sales Report',
+      onDownloadPdf: () async {
+        final bytes = await generateSalesIndividualPdf(
+          rows: _filtered,
+          dateFrom: _dateFrom,
+          dateTo: _dateTo,
+        );
+        await Printing.sharePdf(
+          bytes: bytes,
+          filename:
+              'individual_sales_${_fmt.format(_dateFrom)}_${_fmt.format(_dateTo)}.pdf',
+        );
+      },
+      onDownloadExcel: () async {
+        await ExcelGenerator.downloadProductWiseSalesExcel(
+          rows: _filtered,
+          dateFrom: _dateFrom,
+          dateTo: _dateTo,
+        );
+      },
     );
   }
 
@@ -766,15 +781,28 @@ class _TotalSalesTabState extends State<_TotalSalesTab> {
       BoutiqueToast.showError(context, 'No data to download.');
       return;
     }
-    final bytes = await generateSalesTotalPdf(
-      rows: _filtered,
-      dateFrom: _dateFrom,
-      dateTo: _dateTo,
-    );
-    await Printing.sharePdf(
-      bytes: bytes,
-      filename:
-          'total_sales_${_fmt.format(_dateFrom)}_${_fmt.format(_dateTo)}.pdf',
+    await ReportExportDialog.show(
+      context: context,
+      title: 'Total Sales Report (Bill-Wise)',
+      onDownloadPdf: () async {
+        final bytes = await generateSalesTotalPdf(
+          rows: _filtered,
+          dateFrom: _dateFrom,
+          dateTo: _dateTo,
+        );
+        await Printing.sharePdf(
+          bytes: bytes,
+          filename:
+              'total_sales_${_fmt.format(_dateFrom)}_${_fmt.format(_dateTo)}.pdf',
+        );
+      },
+      onDownloadExcel: () async {
+        await ExcelGenerator.downloadBillWiseSalesExcel(
+          rows: _filtered,
+          dateFrom: _dateFrom,
+          dateTo: _dateTo,
+        );
+      },
     );
   }
 
@@ -1401,14 +1429,28 @@ class _ProductWiseSalesTabState extends State<_ProductWiseSalesTab> {
       BoutiqueToast.showError(context, 'No data to download.');
       return;
     }
-    final bytes = await generateProductWisePdf(
-      rows: _aggregatedRows,
-      dateFrom: _dateFrom,
-      dateTo: _dateTo,
-    );
-    await Printing.sharePdf(
-      bytes: bytes,
-      filename: 'product_wise_sales_${_fmt.format(_dateFrom)}_${_fmt.format(_dateTo)}.pdf',
+    await ReportExportDialog.show(
+      context: context,
+      title: 'Product-Wise Sales Summary',
+      onDownloadPdf: () async {
+        final bytes = await generateProductWisePdf(
+          rows: _aggregatedRows,
+          dateFrom: _dateFrom,
+          dateTo: _dateTo,
+        );
+        await Printing.sharePdf(
+          bytes: bytes,
+          filename:
+              'product_wise_sales_${_fmt.format(_dateFrom)}_${_fmt.format(_dateTo)}.pdf',
+        );
+      },
+      onDownloadExcel: () async {
+        await ExcelGenerator.downloadProductWiseSalesExcel(
+          rows: _aggregatedRows,
+          dateFrom: _dateFrom,
+          dateTo: _dateTo,
+        );
+      },
     );
   }
 
