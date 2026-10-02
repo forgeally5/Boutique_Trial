@@ -314,12 +314,14 @@ class AdminState extends ChangeNotifier {
   final List<String> _dynamicUnits = [];
   final List<String> _dynamicWeightUnits = [];
   final List<String> _dynamicItemNames = [];
+  final List<String> _dynamicVendors = [];
 
   final Set<String> _deletedCategories = {};
   final Set<String> _deletedMaterials = {};
   final Set<String> _deletedUnits = {};
   final Set<String> _deletedWeightUnits = {};
   final Set<String> _deletedItemNames = {};
+  final Set<String> _deletedVendors = {};
 
   final List<String> _defaultMaterials = [
     'Brass', 'Silver', 'Panchaloha', 'Wood', 'Clay', 'Marble', 'Plastic/Steel', 'N/A'
@@ -393,6 +395,16 @@ class AdminState extends ChangeNotifier {
       ..._products.map((p) => p.name.trim()).where((n) => n.isNotEmpty)
     };
     final list = set.where((n) => !_deletedItemNames.contains(n)).toList();
+    list.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    return list;
+  }
+
+  List<String> get vendors {
+    final set = <String>{
+      ..._dynamicVendors,
+      ..._products.map((p) => p.vendor.trim()).where((v) => v.isNotEmpty)
+    };
+    final list = set.where((v) => !_deletedVendors.contains(v)).toList();
     list.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
     return list;
   }
@@ -493,6 +505,55 @@ class AdminState extends ChangeNotifier {
     notifyListeners();
     try {
       final snap = await _firestore.collection('materials').where('name', isEqualTo: trimmed).get();
+      for (var doc in snap.docs) {
+        await doc.reference.delete();
+      }
+    } catch (_) {}
+  }
+
+  void addVendor(String newVendor) {
+    final trimmed = newVendor.trim();
+    if (trimmed.isNotEmpty) {
+      _deletedVendors.remove(trimmed);
+      if (!_dynamicVendors.contains(trimmed)) {
+        _dynamicVendors.add(trimmed);
+        try {
+          _firestore.collection('vendors').add({'name': trimmed, 'createdAt': FieldValue.serverTimestamp()});
+        } catch (_) {}
+      }
+      notifyListeners();
+    }
+  }
+
+  Future<void> renameVendor(String oldVendor, String newVendor) async {
+    final oldTrimmed = oldVendor.trim();
+    final newTrimmed = newVendor.trim();
+    if (newTrimmed.isEmpty || oldTrimmed == newTrimmed) return;
+    _deletedVendors.remove(newTrimmed);
+    _deletedVendors.add(oldTrimmed);
+    _dynamicVendors.remove(oldTrimmed);
+    if (!_dynamicVendors.contains(newTrimmed)) {
+      _dynamicVendors.add(newTrimmed);
+    }
+    notifyListeners();
+    try {
+      final snap = await _firestore.collection('vendors').where('name', isEqualTo: oldTrimmed).get();
+      for (var doc in snap.docs) {
+        await doc.reference.update({'name': newTrimmed});
+      }
+      if (snap.docs.isEmpty) {
+        await _firestore.collection('vendors').add({'name': newTrimmed, 'createdAt': FieldValue.serverTimestamp()});
+      }
+    } catch (_) {}
+  }
+
+  Future<void> deleteVendor(String vendor) async {
+    final trimmed = vendor.trim();
+    _dynamicVendors.remove(trimmed);
+    _deletedVendors.add(trimmed);
+    notifyListeners();
+    try {
+      final snap = await _firestore.collection('vendors').where('name', isEqualTo: trimmed).get();
       for (var doc in snap.docs) {
         await doc.reference.delete();
       }

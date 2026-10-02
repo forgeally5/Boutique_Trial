@@ -216,6 +216,98 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
           : (double.tryParse(_amountReceivedCtrl.text) ?? totalPayable);
       final pendingBalance = (totalPayable - amountReceived).clamp(0.0, double.infinity);
 
+      if (amountReceived > totalPayable) {
+        final confirm = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            titlePadding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
+            contentPadding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
+            title: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(color: Colors.orange.shade100, shape: BoxShape.circle),
+                  child: const Icon(Icons.warning_amber_rounded, color: Colors.deepOrange),
+                ),
+                const SizedBox(width: 12),
+                const Text('Excess Amount', style: TextStyle(fontFamily: 'serif', fontSize: 20, color: Colors.deepOrange, fontWeight: FontWeight.bold)),
+              ],
+            ),
+            content: Text(
+              'The received amount (₹${amountReceived.toStringAsFixed(2)}) exceeds the total payable (₹${totalPayable.toStringAsFixed(2)}).\n\nPlease verify the amount entered before saving.',
+              style: const TextStyle(fontSize: 14, height: 1.4),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Review & Fix', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.deepOrange)),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.deepOrange,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  elevation: 0,
+                ),
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Proceed Anyway'),
+              ),
+            ],
+          ),
+        );
+        if (confirm != true) {
+          setState(() => _isSaving = false);
+          return;
+        }
+      }
+
+      if (pendingBalance > 0) {
+        final confirm = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            titlePadding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
+            contentPadding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
+            title: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(color: BoutiqueColors.destructive.withValues(alpha: 0.1), shape: BoxShape.circle),
+                  child: const Icon(Icons.error_outline_rounded, color: BoutiqueColors.destructive),
+                ),
+                const SizedBox(width: 12),
+                const Text('Pending Balance', style: TextStyle(fontFamily: 'serif', fontSize: 20, color: BoutiqueColors.destructive, fontWeight: FontWeight.bold)),
+              ],
+            ),
+            content: Text(
+              'There is a pending due amount of ₹${pendingBalance.toStringAsFixed(2)}.\n\nDo you want to proceed and save this bill with a due amount?',
+              style: const TextStyle(fontSize: 14, height: 1.4),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancel', style: TextStyle(fontWeight: FontWeight.bold, color: BoutiqueColors.textSecondary)),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: BoutiqueColors.destructive,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  elevation: 0,
+                ),
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Save with Due'),
+              ),
+            ],
+          ),
+        );
+        if (confirm != true) {
+          setState(() => _isSaving = false);
+          return;
+        }
+      }
+
       final nowTs = Timestamp.fromDate(_billDate);
       final formattedPayments = isSplit
           ? [
@@ -279,20 +371,24 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
         'createdAt': FieldValue.serverTimestamp(),
       };
 
-      await FirebaseFirestore.instance.collection('bills').add(billData);
+      // Fire off Firebase bill creation
+      final firebaseFuture = FirebaseFirestore.instance.collection('bills').add(billData);
 
-      // Save to Hostinger MySQL
-      try {
-        final hostingerBill = Map<String, dynamic>.from(billData);
-        hostingerBill['billDate'] = DateTime.now().toIso8601String();
-        await ApiService().createBill(hostingerBill);
-      } catch (e) {
-        debugPrint('Hostinger createBill error: $e');
-      }
+      // Fire off Hostinger MySQL sync
+      final hostingerFuture = () async {
+        try {
+          final hostingerBill = Map<String, dynamic>.from(billData);
+          hostingerBill['billDate'] = DateTime.now().toIso8601String();
+          await ApiService().createBill(hostingerBill);
+        } catch (e) {
+          debugPrint('Hostinger createBill error: $e');
+        }
+      }();
 
       // Aggregate quantities for stock deduction
       final Map<String, double> deductionMap = {};
       final Map<String, double> reservedDeductionMap = {};
+      final Map<String, double> weightDeductionMap = {};
       final Map<String, Product> productMap = {};
       for (final row in validRows) {
         final p = row.product!;
@@ -301,27 +397,44 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
         } else {
           deductionMap[p.tagId] = (deductionMap[p.tagId] ?? 0) + row.qty;
         }
+        
+        if (p.pricingType == 'Weight-Based' && row.weight > 0) {
+          weightDeductionMap[p.tagId] = (weightDeductionMap[p.tagId] ?? 0.0) + row.weight;
+        }
+        
         productMap[p.tagId] = p;
       }
 
+      // Prepare concurrent stock updates
+      final stockUpdateFutures = <Future>[];
       for (final tagId in productMap.keys) {
         final p = productMap[tagId]!;
         final regularDeducted = (deductionMap[tagId] ?? 0).toInt();
         final reservedDeducted = (reservedDeductionMap[tagId] ?? 0).toInt();
         final totalDeducted = regularDeducted + reservedDeducted;
+        final totalWeightDeducted = weightDeductionMap[tagId] ?? 0.0;
         
         final newQty = (p.quantity - totalDeducted).clamp(0, 999999);
         final newReservedQty = (p.reservedQuantity - reservedDeducted).clamp(0, 999999);
+        final newGrossWeight = (p.grossWeight - totalWeightDeducted).clamp(0.0, double.infinity);
         
         final updated = p.copyWith(
           quantity: newQty,
+          grossWeight: newGrossWeight,
           reservedQuantity: newReservedQty,
           isReserved: newReservedQty > 0 ? p.isReserved : false,
           reservedFor: newReservedQty > 0 ? p.reservedFor : '',
           status: newQty == 0 ? 'Sold Out' : p.status,
         );
-        await widget.state.updateProduct(updated);
+        stockUpdateFutures.add(widget.state.updateProduct(updated));
       }
+
+      // Wait for all operations to finish concurrently!
+      await Future.wait([
+        firebaseFuture,
+        hostingerFuture,
+        ...stockUpdateFutures,
+      ]);
 
       if (mounted) {
         final billNo = _billNoCtrl.text.trim();
@@ -878,222 +991,141 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
 
   Widget _buildTopQuickScanRow() {
     return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: BoutiqueColors.bgSubtle,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: BoutiqueColors.accentLightBorder, width: 1.2),
-      ),
-      child: Row(
-        children: [
-          // Product search / tag entry — Autocomplete with instant Enter submit
-          Expanded(
-            flex: 4,
-            child: Autocomplete<Product>(
-              key: ValueKey(_topScanKey),
-              displayStringForOption: (p) => '${p.tagId} - ${p.name}',
-              optionsBuilder: (textEditingValue) {
-                final query = textEditingValue.text.toLowerCase().trim();
-                if (query.isEmpty) return const Iterable<Product>.empty();
-                return _cachedProducts.where((p) {
-                  final inStock = _getAvailableStock(p) > 0;
-                  return inStock && (
-                    p.tagId.toLowerCase().contains(query) ||
-                    p.name.toLowerCase().contains(query)
-                  );
-                }).take(25);
-              },
-              optionsViewBuilder: (context, onSelected, options) {
-                return Align(
-                  alignment: Alignment.topLeft,
-                  child: Material(
-                    elevation: 4,
-                    borderRadius: BorderRadius.circular(8),
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxHeight: 250, maxWidth: 420),
-                      child: ListView.builder(
-                        padding: EdgeInsets.zero,
-                        shrinkWrap: true,
-                        itemCount: options.length,
-                        itemBuilder: (context, index) {
-                          final p = options.elementAt(index);
-                          final stock = _getAvailableStock(p);
-                          return InkWell(
-                            onTap: () => onSelected(p),
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 0),
+      child: Autocomplete<Product>(
+        key: ValueKey(_topScanKey),
+        displayStringForOption: (p) => '${p.tagId} - ${p.name}',
+        optionsBuilder: (textEditingValue) {
+          final query = textEditingValue.text.toLowerCase().trim();
+          if (query.isEmpty) return const Iterable<Product>.empty();
+          return _cachedProducts.where((p) {
+            final isW = p.pricingType == 'Weight-Based';
+            final inStock = isW ? _getAvailableWeight(p) > 0 : _getAvailableStock(p) > 0;
+            return inStock && (
+              p.tagId.toLowerCase().contains(query) ||
+              p.name.toLowerCase().contains(query)
+            );
+          }).take(25);
+        },
+        optionsViewBuilder: (context, onSelected, options) {
+          return Align(
+            alignment: Alignment.topLeft,
+            child: Material(
+              elevation: 4,
+              borderRadius: BorderRadius.circular(8),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 250, maxWidth: 420),
+                child: ListView.builder(
+                  padding: EdgeInsets.zero,
+                  shrinkWrap: true,
+                  itemCount: options.length,
+                  itemBuilder: (context, index) {
+                    final p = options.elementAt(index);
+                    final stock = _getAvailableStock(p);
+                    return InkWell(
+                      onTap: () => onSelected(p),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Text('${p.tagId} - ${p.name}', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
-                                        Text('₹${p.finalPrice > 0 ? p.finalPrice : p.mrp} • ${p.category}', style: const TextStyle(fontSize: 11, color: BoutiqueColors.textSecondary)),
-                                      ],
-                                    ),
-                                  ),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                    decoration: BoxDecoration(
-                                      color: BoutiqueColors.accent.withValues(alpha: 0.1),
-                                      borderRadius: BorderRadius.circular(6),
-                                    ),
-                                    child: Text('Stock: $stock', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: BoutiqueColors.accent)),
-                                  ),
+                                  Text('${p.tagId} - ${p.name}', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                                  Text('₹${p.finalPrice > 0 ? p.finalPrice : p.mrp} • ${p.category}', style: const TextStyle(fontSize: 11, color: BoutiqueColors.textSecondary)),
                                 ],
                               ),
                             ),
-                          );
-                        },
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: BoutiqueColors.accent.withValues(alpha: 0.1),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(p.pricingType == 'Weight-Based' ? 'Stock: $stock | ${_getAvailableWeight(p).toStringAsFixed(2)}${p.weightUnit}' : 'Stock: $stock', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: BoutiqueColors.accent)),
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                  ),
-                );
-              },
-              fieldViewBuilder: (context, textCtrl, focusNode, onFieldSubmitted) {
-                _topEntryTextCtrl = textCtrl;
-                _topEntryFieldFocus = focusNode;
-                return TextField(
-                  controller: textCtrl,
-                  focusNode: focusNode,
-                  autofocus: true,
-                  style: const TextStyle(fontSize: 13),
-                  decoration: BoutiqueInputDecoration.field(
-                    hintText: 'Search product name or scan Tag ID...',
-                    prefixIcon: const Icon(Icons.search_rounded, size: 16, color: BoutiqueColors.textSecondary),
-                  ),
-                  onSubmitted: (val) {
-                    final query = val.trim();
-                    if (query.isEmpty) return;
-                    final p = _findProductByTagOrQuery(query);
-                    if (p != null) {
-                      _addProductToBill(p, _topEntryQty);
-                      setState(() {
-                        _topScanKey++;
-                        _topEntryQty = 1;
-                      });
-                      WidgetsBinding.instance.addPostFrameCallback((_) {
-                        _topEntryFieldFocus?.requestFocus();
-                      });
-                    } else {
-                      BoutiqueToast.showError(context, 'No product found with tag: "$query"');
-                      _topEntryFieldFocus?.requestFocus();
-                    }
+                    );
                   },
-                );
-              },
-              onSelected: (p) {
-                _addProductToBill(p, _topEntryQty);
-                setState(() {
-                  _topScanKey++;
-                  _topEntryQty = 1;
-                });
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  _topEntryFieldFocus?.requestFocus();
-                });
-              },
+                ),
+              ),
             ),
-          ),
-          const SizedBox(width: 8),
-
-          // Scan QR/Barcode Camera Button
-          IconButton(
-            tooltip: 'Scan QR / Barcode',
-            icon: const Icon(Icons.qr_code_scanner_rounded, color: BoutiqueColors.accent),
-            onPressed: () async {
-              final scannedCode = await showDialog<String>(
-                context: context,
-                builder: (ctx) => const ScannerDialog(),
-              );
-              if (scannedCode != null && scannedCode.isNotEmpty) {
-                final p = _findProductByTagOrQuery(scannedCode);
-                if (p != null) {
-                  _addProductToBill(p, _topEntryQty);
-                  setState(() {
-                    _topScanKey++;
-                    _topEntryQty = 1;
-                  });
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    _topEntryFieldFocus?.requestFocus();
-                  });
-                } else {
-                  if (mounted) BoutiqueToast.showError(context, 'No product found with tag: $scannedCode');
-                }
+          );
+        },
+        fieldViewBuilder: (context, textCtrl, focusNode, onFieldSubmitted) {
+          _topEntryTextCtrl = textCtrl;
+          _topEntryFieldFocus = focusNode;
+          return TextField(
+            controller: textCtrl,
+            focusNode: focusNode,
+            autofocus: true,
+            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+            decoration: InputDecoration(
+              filled: true,
+              fillColor: BoutiqueColors.bgSubtle,
+              hintText: '🔍 Scan Barcode or Type Product Name...',
+              hintStyle: const TextStyle(fontWeight: FontWeight.normal, color: BoutiqueColors.textSecondary),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(color: BoutiqueColors.accent, width: 1.5),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: BoutiqueColors.accent.withValues(alpha: 0.5), width: 1.5),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(color: BoutiqueColors.accent, width: 2),
+              ),
+              suffixIcon: IconButton(
+                icon: const Icon(Icons.qr_code_scanner, color: BoutiqueColors.accent),
+                tooltip: 'Scan Camera',
+                onPressed: () async {
+                  final scannedCode = await showDialog<String>(
+                    context: context,
+                    builder: (ctx) => const ScannerDialog(),
+                  );
+                  if (scannedCode != null && scannedCode.isNotEmpty) {
+                    final p = _findProductByTagOrQuery(scannedCode);
+                    if (p != null) {
+                      _addProductToBill(p, 1);
+                      setState(() => _topScanKey++);
+                      _topEntryTextCtrl?.clear();
+                      WidgetsBinding.instance.addPostFrameCallback((_) => _topEntryFieldFocus?.requestFocus());
+                    } else {
+                      if (mounted) BoutiqueToast.showError(context, 'No product found with tag: $scannedCode');
+                    }
+                  }
+                },
+              ),
+            ),
+            onSubmitted: (val) {
+              final query = val.trim();
+              if (query.isEmpty) return;
+              final p = _findProductByTagOrQuery(query);
+              if (p != null) {
+                _addProductToBill(p, 1);
+                setState(() => _topScanKey++);
+                _topEntryTextCtrl?.clear();
+                WidgetsBinding.instance.addPostFrameCallback((_) => _topEntryFieldFocus?.requestFocus());
+              } else {
+                BoutiqueToast.showError(context, 'No product found: "$query"');
+                _topEntryFieldFocus?.requestFocus();
               }
             },
-          ),
-          const SizedBox(width: 12),
-
-          // Qty Stepper
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: BoutiqueColors.border),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.remove, size: 14, color: BoutiqueColors.textSecondary),
-                  onPressed: _topEntryQty > 1 ? () => setState(() => _topEntryQty--) : null,
-                ),
-                InkWell(
-                  onTap: () async {
-                    final val = await _promptQuantityDialog(_topEntryQty);
-                    if (val != null && val > 0) setState(() => _topEntryQty = val);
-                  },
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 4.0),
-                    child: Text(
-                      'Qty: ${_topEntryQty == _topEntryQty.toInt() ? _topEntryQty.toInt() : _topEntryQty.toStringAsFixed(1)} Piece',
-                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, decoration: TextDecoration.underline, decorationStyle: TextDecorationStyle.dashed),
-                    ),
-                  ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.add, size: 14, color: BoutiqueColors.accent),
-                  onPressed: () => setState(() => _topEntryQty++),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 12),
-
-          // Price & Total (@ ₹0.0 / ₹0.00 as in Image 2)
-          const SizedBox(
-            width: 110,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Text('₹0.00',
-                    style: TextStyle(fontFamily: 'serif', fontSize: 15, fontWeight: FontWeight.bold, color: BoutiqueColors.textPrimary)),
-                Text('@ ₹0.0',
-                    style: TextStyle(fontSize: 11, color: BoutiqueColors.textSecondary)),
-              ],
-            ),
-          ),
-          const SizedBox(width: 8),
-
-          // Reset / Clear button
-          IconButton(
-            icon: const Icon(Icons.delete_outline_rounded, color: BoutiqueColors.destructive, size: 20),
-            tooltip: 'Clear',
-            onPressed: () {
-              _topEntryTextCtrl?.clear();
-              setState(() {
-                _topScanKey++;
-                _topEntryQty = 1;
-              });
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                _topEntryFieldFocus?.requestFocus();
-              });
-            },
-          ),
-        ],
+          );
+        },
+        onSelected: (p) {
+          _addProductToBill(p, 1);
+          setState(() => _topScanKey++);
+          _topEntryTextCtrl?.clear();
+          WidgetsBinding.instance.addPostFrameCallback((_) => _topEntryFieldFocus?.requestFocus());
+        },
       ),
     );
   }
@@ -1134,17 +1166,6 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
                     icon: const Icon(Icons.bookmark_added_rounded, size: 16),
                     label: const Text('Reserved List'),
                   ),
-                  const SizedBox(width: 10),
-                  ElevatedButton.icon(
-                    onPressed: () => setState(() => _rows.insert(0, BillRow())),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: BoutiqueColors.accentSoft,
-                      foregroundColor: BoutiqueColors.accent,
-                      elevation: 0,
-                    ),
-                    icon: const Icon(Icons.add, size: 18),
-                    label: const Text('Add Row'),
-                  ),
                 ],
               ),
             ],
@@ -1173,6 +1194,7 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
                 row: _rows[i],
                 products: _cachedProducts,
                 getAvailableStock: _getAvailableStock,
+                getAvailableWeight: _getAvailableWeight,
                 onChanged: () {
                   _rowVersion.value++; // notify summary panel
                   setState(() {});    // refresh row display (qty, line amount)
@@ -1208,6 +1230,19 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
     final int baseStock = isReserveCheck ? p.reservedQuantity : p.sellableQuantity;
     final remaining = baseStock - usedInOtherRows.toInt();
     return remaining < 0 ? 0 : remaining;
+  }
+
+  double _getAvailableWeight(Product p, [BillRow? currentRow]) {
+    double usedInOtherRows = 0;
+    for (final r in _rows) {
+      if (r != currentRow && r.product != null) {
+        if (r.product!.tagId.trim().toLowerCase() == p.tagId.trim().toLowerCase()) {
+          usedInOtherRows += r.weight;
+        }
+      }
+    }
+    final remaining = p.grossWeight - usedInOtherRows;
+    return remaining < 0 ? 0.0 : remaining;
   }
   void _showReservedItemsList() {
     final reservedItems = _cachedProducts.where((p) => p.isReserved && p.reservedQuantity > 0).toList();
@@ -1331,6 +1366,7 @@ class _BillRowWidget extends StatefulWidget {
   final BillRow row;
   final List<Product> products;
   final int Function(Product p, [BillRow? currentRow]) getAvailableStock;
+  final double Function(Product p, [BillRow? currentRow]) getAvailableWeight;
   final VoidCallback onChanged;
   final VoidCallback? onDelete;
 
@@ -1339,6 +1375,7 @@ class _BillRowWidget extends StatefulWidget {
     required this.row,
     required this.products,
     required this.getAvailableStock,
+    required this.getAvailableWeight,
     required this.onChanged,
     this.onDelete,
   });
@@ -1369,9 +1406,12 @@ class _BillRowWidgetState extends State<_BillRowWidget> {
               products: widget.products,
               selected: row.product,
               getAvailableStock: (p) => widget.getAvailableStock(p, row),
+              getAvailableWeight: (p) => widget.getAvailableWeight(p, row),
               onSelected: (p) {
+                final isW = p.pricingType == 'Weight-Based';
                 final available = widget.getAvailableStock(p, row);
-                if (available <= 0) {
+                final availWeight = widget.getAvailableWeight(p, row);
+                if (available <= 0 || (isW && availWeight <= 0)) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(content: Text('Item is out of stock (already selected in other rows).'), backgroundColor: Colors.red),
                   );
@@ -1588,8 +1628,19 @@ class _BillRowWidgetState extends State<_BillRowWidget> {
       ),
     );
     if (result != null && result > 0) {
-      setState(() => widget.row.weight = result);
-      widget.onChanged();
+      final availableWeight = widget.row.product != null
+          ? widget.getAvailableWeight(widget.row.product!, widget.row)
+          : 0.0;
+      if (widget.row.product != null && result > availableWeight) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Cannot exceed available weight (${availableWeight.toStringAsFixed(2)} ${widget.row.product!.weightUnit} available)'), backgroundColor: Colors.red),
+          );
+        }
+      } else {
+        setState(() => widget.row.weight = result);
+        widget.onChanged();
+      }
     }
   }
 }
@@ -1603,12 +1654,14 @@ class _ProductAutocomplete extends StatelessWidget {
   final Product? selected;
   final ValueChanged<Product> onSelected;
   final int Function(Product) getAvailableStock;
+  final double Function(Product) getAvailableWeight;
 
   const _ProductAutocomplete({
     required this.products,
     required this.selected,
     required this.onSelected,
     required this.getAvailableStock,
+    required this.getAvailableWeight,
   });
 
   @override
@@ -1622,7 +1675,7 @@ class _ProductAutocomplete extends StatelessWidget {
       displayStringForOption: (p) => '${p.tagId} - ${p.name}',
       optionsBuilder: (textEditingValue) {
         final query = textEditingValue.text.toLowerCase().trim();
-        final inStockProducts = products.where((p) => getAvailableStock(p) > 0);
+        final inStockProducts = products.where((p) => p.pricingType == 'Weight-Based' ? getAvailableWeight(p) > 0 : getAvailableStock(p) > 0);
         if (query.isEmpty) return inStockProducts.take(30); // show first 30 in-stock when empty
         return inStockProducts.where(
           (p) =>
@@ -1645,6 +1698,9 @@ class _ProductAutocomplete extends StatelessWidget {
                 itemBuilder: (context, index) {
                   final p = options.elementAt(index);
                   final stock = getAvailableStock(p);
+                  final weight = getAvailableWeight(p);
+                  final isW = p.pricingType == 'Weight-Based';
+                  final hasStock = isW ? weight > 0 : stock > 0;
                   return InkWell(
                     onTap: () => onSelected(p),
                     child: Padding(
@@ -1665,15 +1721,15 @@ class _ProductAutocomplete extends StatelessWidget {
                               Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                                 decoration: BoxDecoration(
-                                  color: stock > 0 ? BoutiqueColors.accent.withValues(alpha: 0.1) : Colors.red.withValues(alpha: 0.1),
+                                  color: hasStock ? BoutiqueColors.accent.withValues(alpha: 0.1) : Colors.red.withValues(alpha: 0.1),
                                   borderRadius: BorderRadius.circular(6),
                                 ),
                                 child: Text(
-                                  'Stock: $stock',
+                                  isW ? 'Stock: $stock | ${weight.toStringAsFixed(2)}${p.weightUnit}' : 'Stock: $stock',
                                   style: TextStyle(
                                     fontSize: 11,
                                     fontWeight: FontWeight.bold,
-                                    color: stock > 0 ? BoutiqueColors.accent : Colors.red,
+                                    color: hasStock ? BoutiqueColors.accent : Colors.red,
                                   ),
                                 ),
                               ),
@@ -1942,6 +1998,56 @@ class _BillSummaryPanelState extends State<_BillSummaryPanel> {
                       keyboardType: const TextInputType.numberWithOptions(decimal: true),
                       style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: BoutiqueColors.accent),
                       decoration: BoutiqueInputDecoration.field(hintText: 'Empty = Full Pay'),
+                      onChanged: (val) async {
+                        setState(() {}); // trigger rebuild to update due amount live
+                        final entered = double.tryParse(val) ?? 0;
+                        if (entered > total) {
+                          final confirm = await showDialog<bool>(
+                            context: context,
+                            builder: (ctx) => AlertDialog(
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                              titlePadding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
+                              contentPadding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
+                              title: Row(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.all(8),
+                                    decoration: BoxDecoration(color: Colors.orange.shade100, shape: BoxShape.circle),
+                                    child: const Icon(Icons.warning_amber_rounded, color: Colors.deepOrange),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  const Text('Excess Amount', style: TextStyle(fontFamily: 'serif', fontSize: 20, color: Colors.deepOrange, fontWeight: FontWeight.bold)),
+                                ],
+                              ),
+                              content: Text(
+                                'The received amount (₹${entered.toStringAsFixed(2)}) exceeds the total payable (₹${total.toStringAsFixed(2)}).\n\nPlease verify the amount entered before saving.',
+                                style: const TextStyle(fontSize: 14, height: 1.4),
+                              ),
+                              actions: [
+                                TextButton(
+                                  onPressed: () => Navigator.pop(ctx, false),
+                                  child: const Text('Review & Fix', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.deepOrange)),
+                                ),
+                                ElevatedButton(
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.deepOrange,
+                                    foregroundColor: Colors.white,
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                    elevation: 0,
+                                  ),
+                                  onPressed: () => Navigator.pop(ctx, true),
+                                  child: const Text('Proceed Anyway'),
+                                ),
+                              ],
+                            ),
+                          );
+                          if (confirm != true) {
+                            // Optionally clear the field or let them fix it manually
+                            // widget.amountReceivedCtrl.clear();
+                            // setState((){});
+                          }
+                        }
+                      },
                     ),
                   ),
                 ],
@@ -2090,7 +2196,52 @@ class _BillSummaryPanelState extends State<_BillSummaryPanel> {
                             controller: _splitPayments[idx]['amountCtrl'],
                             keyboardType: const TextInputType.numberWithOptions(decimal: true),
                             style: const TextStyle(fontSize: 13),
-                            onChanged: (_) => setState(() {}),
+                            onChanged: (val) async {
+                              setState(() {});
+                              final entered = double.tryParse(val) ?? 0;
+                              final allAllocated = _splitPayments.fold<double>(0, (s, p) => s + (double.tryParse(p['amountCtrl'].text) ?? 0));
+                              if (allAllocated > total) {
+                                final confirm = await showDialog<bool>(
+                                  context: context,
+                                  builder: (ctx) => AlertDialog(
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                                    titlePadding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
+                                    contentPadding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
+                                    title: Row(
+                                      children: [
+                                        Container(
+                                          padding: const EdgeInsets.all(8),
+                                          decoration: BoxDecoration(color: Colors.orange.shade100, shape: BoxShape.circle),
+                                          child: const Icon(Icons.warning_amber_rounded, color: Colors.deepOrange),
+                                        ),
+                                        const SizedBox(width: 12),
+                                        const Text('Excess Amount', style: TextStyle(fontFamily: 'serif', fontSize: 20, color: Colors.deepOrange, fontWeight: FontWeight.bold)),
+                                      ],
+                                    ),
+                                    content: Text(
+                                      'The total split amount (₹${allAllocated.toStringAsFixed(2)}) exceeds the total payable (₹${total.toStringAsFixed(2)}).\n\nPlease verify the amount entered.',
+                                      style: const TextStyle(fontSize: 14, height: 1.4),
+                                    ),
+                                    actions: [
+                                      TextButton(
+                                        onPressed: () => Navigator.pop(ctx, false),
+                                        child: const Text('Review & Fix', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.deepOrange)),
+                                      ),
+                                      ElevatedButton(
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: Colors.deepOrange,
+                                          foregroundColor: Colors.white,
+                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                          elevation: 0,
+                                        ),
+                                        onPressed: () => Navigator.pop(ctx, true),
+                                        child: const Text('Proceed Anyway'),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              }
+                            },
                             decoration: BoutiqueInputDecoration.field(hintText: 'Amount'),
                           ),
                         ),

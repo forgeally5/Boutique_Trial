@@ -879,7 +879,9 @@ class _InventoryViewState extends State<InventoryView> {
           const SizedBox(height: 24),
           _buildDetailRow('Category', p.category),
           _buildDetailRow('Material', matStr),
-          _buildDetailRow('Stock Quantity', '${p.quantity} ${p.unit}'),
+          if (p.pricingType == 'Weight-Based' && p.grossWeight > 0)
+            _buildDetailRow('Total Stock', '${p.grossWeight} ${p.weightUnit}'),
+          _buildDetailRow(p.pricingType == 'Weight-Based' ? 'Pieces' : 'Stock Quantity', '${p.quantity} ${p.unit}'),
           _buildDetailRow('MRP Price', '₹${p.mrp}'),
           _buildDetailRow('Status', p.status),
           const Spacer(),

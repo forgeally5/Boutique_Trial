@@ -196,52 +196,75 @@ class Product {
   }
 
   factory Product.fromJson(Map<String, dynamic> json) {
-    final sp = (json['sellingPrice'] as num?)?.toDouble() ?? 0.0;
-    final dv = (json['discountValue'] as num?)?.toDouble() ?? 0.0;
+    // Hostinger/MySQL APIs return ALL numeric columns as Strings (e.g. "0.000").
+    // These helpers safely parse either a String or a real num.
+    double toD(dynamic v) {
+      if (v == null) return 0.0;
+      if (v is num) return v.toDouble();
+      return double.tryParse(v.toString()) ?? 0.0;
+    }
+
+    int toI(dynamic v) {
+      if (v == null) return 0;
+      if (v is num) return v.toInt();
+      return int.tryParse(v.toString()) ?? 0;
+    }
+
+    bool toB(dynamic v) {
+      if (v == null) return false;
+      if (v is bool) return v;
+      if (v is num) return v != 0;
+      final s = v.toString().toLowerCase();
+      return s == '1' || s == 'true' || s == 'yes';
+    }
+
+    final sp = toD(json['sellingPrice']);
+    final dv = toD(json['discountValue']);
     final dt = json['discountType'] as String? ?? '%';
-    // Recalculate finalPrice on load to ensure consistency
+
     double fp;
     if (json['finalPrice'] != null) {
-      fp = (json['finalPrice'] as num).toDouble();
+      fp = toD(json['finalPrice']);
     } else {
       fp = dt == '%' ? sp - (sp * dv / 100) : sp - dv;
       if (fp < 0) fp = 0;
     }
+
     return Product(
-      tagId: json['tagId'] as String? ?? '',
-      name: json['name'] as String? ?? '',
-      category: json['category'] as String? ?? '',
-      deity: json['deity'] as String? ?? '',
-      material: json['material'] as String? ?? '',
-      size: json['size'] as String? ?? '',
-      status: json['status'] as String? ?? 'In Stock',
-      vendor: json['vendor'] as String? ?? '',
-      notes: json['notes'] as String? ?? '',
-      pricingType: json['pricingType'] as String? ?? 'Quantity-Based',
-      grossWeight: (json['grossWeight'] as num?)?.toDouble() ?? 0.0,
-      netWeight: (json['netWeight'] as num?)?.toDouble() ?? 0.0,
-      weightUnit: json['weightUnit'] as String? ?? 'g',
-      ratePerGram: (json['ratePerGram'] as num?)?.toDouble() ?? 0.0,
-      makingCharges: (json['makingCharges'] as num?)?.toDouble() ?? 0.0,
-      quantity: (json['quantity'] as num?)?.toInt() ?? 0,
-      issueQuantity: (json['issueQuantity'] as num?)?.toInt() ?? 0,
-      reservedQuantity: (json['reservedQuantity'] as num?)?.toInt() ?? 0,
-      unit: json['unit'] as String? ?? 'piece',
-      mrp: (json['mrp'] as num?)?.toDouble() ?? 0.0,
+      tagId: json['tagId']?.toString() ?? '',
+      name: json['name']?.toString() ?? '',
+      category: json['category']?.toString() ?? '',
+      deity: json['deity']?.toString() ?? '',
+      material: json['material']?.toString() ?? '',
+      size: json['size']?.toString() ?? '',
+      status: json['status']?.toString() ?? 'In Stock',
+      vendor: json['vendor']?.toString() ?? '',
+      notes: json['notes']?.toString() ?? '',
+      pricingType: json['pricingType']?.toString() ?? 'Quantity-Based',
+      grossWeight: toD(json['grossWeight']),
+      netWeight: toD(json['netWeight']),
+      weightUnit: json['weightUnit']?.toString() ?? 'g',
+      ratePerGram: toD(json['ratePerGram']),
+      makingCharges: toD(json['makingCharges']),
+      quantity: toI(json['quantity']),
+      issueQuantity: toI(json['issueQuantity']),
+      reservedQuantity: toI(json['reservedQuantity']),
+      unit: json['unit']?.toString() ?? 'piece',
+      mrp: toD(json['mrp']),
       sellingPrice: sp,
       discountValue: dv,
       discountType: dt,
       finalPrice: fp,
-      gstRate: (json['gstRate'] as num?)?.toDouble() ?? 0.0,
-      isFestivalStock: json['isFestivalStock'] as bool? ?? false,
-      isReserved: json['isReserved'] as bool? ?? false,
-      reservedFor: json['reservedFor'] as String? ?? '',
-      addedDate: json['addedDate'] != null 
-          ? (json['addedDate'] is Timestamp 
-              ? (json['addedDate'] as Timestamp).toDate() 
+      gstRate: toD(json['gstRate']),
+      isFestivalStock: toB(json['isFestivalStock']),
+      isReserved: toB(json['isReserved']),
+      reservedFor: json['reservedFor']?.toString() ?? '',
+      addedDate: json['addedDate'] != null
+          ? (json['addedDate'] is Timestamp
+              ? (json['addedDate'] as Timestamp).toDate()
               : DateTime.tryParse(json['addedDate'].toString()))
           : null,
-      imageUrl: json['imageUrl'] as String? ?? '',
+      imageUrl: json['imageUrl']?.toString() ?? '',
       rawJson: json,
     );
   }

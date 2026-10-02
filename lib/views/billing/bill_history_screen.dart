@@ -1808,11 +1808,42 @@ class _SettleBalanceDialogState extends State<_SettleBalanceDialog> {
 
       if (mounted) {
         Navigator.pop(context, true);
-        BoutiqueToast.showSuccess(
-          context,
-          newPendingBalance <= 0
-              ? 'Payment recorded! Bill is now FULLY PAID ✓'
-              : 'Payment of ₹${payNow.toStringAsFixed(2)} recorded! Remaining due: ₹${newPendingBalance.toStringAsFixed(2)}',
+        await showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            titlePadding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
+            contentPadding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
+            title: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(color: const Color(0xFFE8F5E9), shape: BoxShape.circle),
+                  child: const Icon(Icons.check_circle_rounded, color: Color(0xFF2E7D32)),
+                ),
+                const SizedBox(width: 12),
+                const Text('Payment Recorded', style: TextStyle(fontFamily: 'serif', fontSize: 20, color: Color(0xFF2E7D32), fontWeight: FontWeight.bold)),
+              ],
+            ),
+            content: Text(
+              newPendingBalance <= 0
+                  ? 'Payment has been successfully recorded!\n\nThis bill is now FULLY PAID ✓'
+                  : 'Payment of ₹${payNow.toStringAsFixed(2)} has been recorded.\n\nRemaining due amount: ₹${newPendingBalance.toStringAsFixed(2)}',
+              style: const TextStyle(fontSize: 14, height: 1.4),
+            ),
+            actions: [
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF2E7D32),
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  elevation: 0,
+                ),
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Okay'),
+              ),
+            ],
+          ),
         );
       }
     } catch (e) {
@@ -2177,8 +2208,11 @@ class _SettleBalanceDialogState extends State<_SettleBalanceDialog> {
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(color: previewPending <= 0 ? const Color(0xFFA5D6A7) : const Color(0xFFFFE082)),
                 ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                child: Wrap(
+                  alignment: WrapAlignment.spaceBetween,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 16,
+                  runSpacing: 4,
                   children: [
                     Text(
                       'Paying Now: ₹${inputVal.toStringAsFixed(2)} (Total Paid: ₹${previewReceived.toStringAsFixed(2)})',

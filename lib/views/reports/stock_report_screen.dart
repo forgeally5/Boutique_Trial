@@ -254,12 +254,18 @@ class _StockReportScreenState extends State<StockReportScreen> {
   // ── Product-wise Summary values ───────────────────────────────────────────
   double get _totalStockValue => _filtered.fold(
       0.0,
-      (s, r) =>
-          s +
-          ((r['balance'] as num?)?.toDouble() ??
-                  (r['quantity'] as num?)?.toDouble() ??
-                  0) *
-              ((r['sellingPrice'] as num?)?.toDouble() ?? 0));
+      (s, r) {
+        final pt = r['pricingType']?.toString() ?? 'Quantity-Based';
+        if (pt == 'Weight-Based') {
+          final gw = (r['grossWeight'] as num?)?.toDouble() ?? 0.0;
+          final rate = (r['ratePerGram'] as num?)?.toDouble() ?? 0.0;
+          return s + (gw * rate);
+        } else {
+          final bal = ((r['balance'] as num?)?.toDouble() ?? (r['quantity'] as num?)?.toDouble() ?? 0);
+          final sp = ((r['sellingPrice'] as num?)?.toDouble() ?? 0);
+          return s + (bal * sp);
+        }
+      });
 
   int get _totalPurchasedQty => _filtered.fold(
       0, (s, r) => s + ((r['totalReceived'] as num?)?.toInt() ?? 0));
@@ -1346,14 +1352,26 @@ class _StockReportScreenState extends State<StockReportScreen> {
   }
 
   Widget _tableRow(Map<String, dynamic> r, int i) {
+    final pricingType = r['pricingType']?.toString() ?? 'Quantity-Based';
+    final grossWeight = (r['grossWeight'] as num?)?.toDouble() ?? 0.0;
+    final ratePerGram = (r['ratePerGram'] as num?)?.toDouble() ?? 0.0;
+    final weightUnit = r['weightUnit']?.toString() ?? 'g';
+
     final totalReceived = (r['totalReceived'] as num?)?.toInt() ?? 0;
     final issueQty = (r['issueQty'] as num?)?.toInt() ?? 0;
     final soldQty = (r['soldQty'] as num?)?.toInt() ?? 0;
     final balance = (r['balance'] as num?)?.toInt() ??
         (r['quantity'] as num?)?.toInt() ??
         0;
+    
     final sp = (r['sellingPrice'] as num?)?.toDouble() ?? 0;
-    final stockVal = balance * sp;
+    final displaySp = pricingType == 'Weight-Based' ? ratePerGram : sp;
+    final stockVal = pricingType == 'Weight-Based' ? (grossWeight * ratePerGram) : (balance * sp);
+    
+    String balanceStr = balance.toString();
+    if (pricingType == 'Weight-Based' && grossWeight > 0) {
+      balanceStr = '${grossWeight.toStringAsFixed(2)}$weightUnit ($balance pc)';
+    }
     final status = r['status']?.toString() ?? 'In Stock';
     final isAlt = i.isOdd;
 
@@ -1434,7 +1452,7 @@ class _StockReportScreenState extends State<StockReportScreen> {
               flex: 2,
               child: Padding(
                   padding: const EdgeInsets.only(right: 6),
-                  child: _cell('$balance',
+                  child: _cell(balanceStr,
                       color: balance == 0
                           ? BoutiqueColors.destructive
                           : balance < 5
@@ -1456,7 +1474,7 @@ class _StockReportScreenState extends State<StockReportScreen> {
               flex: 2,
               child: Padding(
                   padding: const EdgeInsets.only(right: 6),
-                  child: _cell('₹${_numFmt.format(sp)}'))),
+                  child: _cell('₹${_numFmt.format(displaySp)}'))),
           Expanded(
               flex: 2,
               child: Padding(

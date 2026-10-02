@@ -801,6 +801,11 @@ class ExcelGenerator {
 
     for (int i = 0; i < rows.length; i++) {
       final r = rows[i];
+      final pricingType = r['pricingType']?.toString() ?? 'Quantity-Based';
+      final grossWeight = (r['grossWeight'] as num?)?.toDouble() ?? 0.0;
+      final ratePerGram = (r['ratePerGram'] as num?)?.toDouble() ?? 0.0;
+      final weightUnit = r['weightUnit']?.toString() ?? 'g';
+
       final balance =
           (r['balance'] as num?)?.toInt() ??
           (r['quantity'] as num?)?.toInt() ??
@@ -809,10 +814,17 @@ class ExcelGenerator {
       final issue = (r['issueQty'] as num?)?.toInt() ?? 0;
       final sold = (r['soldQty'] as num?)?.toInt() ?? 0;
       final sp = (r['sellingPrice'] as num?)?.toDouble() ?? 0.0;
-      final stockVal = balance * sp;
+      
+      final displaySp = pricingType == 'Weight-Based' ? ratePerGram : sp;
+      final stockVal = pricingType == 'Weight-Based' ? (grossWeight * ratePerGram) : (balance * sp);
 
       totalBalance += balance;
       totalStockVal += stockVal;
+      
+      String balanceStr = balance.toString();
+      if (pricingType == 'Weight-Based' && grossWeight > 0) {
+        balanceStr = '${grossWeight.toStringAsFixed(2)}$weightUnit ($balance pc)';
+      }
 
       sheet.getRangeByIndex(rowIndex, 1).setNumber((i + 1).toDouble());
       sheet.getRangeByIndex(rowIndex, 1).cellStyle.hAlign = HAlignType.center;
@@ -842,7 +854,7 @@ class ExcelGenerator {
       sheet.getRangeByIndex(rowIndex, 7).setNumber(sold.toDouble());
       sheet.getRangeByIndex(rowIndex, 7).cellStyle.hAlign = HAlignType.center;
 
-      sheet.getRangeByIndex(rowIndex, 8).setNumber(balance.toDouble());
+      sheet.getRangeByIndex(rowIndex, 8).setText(balanceStr);
       sheet.getRangeByIndex(rowIndex, 8).cellStyle.hAlign = HAlignType.center;
       sheet.getRangeByIndex(rowIndex, 8).cellStyle.bold = true;
 
@@ -851,7 +863,7 @@ class ExcelGenerator {
           .setText(r['unit']?.toString() ?? 'Piece');
       sheet.getRangeByIndex(rowIndex, 9).cellStyle.hAlign = HAlignType.center;
 
-      sheet.getRangeByIndex(rowIndex, 10).setNumber(sp);
+      sheet.getRangeByIndex(rowIndex, 10).setNumber(displaySp);
       sheet.getRangeByIndex(rowIndex, 10).cellStyle.hAlign = HAlignType.right;
 
       sheet.getRangeByIndex(rowIndex, 11).setNumber(stockVal);

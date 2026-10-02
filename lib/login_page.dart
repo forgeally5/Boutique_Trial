@@ -116,6 +116,7 @@ class _LoginPageState extends State<LoginPage> {
                         _buildTextField(
                           controller: _emailController,
                           hintText: 'you@boutique.com',
+                          onSubmitted: _handleLogin,
                         ),
                         const SizedBox(height: 22),
                         Row(
@@ -156,6 +157,7 @@ class _LoginPageState extends State<LoginPage> {
                           controller: _passwordController,
                           hintText: '••••••••',
                           obscureText: true,
+                          onSubmitted: _handleLogin,
                         ),
                         const SizedBox(height: 24),
                         Material(
@@ -259,12 +261,14 @@ class _LoginPageState extends State<LoginPage> {
     required TextEditingController controller,
     required String hintText,
     bool obscureText = false,
+    VoidCallback? onSubmitted,
   }) {
     return Container(
       color: Colors.white,
       child: TextField(
         controller: controller,
         obscureText: obscureText,
+        onSubmitted: (_) => onSubmitted?.call(),
         style: GoogleFonts.workSans(
           fontSize: 15,
           color: inkColor,

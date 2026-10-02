@@ -507,13 +507,22 @@ Future<Uint8List> generateStockReportPdf({
   int lowStockCount = 0;
 
   for (final r in rows) {
+    final pricingType = r['pricingType']?.toString() ?? 'Quantity-Based';
+    final grossWeight = (r['grossWeight'] as num?)?.toDouble() ?? 0.0;
+    final ratePerGram = (r['ratePerGram'] as num?)?.toDouble() ?? 0.0;
+    
     final balance = (r['balance'] as num?)?.toInt() ?? (r['quantity'] as num?)?.toInt() ?? 0;
     final totalRec = (r['totalReceived'] as num?)?.toInt() ?? 0;
     final issue = (r['issueQty'] as num?)?.toInt() ?? 0;
     final sold = (r['soldQty'] as num?)?.toInt() ?? 0;
     final price = (r['sellingPrice'] as num?)?.toDouble() ?? 0;
 
-    totalStockValue += balance * price;
+    if (pricingType == 'Weight-Based') {
+      totalStockValue += grossWeight * ratePerGram;
+    } else {
+      totalStockValue += balance * price;
+    }
+    
     totalPurchased += totalRec;
     totalIssued += issue;
     totalSold += sold;
@@ -559,11 +568,24 @@ Future<Uint8List> generateStockReportPdf({
               _buildTableHeader(columns, flexes, boldFont),
               ...List.generate(rows.length, (i) {
                 final r = rows[i];
+                final pricingType = r['pricingType']?.toString() ?? 'Quantity-Based';
+                final grossWeight = (r['grossWeight'] as num?)?.toDouble() ?? 0.0;
+                final ratePerGram = (r['ratePerGram'] as num?)?.toDouble() ?? 0.0;
+                final weightUnit = r['weightUnit']?.toString() ?? 'g';
+                
                 final balance = (r['balance'] as num?)?.toInt() ?? (r['quantity'] as num?)?.toInt() ?? 0;
                 final totalRec = (r['totalReceived'] as num?)?.toInt() ?? 0;
                 final issue = (r['issueQty'] as num?)?.toInt() ?? 0;
                 final sold = (r['soldQty'] as num?)?.toInt() ?? 0;
                 final sp = (r['sellingPrice'] as num?)?.toDouble() ?? 0;
+                
+                final displaySp = pricingType == 'Weight-Based' ? ratePerGram : sp;
+                final stockVal = pricingType == 'Weight-Based' ? (grossWeight * ratePerGram) : (balance * sp);
+                
+                String balanceStr = balance.toString();
+                if (pricingType == 'Weight-Based' && grossWeight > 0) {
+                  balanceStr = '${grossWeight.toStringAsFixed(2)}$weightUnit ($balance pc)';
+                }
 
                 return _buildTableRow([
                   '${i + 1}',
@@ -573,10 +595,10 @@ Future<Uint8List> generateStockReportPdf({
                   '$totalRec',
                   '$issue',
                   '$sold',
-                  '$balance',
+                  balanceStr,
                   r['unit']?.toString() ?? '—',
-                  'Rs. ${_numFmt.format(sp)}',
-                  'Rs. ${_numFmt.format(balance * sp)}',
+                  'Rs. ${_numFmt.format(displaySp)}',
+                  'Rs. ${_numFmt.format(stockVal)}',
                   r['status']?.toString() ?? '—',
                 ], flexes, regularFont, i.isOdd);
               }),
