@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import '../../services/api_service.dart';
 import 'package:intl/intl.dart';
 import 'package:printing/printing.dart';
 import 'package:provider/provider.dart';
@@ -130,24 +130,24 @@ class _IndividualSalesTabState extends State<_IndividualSalesTab> {
   Future<void> _load() async {
     setState(() => _loading = true);
     try {
-      final snap = await FirebaseFirestore.instance
-          .collection('bills')
-          .where('billType', isEqualTo: 'Sale')
-          .get();
+      final allBills = await ApiService().getBills();
+      final bills = allBills.where((b) => b['billType'] == 'Sale').toList();
 
-      final fromDt =
-          DateTime(_dateFrom.year, _dateFrom.month, _dateFrom.day);
-      final toDt =
-          DateTime(_dateTo.year, _dateTo.month, _dateTo.day, 23, 59, 59);
+      final fromDt = DateTime(_dateFrom.year, _dateFrom.month, _dateFrom.day);
+      final toDt = DateTime(_dateTo.year, _dateTo.month, _dateTo.day, 23, 59, 59);
 
       final rows = <Map<String, dynamic>>[];
       final catSet = <String>{};
 
-      for (final doc in snap.docs) {
-        final data = doc.data();
-        final ts = data['billDate'] as Timestamp?;
-        if (ts == null) continue;
-        final dt = ts.toDate();
+      for (final data in bills) {
+        final rawDate = data['billDate'];
+        DateTime? dt;
+        if (rawDate is String) {
+          dt = DateTime.tryParse(rawDate);
+        } else if (rawDate != null) {
+          dt = DateTime.tryParse(rawDate.toString());
+        }
+        if (dt == null) continue;
         if (dt.isBefore(fromDt.subtract(const Duration(seconds: 1))) ||
             dt.isAfter(toDt.add(const Duration(seconds: 1)))) {
           continue;
@@ -173,8 +173,7 @@ class _IndividualSalesTabState extends State<_IndividualSalesTab> {
             'date': _fmt.format(dt),
             'customerName': data['customerName'] ?? 'Walk-in',
             'tagId': item['tagId'] ?? '—',
-            'productName':
-                '${item['tagId'] ?? ''} ${item['name'] ?? ''}'.trim(),
+            'productName': '${item['tagId'] ?? ''} ${item['name'] ?? ''}'.trim(),
             'category': cat,
             'qty': item['qty'] ?? 1,
             'price': (item['price'] as num?)?.toDouble() ?? 0.0,
@@ -182,14 +181,14 @@ class _IndividualSalesTabState extends State<_IndividualSalesTab> {
             'lineAmount': (item['lineAmount'] as num?)?.toDouble() ?? 0.0,
             'paymentMode': paymentStr,
             'paymentMap': paymentMap,
-            '_ts': ts,
+            '_dt': dt,
           });
         }
       }
 
       rows.sort((a, b) {
-        final ta = a['_ts'] as Timestamp?;
-        final tb = b['_ts'] as Timestamp?;
+        final ta = a['_dt'] as DateTime?;
+        final tb = b['_dt'] as DateTime?;
         if (ta == null || tb == null) return 0;
         return tb.compareTo(ta);
       });
@@ -649,22 +648,22 @@ class _TotalSalesTabState extends State<_TotalSalesTab> {
   Future<void> _load() async {
     setState(() => _loading = true);
     try {
-      final snap = await FirebaseFirestore.instance
-          .collection('bills')
-          .where('billType', isEqualTo: 'Sale')
-          .get();
+      final allBills = await ApiService().getBills();
+      final bills = allBills.where((b) => b['billType'] == 'Sale').toList();
 
-      final fromDt =
-          DateTime(_dateFrom.year, _dateFrom.month, _dateFrom.day);
-      final toDt =
-          DateTime(_dateTo.year, _dateTo.month, _dateTo.day, 23, 59, 59);
+      final fromDt = DateTime(_dateFrom.year, _dateFrom.month, _dateFrom.day);
+      final toDt = DateTime(_dateTo.year, _dateTo.month, _dateTo.day, 23, 59, 59);
 
       final rows = <Map<String, dynamic>>[];
-      for (final doc in snap.docs) {
-        final data = doc.data();
-        final ts = data['billDate'] as Timestamp?;
-        if (ts == null) continue;
-        final dt = ts.toDate();
+      for (final data in bills) {
+        final rawDate = data['billDate'];
+        DateTime? dt;
+        if (rawDate is String) {
+          dt = DateTime.tryParse(rawDate);
+        } else if (rawDate != null) {
+          dt = DateTime.tryParse(rawDate.toString());
+        }
+        if (dt == null) continue;
         if (dt.isBefore(fromDt.subtract(const Duration(seconds: 1))) ||
             dt.isAfter(toDt.add(const Duration(seconds: 1)))) {
           continue;
@@ -694,13 +693,13 @@ class _TotalSalesTabState extends State<_TotalSalesTab> {
           'paymentMode': paymentStr,
           'paymentMap': paymentMap,
           'itemCount': (data['items'] as List?)?.length ?? 0,
-          '_ts': ts,
+          '_dt': dt,
         });
       }
 
       rows.sort((a, b) {
-        final ta = a['_ts'] as Timestamp?;
-        final tb = b['_ts'] as Timestamp?;
+        final ta = a['_dt'] as DateTime?;
+        final tb = b['_dt'] as DateTime?;
         if (ta == null || tb == null) return 0;
         return tb.compareTo(ta);
       });
@@ -1232,10 +1231,8 @@ class _ProductWiseSalesTabState extends State<_ProductWiseSalesTab> {
   Future<void> _load() async {
     setState(() => _loading = true);
     try {
-      final snap = await FirebaseFirestore.instance
-          .collection('bills')
-          .where('billType', isEqualTo: 'Sale')
-          .get();
+      final allBills = await ApiService().getBills();
+      final bills = allBills.where((b) => b['billType'] == 'Sale').toList();
 
       final fromDt =
           DateTime(_dateFrom.year, _dateFrom.month, _dateFrom.day);
@@ -1245,11 +1242,15 @@ class _ProductWiseSalesTabState extends State<_ProductWiseSalesTab> {
       final rows = <Map<String, dynamic>>[];
       final catSet = <String>{};
 
-      for (final doc in snap.docs) {
-        final data = doc.data();
-        final ts = data['billDate'] as Timestamp?;
-        if (ts == null) continue;
-        final dt = ts.toDate();
+      for (final data in bills) {
+        final rawDate = data['billDate'];
+        DateTime? dt;
+        if (rawDate is String) {
+          dt = DateTime.tryParse(rawDate);
+        } else if (rawDate != null) {
+          dt = DateTime.tryParse(rawDate.toString());
+        }
+        if (dt == null) continue;
         if (dt.isBefore(fromDt.subtract(const Duration(seconds: 1))) ||
             dt.isAfter(toDt.add(const Duration(seconds: 1)))) {
           continue;

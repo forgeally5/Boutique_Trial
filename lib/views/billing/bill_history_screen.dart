@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'package:printing/printing.dart';
 import '../../auth/models/app_user_model.dart';
@@ -10,6 +9,12 @@ import '../../utils/boutique_theme.dart';
 import '../../utils/boutique_pdf_generator.dart';
 import '../../widgets/searchable_dropdown.dart';
 import '../../services/api_service.dart';
+
+DateTime _parseBillDate(dynamic raw) {
+  if (raw == null) return DateTime.now();
+  if (raw is DateTime) return raw;
+  return DateTime.tryParse(raw.toString()) ?? DateTime.now();
+}
 
 class BillHistoryScreen extends StatefulWidget {
   final AdminState? state;
@@ -73,54 +78,28 @@ class _BillHistoryScreenState extends State<BillHistoryScreen> {
   Future<void> _loadBills() async {
     setState(() => _loading = true);
     try {
-      final snap = await FirebaseFirestore.instance
-          .collection('bills')
-          .where('billType', whereIn: ['Sale', 'Advance Payment'])
-          .get();
-
+      final hostingerBills = await ApiService().getBills();
       final fromDt = DateTime(_dateFrom.year, _dateFrom.month, _dateFrom.day);
       final toDt = DateTime(_dateTo.year, _dateTo.month, _dateTo.day, 23, 59, 59);
 
       final list = <Map<String, dynamic>>[];
-      for (final doc in snap.docs) {
-        final data = doc.data();
-        data['_docId'] = doc.id;
-        final ts = data['billDate'] as Timestamp?;
-        if (ts != null) {
-          final dt = ts.toDate();
-          if (dt.isAfter(fromDt.subtract(const Duration(seconds: 1))) &&
-              dt.isBefore(toDt.add(const Duration(seconds: 1)))) {
-            list.add(data);
-          }
+      for (final hb in hostingerBills) {
+        final bType = hb['billType']?.toString() ?? 'Sale';
+        if (bType != 'Sale' && bType != 'Advance Payment') continue;
+
+        final dt = _parseBillDate(hb['billDate'] ?? hb['voucherDate'] ?? hb['createdAt']);
+        if (dt.isAfter(fromDt.subtract(const Duration(seconds: 1))) &&
+            dt.isBefore(toDt.add(const Duration(seconds: 1)))) {
+          final copy = Map<String, dynamic>.from(hb);
+          copy['_docId'] = hb['doc_id'] ?? hb['docId'] ?? hb['id'] ?? '';
+          copy['billNo'] = hb['bill_no'] ?? hb['billNo'] ?? hb['voucherNo'] ?? '';
+          list.add(copy);
         }
       }
 
-      // Also merge bills from Hostinger MySQL
-      try {
-        final hostingerBills = await ApiService().getBills();
-        for (final hb in hostingerBills) {
-          final docId = hb['doc_id'] ?? hb['docId'] ?? '';
-          final bNo = hb['bill_no'] ?? hb['billNo'] ?? '';
-          hb['_docId'] = docId;
-          hb['billNo'] = bNo;
-          final bDate = hb['bill_date'] ?? hb['billDate'];
-          if (bDate is String) {
-            final parsed = DateTime.tryParse(bDate);
-            if (parsed != null) {
-              hb['billDate'] = Timestamp.fromDate(parsed);
-            }
-          }
-          if (!list.any((ex) => (ex['_docId'] != null && ex['_docId'] == docId) || (ex['billNo'] != null && ex['billNo'] == bNo))) {
-            list.add(hb);
-          }
-        }
-      } catch (e) {
-        debugPrint('Hostinger getBills error: $e');
-      }
       list.sort((a, b) {
-        final ta = a['billDate'] as Timestamp?;
-        final tb = b['billDate'] as Timestamp?;
-        if (ta == null || tb == null) return 0;
+        final ta = _parseBillDate(a['billDate'] ?? a['voucherDate']);
+        final tb = _parseBillDate(b['billDate'] ?? b['voucherDate']);
         return tb.compareTo(ta);
       });
 
@@ -320,7 +299,7 @@ class _BillHistoryScreenState extends State<BillHistoryScreen> {
     );
     if (ok != true || !mounted) return;
     try {
-      await FirebaseFirestore.instance.collection('bills').doc(bill['_docId']).delete();
+      await ApiService().deleteBill((bill['_docId'] ?? bill['id'] ?? bill['docId']).toString());
       _loadBills();
       if (mounted) BoutiqueToast.showSuccess(context, 'Bill deleted successfully');
     } catch (e) {
@@ -699,7 +678,7 @@ class _BillHistoryScreenState extends State<BillHistoryScreen> {
       subtitle: Padding(
         padding: const EdgeInsets.only(top: 3),
         child: Text(
-          'Date: ${_fmt.format((b['billDate'] as Timestamp).toDate())} • Mode: ${_formatPaymentBreakdown(b)}${hasDue ? ' • Paid: ₹${amountReceived.toStringAsFixed(0)}' : ''}',
+          'Date: ${_fmt.format(_parseBillDate(b['billDate'] ?? b['voucherDate']))} • Mode: ${_formatPaymentBreakdown(b)}${hasDue ? ' • Paid: ₹${amountReceived.toStringAsFixed(0)}' : ''}',
           style: const TextStyle(fontSize: 11, color: BoutiqueColors.textSecondary),
         ),
       ),
@@ -908,8 +887,8 @@ class _BillDetailDialogState extends State<_BillDetailDialog> {
   Widget build(BuildContext context) {
     final bill = widget.bill;
     final fmt = DateFormat('dd/MM/yyyy');
-    final billDate = bill['billDate'] ?? bill['date'];
-    final dateStr = billDate is Timestamp ? fmt.format(billDate.toDate()) : '—';
+    final billDate = bill['billDate'] ?? bill['voucherDate'] ?? bill['date'];
+    final dateStr = fmt.format(_parseBillDate(billDate));
     final items = (bill['items'] as List?) ?? [];
     final total = (bill['totalPayable'] as num?)?.toDouble() ?? 0.0;
     final subtotal = (bill['subtotal'] as num?)?.toDouble() ?? 0.0;
@@ -1435,9 +1414,7 @@ class _BillDetailDialogState extends State<_BillDetailDialog> {
                               final idx = entry.key;
                               final rec = entry.value;
                               final pDate = rec['date'];
-                              final pDateStr = pDate is Timestamp
-                                  ? fmt.format(pDate.toDate())
-                                  : '—';
+                              final pDateStr = fmt.format(_parseBillDate(pDate));
                               final pAmt =
                                   (rec['amount'] as num?)?.toDouble() ?? 0.0;
                               final pMode = rec['mode'] ?? 'Cash';
@@ -1710,7 +1687,7 @@ class _SettleBalanceDialogState extends State<_SettleBalanceDialog> {
         ((widget.bill['paymentHistory'] as List?) ?? []).map((e) => Map<String, dynamic>.from(e as Map)),
       );
 
-      final payTs = Timestamp.fromDate(_paymentDate);
+      final payDateStr = _paymentDate.toIso8601String();
       final refBillNo = widget.bill['billNo']?.toString() ?? 'SB';
       final nextDrIndex = historyList.length + 1;
       final receiptNo = 'DR-${nextDrIndex.toString().padLeft(3, '0')}';
@@ -1726,7 +1703,7 @@ class _SettleBalanceDialogState extends State<_SettleBalanceDialog> {
             existingPayments.add({
               'mode': m,
               'amount': amt,
-              'date': payTs,
+              'date': payDateStr,
               'receiptNo': receiptNo,
             });
             splitBreakdown.add({'mode': m, 'amount': amt});
@@ -1742,21 +1719,21 @@ class _SettleBalanceDialogState extends State<_SettleBalanceDialog> {
           'breakdown': splitBreakdown,
           'previousDue': currPending,
           'remainingDue': newPendingBalance,
-          'date': payTs,
+          'date': payDateStr,
           'note': _notesCtrl.text.trim().isNotEmpty
               ? _notesCtrl.text.trim()
               : (newPendingBalance <= 0
                   ? 'Final Settlement'
                   : 'Installment Payment'),
           'notes': _notesCtrl.text.trim(),
-          'recordedAt': Timestamp.now(),
+          'recordedAt': DateTime.now().toIso8601String(),
           'type': 'Split Due Settlement',
         });
       } else {
         existingPayments.add({
           'mode': _paymentMode,
           'amount': payNow,
-          'date': payTs,
+          'date': payDateStr,
           'receiptNo': receiptNo,
         });
         historyList.add({
@@ -1769,21 +1746,21 @@ class _SettleBalanceDialogState extends State<_SettleBalanceDialog> {
           ],
           'previousDue': currPending,
           'remainingDue': newPendingBalance,
-          'date': payTs,
+          'date': payDateStr,
           'note': _notesCtrl.text.trim().isNotEmpty
               ? _notesCtrl.text.trim()
               : (newPendingBalance <= 0
                   ? 'Final Settlement'
                   : 'Installment Payment'),
           'notes': _notesCtrl.text.trim(),
-          'recordedAt': Timestamp.now(),
+          'recordedAt': DateTime.now().toIso8601String(),
           'type': _modeTab == 0 ? 'Balance Settlement' : 'Amount Adjustment',
         });
       }
 
       final updatedMode = existingPayments.length > 1 ? 'Split Payment' : _paymentMode;
 
-      await FirebaseFirestore.instance.collection('bills').doc(docId).update({
+      await ApiService().updateBill(docId.toString(), {
         'amountReceived': newAmountReceived,
         'pendingBalance': newPendingBalance,
         'paymentMode': updatedMode,
@@ -1791,7 +1768,7 @@ class _SettleBalanceDialogState extends State<_SettleBalanceDialog> {
         'paymentHistory': historyList,
         'isFullyPaid': newPendingBalance <= 0,
         'paymentStatus': newPendingBalance <= 0 ? 'Paid' : 'Partial',
-        'lastPaymentDate': payTs,
+        'lastPaymentDate': payDateStr,
         'lastPaymentMode': (_modeTab == 0 && _isSplit) ? 'Split Payment' : _paymentMode,
       });
 
@@ -1802,7 +1779,7 @@ class _SettleBalanceDialogState extends State<_SettleBalanceDialog> {
       widget.bill['paymentHistory'] = historyList;
       widget.bill['isFullyPaid'] = newPendingBalance <= 0;
       widget.bill['paymentStatus'] = newPendingBalance <= 0 ? 'Paid' : 'Partial';
-      widget.bill['lastPaymentDate'] = payTs;
+      widget.bill['lastPaymentDate'] = payDateStr;
 
       widget.onPaymentUpdated();
 
@@ -2268,3 +2245,4 @@ class _SettleBalanceDialogState extends State<_SettleBalanceDialog> {
     );
   }
 }
+

@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import '../../services/api_service.dart';
 import 'package:intl/intl.dart';
 import 'package:printing/printing.dart';
 import 'package:provider/provider.dart';
@@ -73,63 +73,82 @@ class _IssueReportScreenState extends State<IssueReportScreen> {
 
       final rows = <Map<String, dynamic>>[];
 
-      // ── 1. Customer Returns (from bills collection) ──────────────────────
-      final billSnap = await FirebaseFirestore.instance
-          .collection('bills')
-          .where('billType', isEqualTo: 'Return')
-          .get();
+      // ── 1. Customer Returns (from bills via API) ─────────────────────
+      final allBills = await ApiService().getBills();
+      final billDocs = allBills.where((b) => b['billType'] == 'Return').toList();
 
-      for (final doc in billSnap.docs) {
-        final data = Map<String, dynamic>.from(doc.data());
-        final ts = data['billDate'] as Timestamp?;
-        if (ts != null) {
-          final dt = ts.toDate();
-          if (dt.isAfter(fromDt.subtract(const Duration(seconds: 1))) &&
-              dt.isBefore(toDt.add(const Duration(seconds: 1)))) {
-            final items = (data['items'] as List?) ?? [{}];
-            for (final item in items) {
-              rows.add({
-                '_type': 'Customer Return',
-                '_dt': dt,
-                'date': _fmt.format(dt),
-                'productName':
-                    '${item['tagId'] ?? ''} ${item['name'] ?? ''}'.trim(),
-                'counterpart': data['customerName'] ?? 'Walk-in',
-                'mobile': data['customerMobile'] ?? '',
-                'qty': item['qty'] ?? 1,
-                'issueReason': data['returnReason'] ?? '—',
-                'refundAmount': (item['lineAmount'] as num?)?.toDouble() ??
-                    (data['totalPayable'] as num?)?.toDouble() ??
-                    0.0,
-                'status': data['returnStatus'] ?? 'Processed',
-                'refundMode': data['paymentMode'] ?? '—',
-                'billNo': data['billNo'] ?? '—',
-                'originalBillNo': data['originalBillNo'] ?? '—',
-                // vendor-only fields – blank for customer returns
-                'id': '',
-                'tagId': item['tagId'] ?? '',
-                'actionTaken': '',
-              });
+      for (final data in billDocs) {
+        final rawDate = data['billDate'] ?? data['voucherDate'] ?? data['createdAt'];
+        DateTime? dt;
+        if (rawDate is DateTime) {
+          dt = rawDate;
+        } else if (rawDate is String) {
+          dt = DateTime.tryParse(rawDate);
+        } else if (rawDate != null) {
+          dt = DateTime.tryParse(rawDate.toString());
+        }
+        if (dt != null &&
+            dt.isAfter(fromDt.subtract(const Duration(seconds: 1))) &&
+            dt.isBefore(toDt.add(const Duration(seconds: 1)))) {
+          final items = (data['items'] as List?) ?? [{}];
+          for (final item in items) {
+            final itemMap = (item is Map) ? Map<String, dynamic>.from(item) : <String, dynamic>{};
+            final rawReason = (data['returnReason'] ??
+                    data['reason'] ??
+                    itemMap['returnReason'] ??
+                    itemMap['reason'] ??
+                    '')
+                .toString()
+                .trim();
+            final condition = itemMap['condition']?.toString().trim() ?? '';
+            final narration = data['narration']?.toString().trim() ?? '';
+            String issueReason = rawReason;
+            if (issueReason.isEmpty || issueReason == '—' || issueReason == '-') {
+              if (condition.isNotEmpty && condition != '—' && condition != '-') {
+                issueReason = condition == 'Good' ? 'Customer Return (Good)' : condition;
+              } else if (narration.isNotEmpty) {
+                issueReason = narration;
+              } else {
+                issueReason = 'Customer Return';
+              }
             }
+
+            rows.add({
+              '_type': 'Customer Return',
+              '_dt': dt,
+              'date': _fmt.format(dt),
+              'productName':
+                  '${itemMap['tagId'] ?? itemMap['tag_id'] ?? ''} ${itemMap['name'] ?? itemMap['productName'] ?? ''}'.trim(),
+              'counterpart': data['customerName'] ?? data['acName'] ?? 'Walk-in',
+              'mobile': data['customerMobile'] ?? data['phone'] ?? '',
+              'qty': itemMap['qty'] ?? itemMap['quantity'] ?? 1,
+              'issueReason': issueReason,
+              'refundAmount': (itemMap['lineAmount'] as num?)?.toDouble() ??
+                  (itemMap['amount'] as num?)?.toDouble() ??
+                  (data['totalPayable'] as num?)?.toDouble() ??
+                  0.0,
+              'status': data['returnStatus'] ?? 'Processed',
+              'refundMode': data['paymentMode'] ?? '—',
+              'billNo': data['billNo'] ?? data['voucherNo'] ?? '—',
+              'originalBillNo': data['originalBillNo'] ?? '—',
+              'id': '',
+              'tagId': itemMap['tagId'] ?? itemMap['tag_id'] ?? '',
+              'actionTaken': '',
+            });
           }
         }
       }
 
-      // ── 2. Vendor / Purchase Issues ───────────────────────────────────────
-      final vendorSnap = await FirebaseFirestore.instance
-          .collection('vendor_issues')
-          .get();
+      // ── 2. Vendor / Purchase Issues ────────────────────────────────────
+      final vendorDocs = await ApiService().getVendorIssues();
 
-      for (final doc in vendorSnap.docs) {
-        final data = Map<String, dynamic>.from(doc.data());
-        data['id'] = doc.id;
-
+      for (final data in vendorDocs) {
         DateTime? dt;
         final dr = data['dateReported'];
-        if (dr is Timestamp) {
-          dt = dr.toDate();
-        } else if (dr is String) {
+        if (dr is String) {
           dt = DateTime.tryParse(dr);
+        } else if (dr != null) {
+          dt = DateTime.tryParse(dr.toString());
         }
 
         if (dt != null &&
@@ -139,8 +158,16 @@ class _IssueReportScreenState extends State<IssueReportScreen> {
             '_type': 'Vendor Issue',
             '_dt': dt,
             'date': _fmt.format(dt),
-            'productName': '${data['tagId']} - ${data['productName']}',
             'counterpart': data['vendor']?.toString() ?? '—',
+            'productName': [
+              data['tagId']?.toString() ?? '',
+              data['productName']?.toString() ?? ''
+            ].where((s) => s.isNotEmpty).join(' - ').trim().isEmpty
+                ? (data['docId']?.toString() ?? 'Vendor Return')
+                : [
+                    data['tagId']?.toString() ?? '',
+                    data['productName']?.toString() ?? ''
+                  ].where((s) => s.isNotEmpty).join(' - '),
             'mobile': '',
             'qty': (data['quantity'] as num?)?.toInt() ?? 0,
             'issueReason': data['issueType']?.toString() ?? '—',

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'auth/viewmodels/auth_viewmodel.dart';
+import 'services/api_service.dart';
 import 'utils/boutique_theme.dart';
 import 'package:google_fonts/google_fonts.dart';
 
@@ -47,6 +48,178 @@ class _LoginPageState extends State<LoginPage> {
     } else if (status == AuthStatus.error) {
       BoutiqueToast.showError(context, authVM.errorMessage ?? 'Invalid credentials.');
     }
+  }
+
+  Future<void> _showForgotPasswordDialog() async {
+    final forgotEmailCtrl = TextEditingController(text: _emailController.text.trim());
+    bool isSubmitting = false;
+    String? statusMessage;
+    bool isSuccess = false;
+
+    await showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return Dialog(
+              backgroundColor: ivoryColor,
+              shape: RoundedRectangleBorder(
+                side: const BorderSide(color: inkColor, width: 1),
+                borderRadius: BorderRadius.circular(0),
+              ),
+              child: Container(
+                width: 420,
+                padding: const EdgeInsets.all(28),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'RESET PASSWORD',
+                          style: GoogleFonts.cormorantGaramond(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 1.2,
+                            color: inkColor,
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close, size: 20, color: inkColor),
+                          onPressed: () => Navigator.pop(dialogContext),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      'Enter your registered email address. We will send a secure temporary password to your inbox.',
+                      style: GoogleFonts.workSans(
+                        fontSize: 13,
+                        color: inkSoftColor,
+                        height: 1.4,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    Container(
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        border: Border.all(color: lineColor),
+                      ),
+                      child: TextField(
+                        controller: forgotEmailCtrl,
+                        keyboardType: TextInputType.emailAddress,
+                        style: GoogleFonts.workSans(fontSize: 14, color: inkColor),
+                        decoration: InputDecoration(
+                          hintText: 'admin@ritumita.com',
+                          hintStyle: GoogleFonts.workSans(color: placeholderColor, fontSize: 13),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                          border: InputBorder.none,
+                          prefixIcon: const Icon(Icons.email_outlined, size: 18, color: inkSoftColor),
+                        ),
+                      ),
+                    ),
+                    if (statusMessage != null) ...[
+                      const SizedBox(height: 14),
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: isSuccess ? const Color(0xFFE8F5E9) : const Color(0xFFFFEBEE),
+                          border: Border.all(
+                            color: isSuccess ? const Color(0xFF4CAF50) : const Color(0xFFE57373),
+                          ),
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Icon(
+                              isSuccess ? Icons.check_circle_outline : Icons.error_outline,
+                              size: 18,
+                              color: isSuccess ? const Color(0xFF2E7D32) : const Color(0xFFC62828),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                statusMessage!,
+                                style: GoogleFonts.workSans(
+                                  fontSize: 12,
+                                  color: isSuccess ? const Color(0xFF1B5E20) : const Color(0xFFB71C1C),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 24),
+                    Material(
+                      color: inkColor,
+                      child: InkWell(
+                        onTap: isSubmitting
+                            ? null
+                            : () async {
+                                final email = forgotEmailCtrl.text.trim();
+                                if (email.isEmpty || !email.contains('@')) {
+                                  setDialogState(() {
+                                    statusMessage = 'Please enter a valid email address.';
+                                    isSuccess = false;
+                                  });
+                                  return;
+                                }
+
+                                setDialogState(() {
+                                  isSubmitting = true;
+                                  statusMessage = null;
+                                });
+
+                                try {
+                                  final msg = await ApiService().forgotPassword(email);
+                                  setDialogState(() {
+                                    isSubmitting = false;
+                                    isSuccess = true;
+                                    statusMessage = msg;
+                                  });
+                                } catch (e) {
+                                  setDialogState(() {
+                                    isSubmitting = false;
+                                    isSuccess = false;
+                                    statusMessage = e.toString().replaceAll('Exception: ', '');
+                                  });
+                                }
+                              },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(vertical: 13),
+                          alignment: Alignment.center,
+                          child: isSubmitting
+                              ? const SizedBox(
+                                  height: 18,
+                                  width: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: ivoryColor,
+                                  ),
+                                )
+                              : Text(
+                                  'SEND TEMPORARY PASSWORD',
+                                  style: GoogleFonts.workSans(
+                                    fontSize: 12.5,
+                                    letterSpacing: 1.0,
+                                    fontWeight: FontWeight.w600,
+                                    color: ivoryColor,
+                                  ),
+                                ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
   }
 
   @override
@@ -133,10 +306,7 @@ class _LoginPageState extends State<LoginPage> {
                               ),
                             ),
                             GestureDetector(
-                              onTap: () {
-                                BoutiqueToast.showSuccess(
-                                    context, 'Please contact administrator to reset password.');
-                              },
+                              onTap: _showForgotPasswordDialog,
                               child: Container(
                                 decoration: const BoxDecoration(
                                   border: Border(bottom: BorderSide(color: lineColor)),

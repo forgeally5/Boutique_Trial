@@ -1,5 +1,3 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
-
 class VendorIssue {
   final String id;
   final String tagId;
@@ -73,11 +71,11 @@ class VendorIssue {
 
   factory VendorIssue.fromJson(Map<String, dynamic> json, {String? id}) {
     DateTime parsedDate;
-    final dynamic dr = json['dateReported'];
-    if (dr is Timestamp) {
-      parsedDate = dr.toDate();
-    } else if (dr is String) {
-      parsedDate = DateTime.tryParse(dr) ?? DateTime.now();
+    final dynamic dr = json['dateReported'] ?? json['issue_date'];
+    if (dr is DateTime) {
+      parsedDate = dr;
+    } else if (dr != null) {
+      parsedDate = DateTime.tryParse(dr.toString()) ?? DateTime.now();
     } else {
       parsedDate = DateTime.now();
     }

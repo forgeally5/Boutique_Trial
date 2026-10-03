@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../models/product.dart';
@@ -27,17 +26,48 @@ class ApiService {
   // ─── AUTH ────────────────────────────────────────────────────────────
   Future<Map<String, dynamic>> login(String email, String password) async {
     final url = Uri.parse('$baseUrl/auth.php?action=login');
+    try {
+      final res = await http.post(
+        url,
+        headers: _headers,
+        body: jsonEncode({'email': email, 'password': password}),
+      ).timeout(const Duration(seconds: 15));
+
+      debugPrint('[ApiService] Login response (${res.statusCode}): ${res.body}');
+
+      Map<String, dynamic> data;
+      try {
+        data = jsonDecode(res.body);
+      } catch (_) {
+        throw Exception('Server returned invalid response. Please try again.');
+      }
+
+      if (res.statusCode == 200 && data['success'] == true) {
+        _authToken = data['data']?['token']?.toString();
+        return Map<String, dynamic>.from(data['data'] as Map? ?? {});
+      }
+      throw Exception(data['message']?.toString() ?? 'Login failed (${res.statusCode})');
+    } on Exception catch (e) {
+      if (e.toString().contains('TimeoutException')) {
+        throw Exception('Connection timed out. Please check your internet connection.');
+      }
+      rethrow;
+    }
+  }
+
+  Future<String> forgotPassword(String email) async {
+    final url = Uri.parse('$baseUrl/auth.php?action=forgot_password');
     final res = await http.post(
       url,
       headers: _headers,
-      body: jsonEncode({'email': email, 'password': password}),
-    );
+      body: jsonEncode({'email': email.trim()}),
+    ).timeout(const Duration(seconds: 15));
+
     final data = jsonDecode(res.body);
     if (res.statusCode == 200 && data['success'] == true) {
-      _authToken = data['data']['token'];
-      return data['data'];
+      return data['message']?.toString() ?? 'If this email is registered, instructions have been sent.';
     }
-    throw Exception(data['message'] ?? 'Login failed');
+    throw Exception(data['message']?.toString() ?? 'Password reset request failed (${res.statusCode})');
   }
 
   Future<List<dynamic>> getAllUsers() async {
@@ -57,6 +87,19 @@ class ApiService {
   }
 
   // ─── PRODUCTS ────────────────────────────────────────────────────────
+  static double _toDouble(dynamic v) {
+    if (v == null) return 0.0;
+    if (v is num) return v.toDouble();
+    return double.tryParse(v.toString()) ?? 0.0;
+  }
+
+  static int _toInt(dynamic v) {
+    if (v == null) return 0;
+    if (v is int) return v;
+    if (v is num) return v.toInt();
+    return int.tryParse(v.toString()) ?? 0;
+  }
+
   Future<List<Product>> getProducts({
     String? category,
     String? status,
@@ -68,42 +111,48 @@ class ApiService {
     if (search != null && search.isNotEmpty) qParams['search'] = search;
 
     final uri = Uri.parse('$baseUrl/products.php').replace(queryParameters: qParams);
-    final res = await http.get(uri, headers: _headers);
+    final res = await http.get(uri, headers: _headers).timeout(const Duration(seconds: 20));
     final json = jsonDecode(res.body);
+
+    debugPrint('[ApiService] getProducts response: success=${json['success']}, count=${(json['data'] as List?)?.length ?? 0}');
 
     if (json['success'] == true && json['data'] is List) {
       return (json['data'] as List).map((map) {
         return Product(
-          tagId: map['tag_id'] ?? '',
-          name: map['name'] ?? '',
-          category: map['category'] ?? '',
-          deity: map['deity'] ?? '',
-          material: map['material'] ?? '',
-          size: map['size'] ?? '',
-          status: map['status'] ?? 'In Stock',
-          vendor: map['vendor'] ?? '',
-          notes: map['notes'] ?? '',
-          pricingType: map['pricing_type'] ?? 'Quantity-Based',
-          grossWeight: (map['gross_weight'] as num?)?.toDouble() ?? 0.0,
-          netWeight: (map['net_weight'] as num?)?.toDouble() ?? 0.0,
-          weightUnit: map['weight_unit'] ?? 'g',
-          ratePerGram: (map['rate_per_gram'] as num?)?.toDouble() ?? 0.0,
-          makingCharges: (map['making_charges'] as num?)?.toDouble() ?? 0.0,
-          quantity: (map['quantity'] as num?)?.toInt() ?? 0,
-          issueQuantity: (map['issue_quantity'] as num?)?.toInt() ?? 0,
-          reservedQuantity: (map['reserved_quantity'] as num?)?.toInt() ?? 0,
-          unit: map['unit'] ?? 'piece',
-          mrp: (map['mrp'] as num?)?.toDouble() ?? 0.0,
-          sellingPrice: (map['selling_price'] as num?)?.toDouble() ?? 0.0,
-          discountValue: (map['discount_value'] as num?)?.toDouble() ?? 0.0,
-          discountType: map['discount_type'] ?? '%',
-          finalPrice: (map['final_price'] as num?)?.toDouble() ?? 0.0,
-          gstRate: (map['gst_rate'] as num?)?.toDouble() ?? 0.0,
+          tagId: map['tag_id']?.toString() ?? '',
+          name: map['name']?.toString() ?? '',
+          category: map['category']?.toString() ?? '',
+          deity: map['deity']?.toString() ?? '',
+          material: map['material']?.toString() ?? '',
+          size: map['size']?.toString() ?? '',
+          status: map['status']?.toString() ?? 'In Stock',
+          vendor: map['vendor']?.toString() ?? '',
+          notes: map['notes']?.toString() ?? '',
+          pricingType: map['pricing_type']?.toString() ?? 'Quantity-Based',
+          grossWeight: _toDouble(map['gross_weight']),
+          netWeight: _toDouble(map['net_weight']),
+          weightUnit: map['weight_unit']?.toString() ?? 'g',
+          ratePerGram: _toDouble(map['rate_per_gram']),
+          makingCharges: _toDouble(map['making_charges']),
+          quantity: _toInt(map['quantity']),
+          issueQuantity: _toInt(map['issue_quantity']),
+          reservedQuantity: _toInt(map['reserved_quantity']),
+          unit: map['unit']?.toString() ?? 'piece',
+          mrp: _toDouble(map['mrp']),
+          sellingPrice: _toDouble(map['selling_price']),
+          discountValue: _toDouble(map['discount_value']),
+          discountType: map['discount_type']?.toString() ?? '%',
+          finalPrice: _toDouble(map['final_price']),
+          gstRate: _toDouble(map['gst_rate']),
           isFestivalStock: map['is_festival_stock'] == 1 || map['is_festival_stock'] == true,
           isReserved: map['is_reserved'] == 1 || map['is_reserved'] == true,
-          reservedFor: map['reserved_for'] ?? '',
-          imageUrl: map['image_url'] ?? '',
-          rawJson: (map['raw_json'] as Map<String, dynamic>?) ?? map,
+          reservedFor: map['reserved_for']?.toString() ?? '',
+          imageUrl: map['image_url']?.toString() ?? '',
+          rawJson: (map['raw_json'] is Map<String, dynamic>)
+              ? map['raw_json'] as Map<String, dynamic>
+              : map is Map<String, dynamic>
+                  ? map
+                  : {},
         );
       }).toList();
     }
@@ -203,6 +252,106 @@ class ApiService {
   }
 
   // ─── BILLING ─────────────────────────────────────────────────────────
+  static Map<String, dynamic> _normalizeBill(Map<String, dynamic> raw) {
+    final map = Map<String, dynamic>.from(raw);
+
+    dynamic parseJson(dynamic val) {
+      if (val is String) {
+        try {
+          return jsonDecode(val);
+        } catch (_) {
+          return val;
+        }
+      }
+      return val;
+    }
+
+    final items = parseJson(map['items']);
+    final payments = parseJson(map['payments']);
+    final paymentHistory = parseJson(map['payment_history'] ?? map['paymentHistory']);
+    final customCustomerDetails = parseJson(map['custom_customer_details'] ?? map['customCustomerDetails']);
+
+    final totalPayable = _toDouble(map['total_payable'] ?? map['totalPayable']);
+    final amountReceived = _toDouble(map['amount_received'] ?? map['amountReceived']);
+    final pendingBalance = _toDouble(map['pending_balance'] ?? map['pendingBalance']);
+    final subtotal = _toDouble(map['subtotal']);
+    final taxAmount = _toDouble(map['tax_amount'] ?? map['taxAmount']);
+    final adjustmentAmount = _toDouble(map['adjustment_amount'] ?? map['adjustmentAmount']);
+    final extraDiscountAmount = _toDouble(map['extra_discount_amount'] ?? map['extraDiscountAmount']);
+    final extraDiscountValue = _toDouble(map['extra_discount_value'] ?? map['extraDiscountValue']);
+    final gstPercent = _toDouble(map['gst_percent'] ?? map['gstPercent']);
+    final balanceReturned = _toDouble(map['balance_returned'] ?? map['balanceReturned']);
+
+    final docId = map['doc_id']?.toString() ?? map['docId']?.toString() ?? map['id']?.toString() ?? '';
+    final billNo = map['bill_no']?.toString() ?? map['billNo']?.toString() ?? map['voucherNo']?.toString() ?? '';
+    final billType = map['bill_type']?.toString() ?? map['billType']?.toString() ?? 'Sale';
+    final billDate = map['bill_date'] ?? map['billDate'] ?? map['voucherDate'] ?? map['createdAt'];
+    final customerName = map['customer_name']?.toString() ?? map['customerName']?.toString() ?? map['acName']?.toString() ?? 'Walk-in Customer';
+    final customerMobile = map['customer_mobile']?.toString() ?? map['customerMobile']?.toString() ?? map['phone']?.toString() ?? '';
+    final customerAddress = map['customer_address']?.toString() ?? map['customerAddress']?.toString() ?? '';
+    final paymentMode = map['payment_mode']?.toString() ?? map['paymentMode']?.toString() ?? 'Cash';
+    final paymentStatus = map['payment_status']?.toString() ?? map['paymentStatus']?.toString() ?? (pendingBalance <= 0 ? 'Paid' : 'Partial');
+    final isFullyPaid = map['is_fully_paid'] == 1 || map['is_fully_paid'] == true || map['isFullyPaid'] == true || pendingBalance <= 0;
+
+    final returnReason = map['return_reason']?.toString() ?? map['returnReason']?.toString() ?? map['narration']?.toString() ?? '';
+    final returnStatus = map['return_status']?.toString() ?? map['returnStatus']?.toString() ?? 'Processed';
+    final originalBillNo = map['original_bill_no']?.toString() ?? map['originalBillNo']?.toString() ?? '';
+
+    return {
+      ...map,
+      'docId': docId,
+      '_docId': docId,
+      'id': docId,
+      'billNo': billNo,
+      'voucherNo': billNo,
+      'billType': billType,
+      'billDate': billDate,
+      'voucherDate': billDate,
+      'customerName': customerName,
+      'acName': customerName,
+      'customerMobile': customerMobile,
+      'phone': customerMobile,
+      'customerAddress': customerAddress,
+      'totalPayable': totalPayable,
+      'amountReceived': amountReceived,
+      'pendingBalance': pendingBalance,
+      'subtotal': subtotal,
+      'taxAmount': taxAmount,
+      'adjustmentAmount': adjustmentAmount,
+      'extraDiscountAmount': extraDiscountAmount,
+      'extraDiscountValue': extraDiscountValue,
+      'extraDiscountType': map['extra_discount_type'] ?? map['extraDiscountType'] ?? '%',
+      'gstPercent': gstPercent,
+      'balanceReturned': balanceReturned,
+      'paymentMode': paymentMode,
+      'paymentStatus': paymentStatus,
+      'isFullyPaid': isFullyPaid,
+      'narration': map['narration']?.toString() ?? '',
+      'returnReason': returnReason,
+      'return_reason': returnReason,
+      'returnStatus': returnStatus,
+      'return_status': returnStatus,
+      'originalBillNo': originalBillNo,
+      'original_bill_no': originalBillNo,
+      'items': items is List ? items : [],
+      'payments': payments is List ? payments : [],
+      'paymentHistory': paymentHistory is List ? paymentHistory : [],
+      'customCustomerDetails': customCustomerDetails is Map ? customCustomerDetails : {},
+      'total_payable': totalPayable,
+      'amount_received': amountReceived,
+      'pending_balance': pendingBalance,
+      'bill_no': billNo,
+      'bill_type': billType,
+      'bill_date': billDate,
+      'customer_name': customerName,
+      'customer_mobile': customerMobile,
+      'payment_mode': paymentMode,
+      'payment_status': paymentStatus,
+      'is_fully_paid': isFullyPaid,
+    };
+  }
+
+  // ─── BILLING ─────────────────────────────────────────────────────────
   Future<List<Map<String, dynamic>>> getBills({
     String? customer,
     bool pendingOnly = false,
@@ -219,7 +368,9 @@ class ApiService {
     final res = await http.get(uri, headers: _headers);
     final json = jsonDecode(res.body);
     if (json['success'] == true && json['data'] is List) {
-      return List<Map<String, dynamic>>.from(json['data']);
+      return (json['data'] as List)
+          .map((e) => _normalizeBill(Map<String, dynamic>.from(e as Map)))
+          .toList();
     }
     return [];
   }
@@ -240,6 +391,15 @@ class ApiService {
     final data = jsonDecode(res.body);
     if (res.statusCode != 200) {
       throw Exception(data['message'] ?? 'Failed to update bill');
+    }
+  }
+
+  Future<void> deleteBill(String docId) async {
+    final uri = Uri.parse('$baseUrl/bills.php?action=delete&docId=${Uri.encodeComponent(docId)}');
+    final res = await http.post(uri, headers: _headers);
+    final data = jsonDecode(res.body);
+    if (res.statusCode != 200) {
+      throw Exception(data['message'] ?? 'Failed to delete bill');
     }
   }
 
@@ -290,13 +450,107 @@ class ApiService {
     await http.post(uri, headers: _headers, body: jsonEncode({'key': key, 'value': value}));
   }
 
-  // ─── VENDOR ISSUES ───────────────────────────────────────────────────
   Future<void> createVendorIssue(Map<String, dynamic> data) async {
     final uri = Uri.parse('$baseUrl/vendor_issues.php?action=create');
     final res = await http.post(uri, headers: _headers, body: jsonEncode(data));
     final json = jsonDecode(res.body);
     if (res.statusCode != 200 && res.statusCode != 201) {
       throw Exception(json['message'] ?? 'Failed to save vendor issue');
+    }
+  }
+
+  static Map<String, dynamic> _normalizeVendorIssue(Map<String, dynamic> raw) {
+    final map = Map<String, dynamic>.from(raw);
+
+    dynamic parseJson(dynamic val) {
+      if (val is String) {
+        try {
+          return jsonDecode(val);
+        } catch (_) {
+          return val;
+        }
+      }
+      return val;
+    }
+
+    final items = parseJson(map['items']);
+    final docId = map['doc_id']?.toString() ?? map['id']?.toString() ?? '';
+    final vendor = map['vendor_name']?.toString() ?? map['vendor']?.toString() ?? '—';
+    final status = map['status']?.toString() ?? map['actionTaken']?.toString() ?? map['action_taken']?.toString() ?? 'Pending';
+    final issueDate = map['issue_date'] ?? map['dateReported'] ?? map['date_reported'] ?? map['created_at'];
+    double refundAmount = _toDouble(map['total_amount'] ?? map['refundAmount'] ?? map['refund_amount']);
+    if (refundAmount <= 0.0 && items is List && items.isNotEmpty) {
+      refundAmount = items.fold(
+          0.0,
+          (sum, it) =>
+              sum +
+              _toDouble(it is Map
+                  ? (it['amount'] ?? it['lineAmount'] ?? it['refundAmount'])
+                  : 0));
+    }
+    final tagId = map['tagId']?.toString() ??
+        map['tag_id']?.toString() ??
+        (items is List && items.isNotEmpty
+            ? items.first['tagId']?.toString() ?? ''
+            : '');
+    final productName = map['productName']?.toString() ??
+        map['product_name']?.toString() ??
+        (items is List && items.isNotEmpty
+            ? (items.first['productName'] ?? items.first['name'])?.toString() ??
+                ''
+            : '');
+    final qty = _toInt(map['quantity'] ??
+        (items is List && items.isNotEmpty
+            ? items.first['qty'] ?? items.first['quantity'] ?? 1
+            : 1));
+    final issueType = map['issueType']?.toString() ??
+        map['issue_type']?.toString() ??
+        (items is List && items.isNotEmpty
+            ? items.first['issueType']?.toString() ?? 'Damaged'
+            : 'Damaged');
+
+    return {
+      ...map,
+      'id': docId,
+      'docId': docId,
+      '_docId': docId,
+      'vendor': vendor,
+      'vendorName': vendor,
+      'status': status,
+      'actionTaken': status,
+      'dateReported': issueDate,
+      'issueDate': issueDate,
+      'refundAmount': refundAmount,
+      'tagId': tagId,
+      'productName': productName,
+      'quantity': qty,
+      'qty': qty,
+      'issueType': issueType,
+      'notes': map['notes']?.toString() ?? '',
+      'items': items is List ? items : [],
+    };
+  }
+
+
+  Future<List<Map<String, dynamic>>> getVendorIssues() async {
+    final uri = Uri.parse('$baseUrl/vendor_issues.php');
+    final res = await http.get(uri, headers: _headers).timeout(const Duration(seconds: 15));
+    final json = jsonDecode(res.body);
+    if (json['success'] == true && json['data'] is List) {
+      return (json['data'] as List)
+          .map((e) => _normalizeVendorIssue(Map<String, dynamic>.from(e as Map)))
+          .toList();
+    }
+    return [];
+  }
+
+  Future<void> updateVendorIssue(String id, Map<String, dynamic> data) async {
+    final uri = Uri.parse('$baseUrl/vendor_issues.php?action=update');
+    final payload = Map<String, dynamic>.from(data)..['id'] = id;
+    final res = await http.post(uri, headers: _headers, body: jsonEncode(payload));
+    final json = jsonDecode(res.body);
+    if (res.statusCode != 200) {
+      throw Exception(json['message'] ?? 'Failed to update vendor issue');
     }
   }
 

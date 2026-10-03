@@ -1,28 +1,31 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'dart:async';
 import '../models/live_rate.dart';
+import 'api_service.dart';
 
-/// Service that streams live metal/stone rates from Firestore.
-/// Rates are stored in a single document: settings/rates
+/// Service that fetches live metal/stone rates from Hostinger MySQL API.
 class LiveRateService {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final ApiService _apiService = ApiService();
 
-  Stream<LiveRatesData> getLiveRatesStream() {
-    return _firestore
-        .collection('settings')
-        .doc('rates')
-        .snapshots()
-        .map((snap) {
-      if (!snap.exists || snap.data() == null) {
-        return const LiveRatesData();
+  Stream<LiveRatesData> getLiveRatesStream() async* {
+    while (true) {
+      try {
+        final setting = await _apiService.getSetting('rates');
+        if (setting is Map<String, dynamic>) {
+          yield LiveRatesData.fromMap(setting);
+        } else {
+          yield const LiveRatesData();
+        }
+      } catch (_) {
+        yield const LiveRatesData();
       }
-      return LiveRatesData.fromMap(snap.data()!);
-    });
+      await Future.delayed(const Duration(seconds: 5));
+    }
   }
 
   Future<void> updateRates(Map<String, dynamic> updates) async {
-    await _firestore
-        .collection('settings')
-        .doc('rates')
-        .set(updates, SetOptions(merge: true));
+    final current = await _apiService.getSetting('rates');
+    final Map<String, dynamic> merged = current is Map<String, dynamic> ? Map<String, dynamic>.from(current) : {};
+    merged.addAll(updates);
+    await _apiService.saveSetting('rates', merged);
   }
 }

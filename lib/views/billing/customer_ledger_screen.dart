@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'package:printing/printing.dart';
 import '../../state/admin_state.dart';
@@ -36,6 +35,19 @@ class _CustomerLedgerScreenState extends State<CustomerLedgerScreen> {
     final rawPending = (b['pendingBalance'] as num?)?.toDouble();
     final computed = rawPending ?? (total - received);
     return computed > 0.01 ? computed : 0.0;
+  }
+
+  /// Safely parse a date field that may be a String, DateTime, or legacy map.
+  static DateTime _parseBillDate(dynamic v) {
+    if (v == null) return DateTime.now();
+    if (v is DateTime) return v;
+    if (v is String) return DateTime.tryParse(v) ?? DateTime.now();
+    // Handle map-style {seconds:..., nanoseconds:...} from old Firestore data
+    if (v is Map) {
+      final s = v['seconds'] ?? v['_seconds'];
+      if (s != null) return DateTime.fromMillisecondsSinceEpoch((s as num).toInt() * 1000);
+    }
+    return DateTime.now();
   }
 
   /// Generates the next sequential Due Receipt number (DR-001, DR-002, ...)
@@ -95,7 +107,7 @@ class _CustomerLedgerScreenState extends State<CustomerLedgerScreen> {
       receipts.add({
         'receiptNo': receiptNo,
         'refBillNo': h['refBillNo']?.toString() ?? billNo,
-        'date': h['date'] ?? b['billDate'] ?? Timestamp.now(),
+        'date': h['date'] ?? b['billDate'] ?? DateTime.now().toIso8601String(),
         'amount': amt,
         'mode': h['mode']?.toString() ?? 'Cash',
         'breakdown': breakdown,
@@ -112,38 +124,15 @@ class _CustomerLedgerScreenState extends State<CustomerLedgerScreen> {
   Future<void> _fetchPendingBills() async {
     setState(() => _isLoading = true);
     try {
-      final snap = await FirebaseFirestore.instance
-          .collection('bills')
-          .orderBy('billDate', descending: true)
-          .get();
-
-      final allDocs = snap.docs.map((d) {
-        final data = d.data();
-        data['docId'] = d.id;
-        return data;
-      }).toList();
-
-      // Merge Hostinger bills
-      try {
-        final hostingerBills = await ApiService().getBills();
-        for (final hb in hostingerBills) {
-          final docId = hb['doc_id'] ?? hb['docId'] ?? '';
-          final bNo = hb['bill_no'] ?? hb['billNo'] ?? '';
-          hb['docId'] = docId;
-          hb['billNo'] = bNo;
-          final bDate = hb['bill_date'] ?? hb['billDate'];
-          if (bDate is String) {
-            final parsed = DateTime.tryParse(bDate);
-            if (parsed != null) {
-              hb['billDate'] = Timestamp.fromDate(parsed);
-            }
-          }
-          if (!allDocs.any((ex) => (ex['docId'] != null && ex['docId'] == docId) || (ex['billNo'] != null && ex['billNo'] == bNo))) {
-            allDocs.add(hb);
-          }
-        }
-      } catch (e) {
-        debugPrint('Hostinger ledger getBills error: $e');
+      final hostingerBills = await ApiService().getBills();
+      final allDocs = <Map<String, dynamic>>[];
+      for (final hb in hostingerBills) {
+        final docId = hb['doc_id'] ?? hb['docId'] ?? hb['id'] ?? '';
+        final bNo = hb['bill_no'] ?? hb['billNo'] ?? hb['voucherNo'] ?? '';
+        final copy = Map<String, dynamic>.from(hb);
+        copy['docId'] = docId;
+        copy['billNo'] = bNo;
+        allDocs.add(copy);
       }
 
       _allBills = allDocs;
@@ -154,8 +143,8 @@ class _CustomerLedgerScreenState extends State<CustomerLedgerScreen> {
 
       // Sort oldest first for FIFO bulk payment application
       bills.sort((a, b) {
-        final t1 = (a['billDate'] as Timestamp?)?.toDate() ?? DateTime.now();
-        final t2 = (b['billDate'] as Timestamp?)?.toDate() ?? DateTime.now();
+        final t1 = _parseBillDate(a['billDate']);
+        final t2 = _parseBillDate(b['billDate']);
         return t1.compareTo(t2);
       });
 
@@ -603,8 +592,7 @@ class _CustomerLedgerScreenState extends State<CustomerLedgerScreen> {
               separatorBuilder: (_, _) => const SizedBox(height: 16),
               itemBuilder: (ctx, i) {
                 final b = bills[i];
-                final date =
-                    (b['billDate'] as Timestamp?)?.toDate() ?? DateTime.now();
+                final date = _parseBillDate(b['billDate']);
                 final pending = _getPendingAmount(b);
                 final total = (b['totalPayable'] as num?)?.toDouble() ?? 0.0;
                 final received =
@@ -882,7 +870,7 @@ class _CustomerLedgerScreenState extends State<CustomerLedgerScreen> {
                                         (r['amount'] as num?)?.toDouble() ??
                                         0.0;
                                     final rDate =
-                                        (r['date'] as Timestamp?)?.toDate();
+                                        _parseBillDate(r['date']);
                                     final rBreakdown =
                                         List<Map<String, dynamic>>.from(
                                           r['breakdown'] ?? [],
@@ -977,15 +965,14 @@ class _CustomerLedgerScreenState extends State<CustomerLedgerScreen> {
                                                     color: Color(0xFF15803D),
                                                   ),
                                                 ),
-                                                if (rDate != null)
-                                                  Text(
-                                                    '• ${DateFormat('dd/MM/yyyy hh:mm a').format(rDate)}',
-                                                    style: const TextStyle(
-                                                      fontSize: 11,
-                                                      color: BoutiqueColors
-                                                          .textSecondary,
-                                                    ),
+                                                Text(
+                                                  '• ${DateFormat('dd/MM/yyyy hh:mm a').format(rDate)}',
+                                                  style: const TextStyle(
+                                                    fontSize: 11,
+                                                    color: BoutiqueColors
+                                                        .textSecondary,
                                                   ),
+                                                ),
                                               ],
                                             ),
                                           ),
@@ -1210,11 +1197,15 @@ class _CustomerLedgerScreenState extends State<CustomerLedgerScreen> {
     final refBillNo =
         receipt['refBillNo']?.toString() ?? bill['billNo']?.toString() ?? '-';
     final rawDate = receipt['date'];
-    final receiptDate =
-        rawDate is Timestamp ? rawDate.toDate() : DateTime.now();
-    final rawBillDate = bill['billDate'];
-    final billDate =
-        rawBillDate is Timestamp ? rawBillDate.toDate() : DateTime.now();
+    final receiptDate = rawDate is DateTime
+        ? rawDate
+        : (rawDate is String ? DateTime.tryParse(rawDate) : null) ??
+            DateTime.now();
+    final rawBillDate = bill['billDate'] ?? bill['voucherDate'];
+    final billDate = rawBillDate is DateTime
+        ? rawBillDate
+        : (rawBillDate is String ? DateTime.tryParse(rawBillDate) : null) ??
+            DateTime.now();
 
     final customerName = bill['customerName']?.toString().trim() ?? '';
     final customerMobile = bill['customerMobile']?.toString().trim() ?? '';
@@ -2353,7 +2344,7 @@ class _CustomerLedgerScreenState extends State<CustomerLedgerScreen> {
       b['paymentHistory'] ?? [],
     );
 
-    final nowTs = Timestamp.now();
+    final nowTs = DateTime.now().toIso8601String();
     for (final entry in splitBreakdown) {
       existingPayments.add({
         'mode': entry['mode'],
@@ -2388,7 +2379,7 @@ class _CustomerLedgerScreenState extends State<CustomerLedgerScreen> {
       updatedModeLabel = existingPayments.first['mode']?.toString() ?? 'Cash';
     }
 
-    await FirebaseFirestore.instance.collection('bills').doc(docId).update({
+    await ApiService().updateBill(docId, {
       'pendingBalance': newPending,
       'amountReceived': newReceived,
       'isFullyPaid': isNowFullyPaid,
@@ -2406,8 +2397,7 @@ class _CustomerLedgerScreenState extends State<CustomerLedgerScreen> {
     double amountToApply,
     List<Map<String, dynamic>> splitBreakdown,
   ) async {
-    final batch = FirebaseFirestore.instance.batch();
-    final nowTs = Timestamp.now();
+        final nowTs = DateTime.now().toIso8601String();
     int runningDrNum = _getMaxDueReceiptNumber();
 
     final chunks = splitBreakdown
@@ -2498,8 +2488,8 @@ class _CustomerLedgerScreenState extends State<CustomerLedgerScreen> {
               existingPayments.first['mode']?.toString() ?? 'Cash';
         }
 
-        final ref = FirebaseFirestore.instance.collection('bills').doc(docId);
-        batch.update(ref, {
+        
+        await ApiService().updateBill(docId, {
           'pendingBalance': newPending,
           'amountReceived': newAmountReceived,
           'isFullyPaid': isNowFullyPaid,
@@ -2511,6 +2501,7 @@ class _CustomerLedgerScreenState extends State<CustomerLedgerScreen> {
       }
     }
 
-    await batch.commit();
+    
   }
 }
+

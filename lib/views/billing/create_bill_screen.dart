@@ -1,6 +1,4 @@
-// ignore_for_file: deprecated_member_use
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'package:printing/printing.dart';
 import '../../state/admin_state.dart';
@@ -35,7 +33,6 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
 
   final List<BillRow> _rows = [];
   int _topScanKey = 0;
-  double _topEntryQty = 1;
   TextEditingController? _topEntryTextCtrl;
   FocusNode? _topEntryFieldFocus;
 
@@ -76,14 +73,10 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
 
   Future<void> _fetchCustomerNames() async {
     try {
-      final snap = await FirebaseFirestore.instance
-          .collection('bills')
-          .orderBy('billDate', descending: true)
-          .limit(200)
-          .get();
+      final bills = await ApiService().getBills();
       final names = <String>{};
-      for (final doc in snap.docs) {
-        final name = doc.data()['customerName']?.toString().trim();
+      for (final doc in bills) {
+        final name = (doc['customerName'] ?? doc['customer_name'])?.toString().trim();
         if (name != null && name.isNotEmpty && name.toLowerCase() != 'walk-in' && name.toLowerCase() != 'walk-in customer') {
           names.add(name);
         }
@@ -143,15 +136,10 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
 
   Future<void> _fetchNextBillNo() async {
     try {
-      final snap = await FirebaseFirestore.instance
-          .collection('bills')
-          .orderBy('createdAt', descending: true)
-          .limit(1)
-          .get();
-
+      final bills = await ApiService().getBills();
       int nextNum = 1;
-      if (snap.docs.isNotEmpty) {
-        final lastNo = snap.docs.first.data()['billNo'] as String? ?? '';
+      if (bills.isNotEmpty) {
+        final lastNo = (bills.first['billNo'] ?? bills.first['bill_no'])?.toString() ?? '';
         final match = RegExp(r'\d+').firstMatch(lastNo);
         if (match != null) {
           nextNum = (int.tryParse(match.group(0)!) ?? 0) + 1;
@@ -263,6 +251,7 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
       }
 
       if (pendingBalance > 0) {
+        if (!mounted) return;
         final confirm = await showDialog<bool>(
           context: context,
           builder: (ctx) => AlertDialog(
@@ -308,7 +297,7 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
         }
       }
 
-      final nowTs = Timestamp.fromDate(_billDate);
+      final nowTs = _billDate.toIso8601String();
       final formattedPayments = isSplit
           ? [
               for (final p in splitPayments)
@@ -359,7 +348,7 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
               'mode': p['mode'],
               'date': nowTs,
               'notes': 'Initial Bill Payment',
-              'recordedAt': Timestamp.now(),
+              'recordedAt': DateTime.now().toIso8601String(),
               'type': 'Initial Payment',
             }
         ],
@@ -368,20 +357,16 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
         'isFullyPaid': pendingBalance <= 0,
         'paymentStatus': pendingBalance <= 0 ? 'Paid' : 'Partial',
         'balanceReturned': 0.0,
-        'createdAt': FieldValue.serverTimestamp(),
+        'createdAt': DateTime.now().toIso8601String(),
       };
 
-      // Fire off Firebase bill creation
-      final firebaseFuture = FirebaseFirestore.instance.collection('bills').add(billData);
-
-      // Fire off Hostinger MySQL sync
-      final hostingerFuture = () async {
+      final createBillFuture = () async {
         try {
           final hostingerBill = Map<String, dynamic>.from(billData);
           hostingerBill['billDate'] = DateTime.now().toIso8601String();
           await ApiService().createBill(hostingerBill);
         } catch (e) {
-          debugPrint('Hostinger createBill error: $e');
+          debugPrint('ApiService createBill error: $e');
         }
       }();
 
@@ -431,8 +416,7 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
 
       // Wait for all operations to finish concurrently!
       await Future.wait([
-        firebaseFuture,
-        hostingerFuture,
+        createBillFuture,
         ...stockUpdateFutures,
       ]);
 
@@ -513,7 +497,6 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
       _customerMobileCtrl.clear();
       _rows.clear();
       _topScanKey++;
-      _topEntryQty = 1;
       _extraDiscountCtrl.text = '0';
       _gstCtrl.text = '0';
       _gstType = 'No GST';
@@ -548,7 +531,7 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
       'billNo': _billNoCtrl.text.trim(),
       'billType': _billType,
       'narration': _narrationCtrl.text.trim(),
-      'billDate': Timestamp.fromDate(_billDate),
+      'billDate': _billDate.toIso8601String(),
       'customerName': _customerNameCtrl.text.trim(),
       'customerMobile': _customerMobileCtrl.text.trim(),
       'customerAddress': _customerAddressCtrl.text.trim(),
@@ -953,31 +936,6 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
     }
   }
 
-  Future<double?> _promptQuantityDialog(double current) async {
-    final ctrl = TextEditingController(text: current == current.toInt() ? current.toInt().toString() : current.toString());
-    return showDialog<double>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Enter Quantity', style: TextStyle(fontFamily: 'serif', color: BoutiqueColors.accent)),
-        content: TextField(
-          controller: ctrl,
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          decoration: const InputDecoration(border: OutlineInputBorder(), labelText: 'Quantity'),
-          autofocus: true,
-          onSubmitted: (v) => Navigator.pop(ctx, double.tryParse(v)),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: BoutiqueColors.accent),
-            onPressed: () => Navigator.pop(ctx, double.tryParse(ctrl.text)),
-            child: const Text('Set', style: TextStyle(color: Colors.white)),
-          ),
-        ],
-      ),
-    );
-  }
-
   void _openBatchScanDialog() {
     showDialog(
       context: context,
@@ -1090,6 +1048,7 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
                     context: context,
                     builder: (ctx) => const ScannerDialog(),
                   );
+                  if (!mounted) return;
                   if (scannedCode != null && scannedCode.isNotEmpty) {
                     final p = _findProductByTagOrQuery(scannedCode);
                     if (p != null) {
@@ -1098,7 +1057,8 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
                       _topEntryTextCtrl?.clear();
                       WidgetsBinding.instance.addPostFrameCallback((_) => _topEntryFieldFocus?.requestFocus());
                     } else {
-                      if (mounted) BoutiqueToast.showError(context, 'No product found with tag: $scannedCode');
+                      // ignore: use_build_context_synchronously
+                      BoutiqueToast.showError(context, 'No product found with tag: $scannedCode');
                     }
                   }
                 },
@@ -2116,10 +2076,12 @@ class _BillSummaryPanelState extends State<_BillSummaryPanel> {
                     color: Colors.transparent,
                     child: RadioListTile<bool>(
                       value: false,
+                      // ignore: deprecated_member_use
                       groupValue: _isSplitPayment,
                       title: const Text('Single', style: TextStyle(fontSize: 13)),
                       contentPadding: EdgeInsets.zero,
                       dense: true,
+                      // ignore: deprecated_member_use
                       onChanged: (v) => setState(() => _isSplitPayment = v!),
                     ),
                   ),
@@ -2129,10 +2091,12 @@ class _BillSummaryPanelState extends State<_BillSummaryPanel> {
                     color: Colors.transparent,
                     child: RadioListTile<bool>(
                       value: true,
+                      // ignore: deprecated_member_use
                       groupValue: _isSplitPayment,
                       title: const Text('Split', style: TextStyle(fontSize: 13)),
                       contentPadding: EdgeInsets.zero,
                       dense: true,
+                      // ignore: deprecated_member_use
                       onChanged: (v) => setState(() => _isSplitPayment = v!),
                     ),
                   ),
@@ -2198,10 +2162,9 @@ class _BillSummaryPanelState extends State<_BillSummaryPanel> {
                             style: const TextStyle(fontSize: 13),
                             onChanged: (val) async {
                               setState(() {});
-                              final entered = double.tryParse(val) ?? 0;
                               final allAllocated = _splitPayments.fold<double>(0, (s, p) => s + (double.tryParse(p['amountCtrl'].text) ?? 0));
-                              if (allAllocated > total) {
-                                final confirm = await showDialog<bool>(
+                              if (allAllocated > total && mounted) {
+                                await showDialog<bool>(
                                   context: context,
                                   builder: (ctx) => AlertDialog(
                                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),

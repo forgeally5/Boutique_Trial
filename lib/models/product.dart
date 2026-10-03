@@ -1,5 +1,3 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
-
 String getBaseTagId(String tagId) {
   final match = RegExp(r'^(.+?)\[\d+\]$').firstMatch(tagId.trim());
   if (match != null) {
@@ -260,8 +258,8 @@ class Product {
       isReserved: toB(json['isReserved']),
       reservedFor: json['reservedFor']?.toString() ?? '',
       addedDate: json['addedDate'] != null
-          ? (json['addedDate'] is Timestamp
-              ? (json['addedDate'] as Timestamp).toDate()
+          ? (json['addedDate'] is DateTime
+              ? json['addedDate'] as DateTime
               : DateTime.tryParse(json['addedDate'].toString()))
           : null,
       imageUrl: json['imageUrl']?.toString() ?? '',

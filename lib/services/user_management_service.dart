@@ -1,109 +1,127 @@
+import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_core/firebase_core.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:http/http.dart' as http;
 import '../auth/models/app_user_model.dart';
 import '../auth/models/system_quota_model.dart';
 import '../auth/models/override_request_model.dart';
+import 'api_service.dart';
 
 class UserManagementService {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-
-  // Collection References
-  CollectionReference get _usersRef => _firestore.collection('users');
-  DocumentReference get _quotaRef => _firestore.collection('system_config').doc('quotas');
-  CollectionReference get _overrideRequestsRef => _firestore.collection('override_requests');
+  final ApiService _apiService = ApiService();
 
   // ---------------------------------------------------------------------------
   // USERS
   // ---------------------------------------------------------------------------
 
-  Stream<List<AppUserModel>> streamUsers() {
-    return _usersRef.snapshots().map((snapshot) {
-      return snapshot.docs.map((doc) {
-        return AppUserModel.fromMap(doc.data() as Map<String, dynamic>, doc.id);
-      }).toList();
-    });
+  Stream<List<AppUserModel>> streamUsers() async* {
+    while (true) {
+      try {
+        final usersRaw = await _apiService.getAllUsers();
+        final users = usersRaw.map((u) {
+          final map = Map<String, dynamic>.from(u as Map);
+          return AppUserModel.fromMap(map, map['uid']?.toString() ?? 'user_${map['id']}');
+        }).toList();
+        yield users;
+      } catch (e) {
+        debugPrint('Error streaming users: $e');
+        yield [];
+      }
+      await Future.delayed(const Duration(seconds: 4));
+    }
   }
 
   Future<AppUserModel?> getUser(String uid) async {
-    final doc = await _usersRef.doc(uid).get();
-    if (doc.exists) {
-      return AppUserModel.fromMap(doc.data() as Map<String, dynamic>, doc.id);
+    try {
+      final usersRaw = await _apiService.getAllUsers();
+      for (final u in usersRaw) {
+        if (u is Map) {
+          final map = Map<String, dynamic>.from(u);
+          if (map['uid']?.toString() == uid) {
+            return AppUserModel.fromMap(map, uid);
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('Error getting user: $e');
     }
     return null;
   }
 
   Future<void> createUser(AppUserModel user) async {
-    AppUserModel userToSave = user;
-    try {
-      if (user.plainPassword != null && user.plainPassword!.isNotEmpty) {
-        final FirebaseApp tempApp = await Firebase.initializeApp(
-          name: 'TemporaryApp_${DateTime.now().millisecondsSinceEpoch}',
-          options: Firebase.app().options,
-        );
-        final tempAuth = FirebaseAuth.instanceFor(app: tempApp);
-        final cred = await tempAuth.createUserWithEmailAndPassword(
-          email: user.email,
-          password: user.plainPassword!,
-        );
-        
-        userToSave = AppUserModel(
-          uid: cred.user!.uid,
-          email: user.email,
-          displayName: user.displayName,
-          role: user.role,
-          isActive: user.isActive,
-          plainPassword: user.plainPassword,
-          permissions: user.permissions,
-          createdAt: user.createdAt,
-        );
-        await tempApp.delete();
-      }
-    } catch (e) {
-      debugPrint('Error creating auth user: $e');
-    }
-    
-    await _usersRef.doc(userToSave.uid).set(userToSave.toMap());
+    final payload = {
+      'uid': user.uid,
+      'name': user.displayName,
+      'email': user.email,
+      'password': user.plainPassword ?? 'Boutique@123',
+      'role': user.role,
+      'permissions': user.permissions.toMap(),
+    };
+    await _apiService.createUser(payload);
   }
 
   Future<void> updateUser(AppUserModel user) async {
-    await _usersRef.doc(user.uid).update(user.toMap());
+    final url = Uri.parse('${_apiService.baseUrl}/auth.php?action=update');
+    final payload = {
+      'uid': user.uid,
+      'name': user.displayName,
+      'role': user.role,
+      'is_active': user.isActive ? 1 : 0,
+      'permissions': user.permissions.toMap(),
+      if (user.plainPassword != null && user.plainPassword!.isNotEmpty)
+        'password': user.plainPassword,
+    };
+    await http.post(url, headers: {'Content-Type': 'application/json'}, body: jsonEncode(payload));
   }
 
   Future<void> toggleUserStatus(String uid, bool isActive) async {
-    await _usersRef.doc(uid).update({'isActive': isActive});
+    final url = Uri.parse('${_apiService.baseUrl}/auth.php?action=update');
+    final payload = {
+      'uid': uid,
+      'is_active': isActive ? 1 : 0,
+    };
+    await http.post(url, headers: {'Content-Type': 'application/json'}, body: jsonEncode(payload));
   }
 
   Future<void> deleteUser(String uid) async {
-    await _usersRef.doc(uid).delete();
+    final url = Uri.parse('${_apiService.baseUrl}/auth.php?action=delete&uid=${Uri.encodeComponent(uid)}');
+    await http.post(url);
   }
 
   // ---------------------------------------------------------------------------
   // QUOTAS
   // ---------------------------------------------------------------------------
 
-  Stream<SystemQuotaModel> streamQuotas() {
-    return _quotaRef.snapshots().map((doc) {
-      if (doc.exists) {
-        return SystemQuotaModel.fromMap(doc.data() as Map<String, dynamic>);
+  Stream<SystemQuotaModel> streamQuotas() async* {
+    while (true) {
+      try {
+        final setting = await _apiService.getSetting('quotas');
+        if (setting is Map<String, dynamic>) {
+          yield SystemQuotaModel.fromMap(setting);
+        } else {
+          yield const SystemQuotaModel(maxSalesmen: 10, currentSalesmen: 1);
+        }
+      } catch (_) {
+        yield const SystemQuotaModel(maxSalesmen: 10, currentSalesmen: 1);
       }
-      return const SystemQuotaModel(
-        maxSalesmen: 0,
-        currentSalesmen: 0,
-      );
-    });
+      await Future.delayed(const Duration(seconds: 6));
+    }
   }
 
   Future<void> updateQuotas({required int maxSalesmen}) async {
-    await _quotaRef.set({
-      'maxSalesmen': maxSalesmen,
-    }, SetOptions(merge: true));
+    final setting = await _apiService.getSetting('quotas');
+    final Map<String, dynamic> data = setting is Map<String, dynamic> ? Map<String, dynamic>.from(setting) : {};
+    data['maxSalesmen'] = maxSalesmen;
+    await _apiService.saveSetting('quotas', data);
   }
   
   Future<void> incrementActiveUsersCount(String role, int change) async {
     if (role.toLowerCase() == 'salesman') {
-      await _quotaRef.update({'currentSalesmen': FieldValue.increment(change)});
+      final setting = await _apiService.getSetting('quotas');
+      final Map<String, dynamic> data = setting is Map<String, dynamic> ? Map<String, dynamic>.from(setting) : {};
+      final curr = (data['currentSalesmen'] as num?)?.toInt() ?? 0;
+      data['currentSalesmen'] = curr + change;
+      await _apiService.saveSetting('quotas', data);
     }
   }
 
@@ -111,23 +129,40 @@ class UserManagementService {
   // OVERRIDE REQUESTS
   // ---------------------------------------------------------------------------
 
-  Stream<List<OverrideRequestModel>> streamPendingRequests() {
-    return _overrideRequestsRef
-        .where('status', isEqualTo: 'pending')
-        .orderBy('timestamp', descending: true)
-        .snapshots()
-        .map((snapshot) {
-      return snapshot.docs.map((doc) {
-        return OverrideRequestModel.fromMap(doc.data() as Map<String, dynamic>, doc.id);
-      }).toList();
-    });
+  Stream<List<OverrideRequestModel>> streamPendingRequests() async* {
+    while (true) {
+      try {
+        final setting = await _apiService.getSetting('override_requests');
+        if (setting is List) {
+          final list = setting.map((e) => OverrideRequestModel.fromMap(Map<String, dynamic>.from(e as Map), e['id'] ?? '')).where((r) => r.status == 'pending').toList();
+          yield list;
+        } else {
+          yield [];
+        }
+      } catch (_) {
+        yield [];
+      }
+      await Future.delayed(const Duration(seconds: 5));
+    }
   }
 
   Future<void> createOverrideRequest(OverrideRequestModel request) async {
-    await _overrideRequestsRef.add(request.toMap());
+    final setting = await _apiService.getSetting('override_requests');
+    final List list = setting is List ? List.from(setting) : [];
+    list.add(request.toMap());
+    await _apiService.saveSetting('override_requests', list);
   }
 
   Future<void> updateRequestStatus(String requestId, String status) async {
-    await _overrideRequestsRef.doc(requestId).update({'status': status});
+    final setting = await _apiService.getSetting('override_requests');
+    if (setting is List) {
+      final list = List.from(setting);
+      for (var item in list) {
+        if (item is Map && item['id'] == requestId) {
+          item['status'] = status;
+        }
+      }
+      await _apiService.saveSetting('override_requests', list);
+    }
   }
 }

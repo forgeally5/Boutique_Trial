@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import '../../services/api_service.dart';
 import 'package:intl/intl.dart';
 import 'package:printing/printing.dart';
 import '../../utils/boutique_theme.dart';
@@ -51,10 +51,8 @@ class _CustomerReturnTabState extends State<CustomerReturnTab> {
   Future<void> _load() async {
     setState(() => _loading = true);
     try {
-      final snap = await FirebaseFirestore.instance
-          .collection('bills')
-          .where('billType', isEqualTo: 'Return')
-          .get();
+      final allBills = await ApiService().getBills();
+      final bills = allBills.where((b) => b['billType'] == 'Return').toList();
 
       final fromDt =
           DateTime(_dateFrom.year, _dateFrom.month, _dateFrom.day);
@@ -62,46 +60,52 @@ class _CustomerReturnTabState extends State<CustomerReturnTab> {
           _dateTo.year, _dateTo.month, _dateTo.day, 23, 59, 59);
 
       final rows = <Map<String, dynamic>>[];
-      for (final doc in snap.docs) {
-        final data = Map<String, dynamic>.from(doc.data());
-        data['_docId'] = doc.id;
-        final ts = data['billDate'] as Timestamp?;
-        if (ts != null) {
-          final dt = ts.toDate();
-          if (dt.isAfter(fromDt.subtract(const Duration(seconds: 1))) &&
-              dt.isBefore(toDt.add(const Duration(seconds: 1)))) {
-            // Expand items into individual rows
-            final items = (data['items'] as List?) ?? [{}];
-            for (final item in items) {
-              rows.add({
-                'billNo': data['billNo'] ?? '—',
-                'originalBillNo': data['originalBillNo'] ?? '—',
-                'date': _fmt.format(dt),
-                'customerName': data['customerName'] ?? 'Walk-in',
-                'customerMobile': data['customerMobile'] ?? '',
-                'tagId': item['tagId'] ?? '',
-                'productName':
-                    '${item['tagId'] ?? ''} ${item['name'] ?? ''}'.trim(),
-                'category': item['category'] ?? '—',
-                'qty': item['qty'] ?? 1,
-                'refundAmount': (item['lineAmount'] as num?)?.toDouble() ??
-                    (data['totalPayable'] as num?)?.toDouble() ??
-                    0.0,
-                'reason': data['returnReason'] ?? '—',
-                'refundMode': data['paymentMode'] ?? '—',
-                'totalRefund':
-                    (data['totalPayable'] as num?)?.toDouble() ?? 0.0,
-                'status': data['returnStatus'] ?? 'Processed',
-                '_ts': ts,
-              });
-            }
+      for (final data in bills) {
+        DateTime? dt;
+        final rawDate = data['voucherDate'] ?? data['billDate'] ?? data['createdAt'];
+        if (rawDate is DateTime) {
+          dt = rawDate;
+        } else if (rawDate != null) {
+          dt = DateTime.tryParse(rawDate.toString());
+        }
+        dt ??= DateTime.now();
+
+        if (dt.isAfter(fromDt.subtract(const Duration(seconds: 1))) &&
+            dt.isBefore(toDt.add(const Duration(seconds: 1)))) {
+          // Expand items into individual rows
+          final rawItems = data['items'];
+          final items = (rawItems is List) ? rawItems : [{}];
+          for (final item in items) {
+            final itemMap = (item is Map) ? Map<String, dynamic>.from(item) : <String, dynamic>{};
+            rows.add({
+              'billNo': data['voucherNo'] ?? data['billNo'] ?? '—',
+              'originalBillNo': data['originalBillNo'] ?? '—',
+              'date': _fmt.format(dt),
+              'customerName': data['acName'] ?? data['customerName'] ?? 'Walk-in',
+              'customerMobile': data['customerMobile'] ?? data['phone'] ?? '',
+              'tagId': itemMap['tagId'] ?? itemMap['tag_id'] ?? '',
+              'productName':
+                  '${itemMap['tagId'] ?? itemMap['tag_id'] ?? ''} ${itemMap['name'] ?? itemMap['productName'] ?? ''}'.trim(),
+              'category': itemMap['category'] ?? '—',
+              'qty': itemMap['qty'] ?? itemMap['quantity'] ?? 1,
+              'refundAmount': (itemMap['lineAmount'] as num?)?.toDouble() ??
+                  (itemMap['amount'] as num?)?.toDouble() ??
+                  (data['totalPayable'] as num?)?.toDouble() ??
+                  0.0,
+              'reason': data['returnReason'] ?? data['reason'] ?? '—',
+              'refundMode': data['paymentMode'] ?? '—',
+              'totalRefund':
+                  (data['totalPayable'] as num?)?.toDouble() ?? 0.0,
+              'status': data['returnStatus'] ?? 'Processed',
+              '_dt': dt,
+            });
           }
         }
       }
 
       rows.sort((a, b) {
-        final ta = a['_ts'] as Timestamp?;
-        final tb = b['_ts'] as Timestamp?;
+        final ta = a['_dt'] as DateTime?;
+        final tb = b['_dt'] as DateTime?;
         if (ta == null || tb == null) return 0;
         return tb.compareTo(ta);
       });
@@ -502,3 +506,4 @@ class _CustomerReturnTabState extends State<CustomerReturnTab> {
     );
   }
 }
+

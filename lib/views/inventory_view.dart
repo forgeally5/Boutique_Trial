@@ -218,7 +218,25 @@ class _InventoryViewState extends State<InventoryView> {
                           ),
                           Row(
                             children: [
-                              // View Toggle (Table / Grid)
+                              // Refresh Button
+                              Tooltip(
+                                message: 'Refresh inventory from server',
+                                child: state.isLoadingProducts
+                                    ? const SizedBox(
+                                        width: 20,
+                                        height: 20,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          color: BoutiqueColors.accent,
+                                        ),
+                                      )
+                                    : IconButton(
+                                        icon: const Icon(Icons.refresh_rounded, size: 20),
+                                        color: BoutiqueColors.textSecondary,
+                                        onPressed: () => state.fetchProducts(),
+                                      ),
+                              ),
+                              const SizedBox(width: 8),
                               Container(
                                 padding: const EdgeInsets.all(4),
                                 decoration: BoxDecoration(

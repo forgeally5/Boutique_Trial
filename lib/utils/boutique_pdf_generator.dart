@@ -3,7 +3,6 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:intl/intl.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/services.dart' show rootBundle;
 
 class BoutiquePdfGenerator {
@@ -65,7 +64,9 @@ class BoutiquePdfGenerator {
 
     final billNo = bill['billNo']?.toString() ?? '';
     final rawDate = bill['billDate'];
-    final billDate = rawDate is Timestamp ? rawDate.toDate() : DateTime.now();
+    final billDate = rawDate is DateTime
+        ? rawDate
+        : (rawDate is String ? DateTime.tryParse(rawDate) : null) ?? DateTime.now();
     final customerName = bill['customerName']?.toString().trim() ?? '';
     final customerMobile = bill['customerMobile']?.toString().trim() ?? '';
     final customerAddress = bill['customerAddress']?.toString().trim() ?? '';
@@ -466,12 +467,14 @@ class BoutiquePdfGenerator {
     final refBillNo =
         receipt['refBillNo']?.toString() ?? bill['billNo']?.toString() ?? '-';
     final rawDate = receipt['date'];
-    final receiptDate =
-        rawDate is Timestamp ? rawDate.toDate() : DateTime.now();
+    final receiptDate = rawDate is DateTime
+        ? rawDate
+        : (rawDate is String ? DateTime.tryParse(rawDate) : null) ?? DateTime.now();
 
     final rawBillDate = bill['billDate'];
-    final billDate =
-        rawBillDate is Timestamp ? rawBillDate.toDate() : DateTime.now();
+    final billDate = rawBillDate is DateTime
+        ? rawBillDate
+        : (rawBillDate is String ? DateTime.tryParse(rawBillDate) : null) ?? DateTime.now();
 
     final customerName = bill['customerName']?.toString().trim() ?? '';
     final customerMobile = bill['customerMobile']?.toString().trim() ?? '';

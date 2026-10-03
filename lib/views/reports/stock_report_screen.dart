@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import '../../services/api_service.dart';
 import 'package:intl/intl.dart';
 import 'package:printing/printing.dart';
 import '../../utils/boutique_theme.dart';
@@ -69,17 +69,14 @@ class _StockReportScreenState extends State<StockReportScreen> {
   Future<void> _load() async {
     setState(() => _loading = true);
     try {
-      final snap =
-          await FirebaseFirestore.instance.collection('products').get();
+      final productList = await ApiService().getProducts();
 
-      // Fetch sales from bills collection to compute total sold per product
-      final billSnap =
-          await FirebaseFirestore.instance.collection('bills').get();
+      // Fetch sales from bills to compute total sold per product
+      final billList = await ApiService().getBills();
       final Map<String, int> soldMap = {};
-      for (final doc in billSnap.docs) {
-        final data = doc.data();
-        final billType = data['billType']?.toString() ?? 'Sale';
-        final items = (data['items'] as List?) ?? [];
+      for (final bill in billList) {
+        final billType = bill['billType']?.toString() ?? 'Sale';
+        final items = (bill['items'] as List?) ?? [];
         for (final item in items) {
           final tagId = item['tagId']?.toString().trim() ?? '';
           final q = (item['qty'] as num?)?.toInt() ?? 0;
@@ -97,9 +94,31 @@ class _StockReportScreenState extends State<StockReportScreen> {
       final catSet = <String>{};
       final Map<String, Map<String, dynamic>> catAgg = {};
 
-      for (final doc in snap.docs) {
-        final data = Map<String, dynamic>.from(doc.data());
-        data['_docId'] = doc.id;
+      for (final p in productList) {
+        final effectiveSp = p.sellingPrice > 0 ? p.sellingPrice : (p.finalPrice > 0 ? p.finalPrice : p.ratePerGram);
+        final effectiveMrp = p.mrp > 0 ? p.mrp : effectiveSp;
+        final data = <String, dynamic>{
+          'tagId': p.tagId,
+          'name': p.name,
+          'category': p.category,
+          'status': p.status,
+          'quantity': p.quantity,
+          'issueQuantity': p.issueQuantity,
+          'reservedQuantity': p.reservedQuantity,
+          'unit': p.unit.isNotEmpty ? p.unit : (p.pricingType == 'Weight-Based' ? p.weightUnit : 'Piece'),
+          'mrp': effectiveMrp,
+          'sellingPrice': effectiveSp,
+          'finalPrice': p.finalPrice,
+          'pricingType': p.pricingType,
+          'ratePerGram': p.ratePerGram,
+          'makingCharges': p.makingCharges,
+          'material': p.material,
+          'grossWeight': p.grossWeight,
+          'netWeight': p.netWeight,
+          'weightUnit': p.weightUnit,
+          'vendor': p.vendor,
+        };
+        data['_docId'] = p.tagId;
 
         final tagId = data['tagId']?.toString().trim() ?? '';
         final balance = (data['quantity'] as num?)?.toInt() ?? 0;
@@ -111,7 +130,6 @@ class _StockReportScreenState extends State<StockReportScreen> {
         final totalReceived = (data['totalQuantity'] as num?)?.toInt() ??
             (balance + issueQty + soldQty);
 
-        final sp = (data['sellingPrice'] as num?)?.toDouble() ?? 0;
         final cat = (data['category']?.toString().trim().isNotEmpty ?? false)
             ? data['category'].toString().trim()
             : 'Uncategorized';
@@ -134,7 +152,9 @@ class _StockReportScreenState extends State<StockReportScreen> {
         goodStock['issueQty'] = issueQty;
         goodStock['soldQty'] = soldQty;
         goodStock['balance'] = balance;
-        goodStock['stockValue'] = balance * sp;
+        goodStock['stockValue'] = p.pricingType == 'Weight-Based' && p.grossWeight > 0 && p.ratePerGram > 0
+            ? (p.grossWeight * p.ratePerGram)
+            : (balance * effectiveSp);
         rows.add(goodStock);
 
         // Aggregate into Category-wise Closing Stock
@@ -158,7 +178,7 @@ class _StockReportScreenState extends State<StockReportScreen> {
         entry['totalSold'] = (entry['totalSold'] as int) + soldQty;
         entry['closingQty'] = (entry['closingQty'] as int) + balance;
         entry['closingValue'] =
-            (entry['closingValue'] as double) + (balance * sp);
+            (entry['closingValue'] as double) + (goodStock['stockValue'] as double);
         (entry['products'] as List<Map<String, dynamic>>).add(goodStock);
 
         // 2. Defective Stock Row (displayed separately in product-wise if any pcs are defective/damaged)
@@ -172,7 +192,7 @@ class _StockReportScreenState extends State<StockReportScreen> {
           defectiveStock['soldQty'] = 0;
           defectiveStock['balance'] = 0;
           defectiveStock['status'] = 'Damaged/Defective';
-          defectiveStock['stockValue'] = issueQty * sp;
+          defectiveStock['stockValue'] = issueQty * effectiveSp;
           rows.add(defectiveStock);
         }
       }
@@ -195,6 +215,26 @@ class _StockReportScreenState extends State<StockReportScreen> {
             (a['category'] as String).compareTo(b['category'] as String));
 
       final cats = ['All', ...catSet.toList()..sort()];
+
+      rows.sort((a, b) {
+        final tagA = a['tagId']?.toString().trim() ?? '';
+        final tagB = b['tagId']?.toString().trim() ?? '';
+        final matchA = RegExp(r'^([a-zA-Z\-_]*)\s*(\d+)?(.*)$').firstMatch(tagA);
+        final matchB = RegExp(r'^([a-zA-Z\-_]*)\s*(\d+)?(.*)$').firstMatch(tagB);
+        if (matchA != null && matchB != null) {
+          final prefixA = matchA.group(1)?.toLowerCase() ?? '';
+          final prefixB = matchB.group(1)?.toLowerCase() ?? '';
+          if (prefixA != prefixB) {
+            return prefixA.compareTo(prefixB);
+          }
+          final numA = int.tryParse(matchA.group(2) ?? '');
+          final numB = int.tryParse(matchB.group(2) ?? '');
+          if (numA != null && numB != null && numA != numB) {
+            return numA.compareTo(numB);
+          }
+        }
+        return tagA.toLowerCase().compareTo(tagB.toLowerCase());
+      });
 
       setState(() {
         _allProducts = rows;

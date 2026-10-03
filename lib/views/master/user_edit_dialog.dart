@@ -21,6 +21,7 @@ class _UserEditDialogState extends State<UserEditDialog> {
 
   String _selectedRole = 'Salesman';
   bool _isActive = true;
+  bool _obscurePassword = true;
   late PermissionsModel _permissions;
 
   final List<String> _roles = ['Admin', 'Salesman'];
@@ -132,8 +133,29 @@ class _UserEditDialogState extends State<UserEditDialog> {
                             const SizedBox(height: 16),
                             TextFormField(
                               controller: _passwordController,
-                              decoration: const InputDecoration(labelText: 'Password', border: OutlineInputBorder()),
-                              validator: (v) => v!.isEmpty ? 'Required' : null,
+                              obscureText: _obscurePassword,
+                              decoration: InputDecoration(
+                                labelText: widget.existingUser == null
+                                    ? 'Password *'
+                                    : 'Password (leave blank to keep current)',
+                                hintText: widget.existingUser == null
+                                    ? 'Enter password'
+                                    : 'Enter new password only if changing',
+                                border: const OutlineInputBorder(),
+                                suffixIcon: IconButton(
+                                  icon: Icon(
+                                    _obscurePassword ? Icons.visibility_off : Icons.visibility,
+                                    size: 20,
+                                  ),
+                                  onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+                                ),
+                              ),
+                              validator: (v) {
+                                if (widget.existingUser == null && (v == null || v.trim().isEmpty)) {
+                                  return 'Password is required for new users';
+                                }
+                                return null;
+                              },
                             ),
                             const SizedBox(height: 16),
                             SwitchListTile(

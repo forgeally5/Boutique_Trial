@@ -1,7 +1,7 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
+import '../services/api_service.dart';
 import '../state/admin_state.dart';
 import '../utils/boutique_theme.dart';
 
@@ -31,20 +31,17 @@ class _CustomerReturnDialogState extends State<CustomerReturnDialog> {
 
     setState(() => _isLoading = true);
     try {
-      final snap = await FirebaseFirestore.instance
-          .collection('bills')
-          .where('billNo', isEqualTo: query)
-          .limit(1)
-          .get();
+      final bills = await ApiService().getBills();
+      final matching = bills.where((b) => b['billNo']?.toString().toLowerCase() == query.toLowerCase()).toList();
 
-      if (snap.docs.isEmpty) {
+      if (matching.isEmpty) {
         if (mounted) BoutiqueToast.showError(context, 'Bill not found');
         setState(() {
           _foundBill = null;
           _billItems = [];
         });
       } else {
-        final data = snap.docs.first.data();
+        final data = matching.first;
         final items = (data['items'] as List?) ?? [];
         
         setState(() {

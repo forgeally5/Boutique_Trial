@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import '../../services/api_service.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../../state/admin_state.dart';
@@ -54,22 +54,19 @@ class _VendorIssueTabState extends State<VendorIssueTab> {
   Future<void> _load() async {
     setState(() => _loading = true);
     try {
-      final snap = await FirebaseFirestore.instance.collection('vendor_issues').get();
+      final snapList = await ApiService().getVendorIssues();
 
       final fromDt = DateTime(_dateFrom.year, _dateFrom.month, _dateFrom.day);
       final toDt = DateTime(_dateTo.year, _dateTo.month, _dateTo.day, 23, 59, 59);
 
       final rows = <Map<String, dynamic>>[];
-      for (final doc in snap.docs) {
-        final data = Map<String, dynamic>.from(doc.data());
-        data['id'] = doc.id;
-        
+      for (final data in snapList) {
         DateTime? dt;
         final dr = data['dateReported'];
-        if (dr is Timestamp) {
-          dt = dr.toDate();
-        } else if (dr is String) {
+        if (dr is String) {
           dt = DateTime.tryParse(dr);
+        } else if (dr != null) {
+          dt = DateTime.tryParse(dr.toString());
         }
 
         if (dt != null) {

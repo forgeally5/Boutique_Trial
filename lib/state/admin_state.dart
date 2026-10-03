@@ -1,6 +1,5 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'dart:async';
 import '../utils/connectivity_helper.dart';
@@ -11,8 +10,7 @@ import '../models/vendor_issue.dart';
 
 import '../services/live_rate_service.dart';
 import '../services/api_service.dart';
-import 'dart:convert';
-import 'package:http/http.dart' as http;
+
 
 class AdminState extends ChangeNotifier {
   bool _isOnline = true;
@@ -73,7 +71,6 @@ class AdminState extends ChangeNotifier {
   /// already deleted but whose deletion is still propagating across both
   /// collections (race condition between two async deletes).
   final Set<String> _deletedTagIds = {};
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final LiveRateService _liveRateService = LiveRateService();
 
   LiveRatesData get currentLiveRatesData {
@@ -141,13 +138,9 @@ class AdminState extends ChangeNotifier {
 
   Future<void> fetchIssueTypes() async {
     try {
-      final doc = await _firestore.collection('settings').doc('vendor_issue_types').get();
-      if (doc.exists && doc.data()!.containsKey('types')) {
-        _issueTypes = List<String>.from(doc.data()!['types']);
-      } else {
-        await _firestore.collection('settings').doc('vendor_issue_types').set({
-          'types': _issueTypes,
-        }, SetOptions(merge: true));
+      final res = await ApiService().getSetting('vendor_issue_types');
+      if (res is List) {
+        _issueTypes = List<String>.from(res);
       }
       notifyListeners();
     } catch (e) {
@@ -157,9 +150,7 @@ class AdminState extends ChangeNotifier {
 
   Future<void> updateIssueTypes(List<String> newTypes) async {
     try {
-      await _firestore.collection('settings').doc('vendor_issue_types').set({
-        'types': newTypes,
-      }, SetOptions(merge: true));
+      await ApiService().saveSetting('vendor_issue_types', newTypes);
       _issueTypes = newTypes;
       notifyListeners();
     } catch (e) {
@@ -262,20 +253,19 @@ class AdminState extends ChangeNotifier {
 
   Future<void> fetchMetalGroups() async {
     try {
-      _firestore.collection('metal_groups_master').snapshots().listen((snapshot) {
-        _customMetalGroups = snapshot.docs.map((doc) {
-          final data = doc.data();
+      final res = await ApiService().getSetting('metal_groups_master');
+      if (res is List) {
+        _customMetalGroups = res.map((d) {
+          final data = Map<String, dynamic>.from(d as Map);
           return MetalGroup(
             metalId: data['metalId']?.toString().trim() ?? '',
             groupName: data['groupName']?.toString().trim() ?? '',
             linkedRateId: data['linkedRateId']?.toString().trim(),
           );
         }).where((m) => m.metalId.isNotEmpty).toList();
-        _debouncedNotify(); // debounced — metal group updates are background events
-      });
-    } catch (e) {
-      debugPrint('Error fetching metal groups: $e');
-    }
+        notifyListeners();
+      }
+    } catch (_) {}
   }
 
   /// Fetches the current live rate for a given metalId dynamically by looking up its linkedRateId.
@@ -303,7 +293,27 @@ class AdminState extends ChangeNotifier {
         deduped[key] = p;
       }
     }
-    return deduped.values.toList();
+    final list = deduped.values.toList();
+    list.sort((a, b) => _compareTags(a.tagId, b.tagId));
+    return list;
+  }
+
+  static int _compareTags(String a, String b) {
+    final matchA = RegExp(r'^([a-zA-Z\-_]*)\s*(\d+)?(.*)$').firstMatch(a.trim());
+    final matchB = RegExp(r'^([a-zA-Z\-_]*)\s*(\d+)?(.*)$').firstMatch(b.trim());
+    if (matchA != null && matchB != null) {
+      final prefixA = matchA.group(1)?.toLowerCase() ?? '';
+      final prefixB = matchB.group(1)?.toLowerCase() ?? '';
+      if (prefixA != prefixB) {
+        return prefixA.compareTo(prefixB);
+      }
+      final numA = int.tryParse(matchA.group(2) ?? '');
+      final numB = int.tryParse(matchB.group(2) ?? '');
+      if (numA != null && numB != null && numA != numB) {
+        return numA.compareTo(numB);
+      }
+    }
+    return a.toLowerCase().compareTo(b.toLowerCase());
   }
 
   /// Public accessor — applies tombstone filtering so views get clean list.
@@ -409,6 +419,8 @@ class AdminState extends ChangeNotifier {
     return list;
   }
 
+
+
   void addCategory(String newCat) {
     final trimmed = newCat.trim();
     if (trimmed.isNotEmpty) {
@@ -416,7 +428,7 @@ class AdminState extends ChangeNotifier {
       if (!_dynamicCategories.contains(trimmed)) {
         _dynamicCategories.add(trimmed);
         try {
-          _firestore.collection('categories').add({'name': trimmed, 'createdAt': FieldValue.serverTimestamp()});
+          ApiService().addMasterItem('categories', trimmed);
         } catch (_) {}
       }
       notifyListeners();
@@ -435,15 +447,8 @@ class AdminState extends ChangeNotifier {
       _dynamicCategories.add(newTrimmed);
     }
     notifyListeners();
-
     try {
-      final snap = await _firestore.collection('categories').where('name', isEqualTo: oldTrimmed).get();
-      for (var doc in snap.docs) {
-        await doc.reference.update({'name': newTrimmed});
-      }
-      if (snap.docs.isEmpty) {
-        await _firestore.collection('categories').add({'name': newTrimmed, 'createdAt': FieldValue.serverTimestamp()});
-      }
+      await ApiService().addMasterItem('categories', newTrimmed);
     } catch (_) {}
   }
 
@@ -452,12 +457,6 @@ class AdminState extends ChangeNotifier {
     _dynamicCategories.remove(trimmed);
     _deletedCategories.add(trimmed);
     notifyListeners();
-    try {
-      final snap = await _firestore.collection('categories').where('name', isEqualTo: trimmed).get();
-      for (var doc in snap.docs) {
-        await doc.reference.delete();
-      }
-    } catch (_) {}
   }
 
   void addMaterial(String newMat) {
@@ -467,7 +466,7 @@ class AdminState extends ChangeNotifier {
       if (!_dynamicMaterials.contains(trimmed)) {
         _dynamicMaterials.add(trimmed);
         try {
-          _firestore.collection('materials').add({'name': trimmed, 'createdAt': FieldValue.serverTimestamp()});
+          ApiService().addMasterItem('materials', trimmed);
         } catch (_) {}
       }
       notifyListeners();
@@ -486,15 +485,8 @@ class AdminState extends ChangeNotifier {
       _dynamicMaterials.add(newTrimmed);
     }
     notifyListeners();
-
     try {
-      final snap = await _firestore.collection('materials').where('name', isEqualTo: oldTrimmed).get();
-      for (var doc in snap.docs) {
-        await doc.reference.update({'name': newTrimmed});
-      }
-      if (snap.docs.isEmpty) {
-        await _firestore.collection('materials').add({'name': newTrimmed, 'createdAt': FieldValue.serverTimestamp()});
-      }
+      await ApiService().addMasterItem('materials', newTrimmed);
     } catch (_) {}
   }
 
@@ -503,12 +495,6 @@ class AdminState extends ChangeNotifier {
     _dynamicMaterials.remove(trimmed);
     _deletedMaterials.add(trimmed);
     notifyListeners();
-    try {
-      final snap = await _firestore.collection('materials').where('name', isEqualTo: trimmed).get();
-      for (var doc in snap.docs) {
-        await doc.reference.delete();
-      }
-    } catch (_) {}
   }
 
   void addVendor(String newVendor) {
@@ -518,7 +504,7 @@ class AdminState extends ChangeNotifier {
       if (!_dynamicVendors.contains(trimmed)) {
         _dynamicVendors.add(trimmed);
         try {
-          _firestore.collection('vendors').add({'name': trimmed, 'createdAt': FieldValue.serverTimestamp()});
+          ApiService().addMasterItem('vendors', trimmed);
         } catch (_) {}
       }
       notifyListeners();
@@ -537,13 +523,7 @@ class AdminState extends ChangeNotifier {
     }
     notifyListeners();
     try {
-      final snap = await _firestore.collection('vendors').where('name', isEqualTo: oldTrimmed).get();
-      for (var doc in snap.docs) {
-        await doc.reference.update({'name': newTrimmed});
-      }
-      if (snap.docs.isEmpty) {
-        await _firestore.collection('vendors').add({'name': newTrimmed, 'createdAt': FieldValue.serverTimestamp()});
-      }
+      await ApiService().addMasterItem('vendors', newTrimmed);
     } catch (_) {}
   }
 
@@ -552,12 +532,6 @@ class AdminState extends ChangeNotifier {
     _dynamicVendors.remove(trimmed);
     _deletedVendors.add(trimmed);
     notifyListeners();
-    try {
-      final snap = await _firestore.collection('vendors').where('name', isEqualTo: trimmed).get();
-      for (var doc in snap.docs) {
-        await doc.reference.delete();
-      }
-    } catch (_) {}
   }
 
   void addUnit(String newUnit) {
@@ -567,7 +541,7 @@ class AdminState extends ChangeNotifier {
       if (!_dynamicUnits.contains(trimmed)) {
         _dynamicUnits.add(trimmed);
         try {
-          _firestore.collection('units').add({'name': trimmed, 'createdAt': FieldValue.serverTimestamp()});
+          ApiService().addMasterItem('units', trimmed);
         } catch (_) {}
       }
       notifyListeners();
@@ -586,15 +560,8 @@ class AdminState extends ChangeNotifier {
       _dynamicUnits.add(newTrimmed);
     }
     notifyListeners();
-
     try {
-      final snap = await _firestore.collection('units').where('name', isEqualTo: oldTrimmed).get();
-      for (var doc in snap.docs) {
-        await doc.reference.update({'name': newTrimmed});
-      }
-      if (snap.docs.isEmpty) {
-        await _firestore.collection('units').add({'name': newTrimmed, 'createdAt': FieldValue.serverTimestamp()});
-      }
+      await ApiService().addMasterItem('units', newTrimmed);
     } catch (_) {}
   }
 
@@ -603,12 +570,6 @@ class AdminState extends ChangeNotifier {
     _dynamicUnits.remove(trimmed);
     _deletedUnits.add(trimmed);
     notifyListeners();
-    try {
-      final snap = await _firestore.collection('units').where('name', isEqualTo: trimmed).get();
-      for (var doc in snap.docs) {
-        await doc.reference.delete();
-      }
-    } catch (_) {}
   }
 
   Future<void> addWeightUnit(String unit) async {
@@ -619,7 +580,7 @@ class AdminState extends ChangeNotifier {
       if (!_dynamicWeightUnits.contains(trimmed)) {
         _dynamicWeightUnits.add(trimmed);
         try {
-          _firestore.collection('weight_units').add({'name': trimmed, 'createdAt': FieldValue.serverTimestamp()});
+          ApiService().addMasterItem('weight_units', trimmed);
         } catch (_) {}
       }
     }
@@ -639,15 +600,8 @@ class AdminState extends ChangeNotifier {
         _dynamicWeightUnits.add(newTrimmed);
       }
       notifyListeners();
-
       try {
-        final snap = await _firestore.collection('weight_units').where('name', isEqualTo: oldTrimmed).get();
-        for (var doc in snap.docs) {
-          await doc.reference.update({'name': newTrimmed});
-        }
-        if (snap.docs.isEmpty) {
-          await _firestore.collection('weight_units').add({'name': newTrimmed, 'createdAt': FieldValue.serverTimestamp()});
-        }
+        await ApiService().addMasterItem('weight_units', newTrimmed);
       } catch (_) {}
     }
   }
@@ -658,12 +612,6 @@ class AdminState extends ChangeNotifier {
     _dynamicWeightUnits.remove(trimmed);
     _deletedWeightUnits.add(trimmed);
     notifyListeners();
-    try {
-      final snap = await _firestore.collection('weight_units').where('name', isEqualTo: trimmed).get();
-      for (var doc in snap.docs) {
-        await doc.reference.delete();
-      }
-    } catch (_) {}
   }
 
   void addItemName(String newName) {
@@ -673,7 +621,7 @@ class AdminState extends ChangeNotifier {
       if (!_dynamicItemNames.contains(trimmed)) {
         _dynamicItemNames.add(trimmed);
         try {
-          _firestore.collection('item_names').add({'name': trimmed, 'createdAt': FieldValue.serverTimestamp()});
+          ApiService().addMasterItem('item_names', trimmed);
         } catch (_) {}
       }
       notifyListeners();
@@ -692,15 +640,8 @@ class AdminState extends ChangeNotifier {
       _dynamicItemNames.add(newTrimmed);
     }
     notifyListeners();
-
     try {
-      final snap = await _firestore.collection('item_names').where('name', isEqualTo: oldTrimmed).get();
-      for (var doc in snap.docs) {
-        await doc.reference.update({'name': newTrimmed});
-      }
-      if (snap.docs.isEmpty) {
-        await _firestore.collection('item_names').add({'name': newTrimmed, 'createdAt': FieldValue.serverTimestamp()});
-      }
+      await ApiService().addMasterItem('item_names', newTrimmed);
     } catch (_) {}
   }
 
@@ -709,147 +650,60 @@ class AdminState extends ChangeNotifier {
     _dynamicItemNames.remove(trimmed);
     _deletedItemNames.add(trimmed);
     notifyListeners();
-    try {
-      final snap = await _firestore.collection('item_names').where('name', isEqualTo: trimmed).get();
-      for (var doc in snap.docs) {
-        await doc.reference.delete();
-      }
-    } catch (_) {}
   }
 
   // ─── Fetch from collections (both jewelry_inventory & products) ──────────
 
+  bool _isLoadingProducts = false;
+  bool get isLoadingProducts => _isLoadingProducts;
+
   Future<void> fetchProducts() async {
+    _isLoadingProducts = true;
+    notifyListeners();
+
     try {
+      debugPrint('[AdminState] Fetching products from Hostinger...');
       final hostingerProducts = await ApiService().getProducts();
-      if (hostingerProducts.isNotEmpty) {
-        _productsList = hostingerProducts;
-        for (final p in hostingerProducts) {
-          _productsMap[p.tagId.toLowerCase()] = p;
-        }
-        _debouncedNotify();
+      debugPrint('[AdminState] Got ${hostingerProducts.length} products from API');
+      _productsList = hostingerProducts;
+      _productsMap.clear();
+      _jewelryInventoryMap.clear();
+      for (final p in hostingerProducts) {
+        _productsMap[p.tagId.toLowerCase()] = p;
       }
     } catch (e) {
-      debugPrint('Hostinger fetchProducts error: $e');
+      debugPrint('[AdminState] fetchProducts error: $e');
+    } finally {
+      _isLoadingProducts = false;
     }
 
     try {
-      // 1. Fetch categories
-      _firestore.collection('categories').snapshots().listen((snap) {
-        for (var doc in snap.docs) {
-          final name = doc.data()['name']?.toString() ?? '';
-          if (name.isNotEmpty && !_dynamicCategories.contains(name) && !_deletedCategories.contains(name)) {
-            _dynamicCategories.add(name);
-          }
+      final cats = await ApiService().getMasterItems('categories');
+      for (final c in cats) {
+        if (!_deletedCategories.contains(c) && !_dynamicCategories.contains(c)) {
+          _dynamicCategories.add(c);
         }
-        _debouncedNotify();
-      });
-
-      // Fetch materials
-      _firestore.collection('materials').snapshots().listen((snap) {
-        for (var doc in snap.docs) {
-          final name = doc.data()['name']?.toString() ?? '';
-          if (name.isNotEmpty && !_dynamicMaterials.contains(name) && !_deletedMaterials.contains(name)) {
-            _dynamicMaterials.add(name);
-          }
-        }
-        _debouncedNotify();
-      });
-
-      // Fetch units
-      _firestore.collection('units').snapshots().listen((snap) {
-        for (var doc in snap.docs) {
-          final name = doc.data()['name']?.toString() ?? '';
-          if (name.isNotEmpty && !_dynamicUnits.contains(name) && !_deletedUnits.contains(name)) {
-            _dynamicUnits.add(name);
-          }
-        }
-        _debouncedNotify();
-      });
-
-      // Fetch weight units
-      _firestore.collection('weight_units').snapshots().listen((snap) {
-        for (var doc in snap.docs) {
-          final name = doc.data()['name']?.toString() ?? '';
-          if (name.isNotEmpty && !_dynamicWeightUnits.contains(name) && !_deletedWeightUnits.contains(name)) {
-            _dynamicWeightUnits.add(name);
-          }
-        }
-        _debouncedNotify();
-      });
-
-      // Fetch item names
-      _firestore.collection('item_names').snapshots().listen((snap) {
-        for (var doc in snap.docs) {
-          final name = doc.data()['name']?.toString() ?? '';
-          if (name.isNotEmpty && !_dynamicItemNames.contains(name) && !_deletedItemNames.contains(name)) {
-            _dynamicItemNames.add(name);
-          }
-        }
-        _debouncedNotify();
-      });
-
-      // 2. Listen to jewelry_inventory — updates separate raw map
-      _firestore.collection('jewelry_inventory').snapshots().listen((snapshot) {
-        _parseDocsIntoMap(snapshot.docs, _jewelryInventoryMap);
-        _rebuildProductsList();
-      });
-
-      // 3. Listen to products collection — updates separate raw map
-      _firestore.collection('products').snapshots().listen((snapshot) {
-        _parseDocsIntoMap(snapshot.docs, _productsMap);
-        _rebuildProductsList();
-      });
-    } catch (e) {
-      debugPrint('Error fetching products: $e');
-    }
-  }
-
-  /// Parse docs into a dedicated map (per collection) without merging immediately.
-  void _parseDocsIntoMap(
-    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
-    Map<String, Product> targetMap,
-  ) {
-    for (final doc in docs) {
-      try {
-        final data = doc.data();
-        final p = Product.fromJson(data);
-        final tagId = p.tagId.trim().isEmpty ? doc.id : p.tagId;
-        final updatedP = p.copyWith(tagId: tagId);
-        if (_isMeaningfulProduct(updatedP)) {
-          targetMap[tagId.trim().toLowerCase()] = updatedP;
-        }
-      } catch (e) {
-        debugPrint('Error parsing doc ${doc.id}: $e');
       }
+      final mats = await ApiService().getMasterItems('materials');
+      for (final m in mats) {
+        if (!_deletedMaterials.contains(m) && !_dynamicMaterials.contains(m)) {
+          _dynamicMaterials.add(m);
+        }
+      }
+      final vends = await ApiService().getMasterItems('vendors');
+      for (final v in vends) {
+        if (!_deletedVendors.contains(v) && !_dynamicVendors.contains(v)) {
+          _dynamicVendors.add(v);
+        }
+      }
+    } catch (e) {
+      debugPrint('[AdminState] fetchMasterItems error: $e');
     }
-  }
 
-  /// Rebuild the flat products list by merging both collection maps, then debounce notify.
-  void _rebuildProductsList() {
-    final merged = <String, Product>{};
-    // jewelry_inventory wins over products if same tagId
-    merged.addAll(_productsMap);
-    merged.addAll(_jewelryInventoryMap);
-    _productsList = merged.entries
-        .where((e) => !_deletedTagIds.contains(e.key))
-        .map((e) => e.value)
-        .toList();
     _debouncedNotify();
   }
 
-  // _parseAndMergeProducts removed — replaced by _parseDocsIntoMap + _rebuildProductsList
 
-  /// Returns true only for products that have at least a name OR a category
-  /// OR a non-zero gross weight. This filters out ghost/orphan Firestore
-  /// documents that were created with default/empty values.
-  static bool _isMeaningfulProduct(Product p) {
-    final hasName = p.name.trim().isNotEmpty;
-    final hasCategory = p.category.trim().isNotEmpty;
-    final hasWeight = p.grossWeight > 0;
-    final hasTagId = p.tagId.trim().isNotEmpty;
-    return hasTagId && (hasName || hasCategory || hasWeight);
-  }
 
 
 
@@ -920,45 +774,6 @@ class AdminState extends ChangeNotifier {
 
   void _listenToLiveRates() {
     _liveRateService.getLiveRatesStream().listen((rates) async {
-      // Initialize doc with our local default values if not present
-      if (rates.gold24KTrading == 0.0 && rates.gold22KJewellery == 0.0 && rates.gold18KJewellery == 0.0 && rates.pureSilverTrading == 0.0) {
-        final Map<String, Map<String, double>> nestedRates = {};
-        for (var clarity in clarities) {
-          nestedRates[clarity] = {};
-          for (var color in colorRanges) {
-            nestedRates[clarity]![color] = _diamondRates['${clarity}_$color'] ?? 0.0;
-          }
-        }
-        final initialData = LiveRatesData(
-          gold24KTrading: _liveRates['gold_24k_trading']?.ratePerGram ?? 0.0,
-          gold22KJewellery: _liveRates['gold_22k_jewellery']?.ratePerGram ?? 0.0,
-          gold18KJewellery: _liveRates['gold_18k_jewellery']?.ratePerGram ?? 0.0,
-          oldGoldTrading: _liveRates['old_gold_trading']?.ratePerGram ?? 0.0,
-          repairingSampleGold: _liveRates['repairing_sample_gold']?.ratePerGram ?? 0.0,
-          diamond18KJewellery: _liveRates['diamond_18k_jewellery']?.ratePerGram ?? 0.0,
-          diamond22KJewellery: _liveRates['diamond_22k_jewellery']?.ratePerGram ?? 0.0,
-          diamondTrading: _liveRates['diamond_trading']?.ratePerGram ?? 0.0,
-          stoneTrading: _liveRates['stone_trading']?.ratePerGram ?? 0.0,
-          pureSilverTrading: _liveRates['pure_silver_trading']?.ratePerGram ?? 0.0,
-          oldSilverTrading: _liveRates['old_silver_trading']?.ratePerGram ?? 0.0,
-          silver925: _liveRates['silver_925']?.ratePerGram ?? 0.0,
-          platinum: _liveRates['platinum']?.ratePerGram ?? 0.0,
-          oldPlatinum: _liveRates['old_platinum']?.ratePerGram ?? 0.0,
-          alloys: _liveRates['alloys']?.ratePerGram ?? 0.0,
-          diamondRates: nestedRates,
-        );
-        await _firestore.collection('settings').doc('rates').set(initialData.toDocMap(), SetOptions(merge: true));
-        return;
-      }
-
-      // Clean up legacy documents if they exist
-      try {
-        await _firestore.collection('live_rates').doc('current_rates').delete();
-        await _firestore.collection('live_rates').doc('metals').delete();
-        await _firestore.collection('live_rates').doc('diamonds').delete();
-      } catch (_) {}
-
-      // Unpack values
       _liveRates['gold_24k_trading'] = _liveRates['gold_24k_trading']!.copyWith(ratePerGram: rates.gold24KTrading);
       _liveRates['gold_22k_jewellery'] = _liveRates['gold_22k_jewellery']!.copyWith(ratePerGram: rates.gold22KJewellery);
       _liveRates['gold_18k_jewellery'] = _liveRates['gold_18k_jewellery']!.copyWith(ratePerGram: rates.gold18KJewellery);
@@ -981,11 +796,6 @@ class AdminState extends ChangeNotifier {
           _diamondRates['${clarity}_$color'] = clarityMap?[color] ?? 0.0;
         }
       }
-
-      // NOTE: _persistCalculationsToFirestore() removed from here.
-      // It was causing N+1 Firestore writes on every rate stream event.
-      // Recalculations are persisted only when the user explicitly saves rates
-      // via updateMultipleLiveRates() or updateDiamondRates().
       _debouncedNotify();
     });
   }
@@ -999,97 +809,50 @@ class AdminState extends ChangeNotifier {
   }
 
   Future<void> updateMultipleLiveRates(Map<String, double> ratesMap) async {
-    const fieldMap = {
-      'gold_24k_trading': 'gold24KTrading',
-      'gold_22k_jewellery': 'gold22KJewellery',
-      'gold_18k_jewellery': 'gold18KJewellery',
-      'old_gold_trading': 'oldGoldTrading',
-      'repairing_sample_gold': 'repairingSampleGold',
-      'diamond_18k_jewellery': 'diamond18KJewellery',
-      'diamond_22k_jewellery': 'diamond22KJewellery',
-      'diamond_trading': 'diamondTrading',
-      'stone_trading': 'stoneTrading',
-      'pure_silver_trading': 'pureSilverTrading',
-      'old_silver_trading': 'oldSilverTrading',
-      'silver_925': 'silver925',
-      'platinum': 'platinum',
-      'old_platinum': 'oldPlatinum',
-      'alloys': 'alloys',
-    };
-
-    final Map<String, dynamic> updates = {
-      'updatedAt': FieldValue.serverTimestamp(),
-    };
-
     ratesMap.forEach((id, newRate) {
-      final String field = fieldMap[id] ?? '';
-      if (field.isNotEmpty) {
-        updates[field] = newRate;
-        if (field == 'gold22KJewellery') {
-          updates['gold22'] = newRate;
-        } else if (field == 'gold18KJewellery') {
-          updates['gold18'] = newRate;
-        } else if (field == 'pureSilverTrading') {
-          updates['silver'] = newRate;
-        }
-        if (_liveRates.containsKey(id)) {
-          _liveRates[id] = _liveRates[id]!.copyWith(ratePerGram: newRate);
-        }
+      if (_liveRates.containsKey(id)) {
+        _liveRates[id] = _liveRates[id]!.copyWith(ratePerGram: newRate);
       }
     });
 
     notifyListeners();
 
-    if (updates.length > 1) {
-      await _firestore.collection('settings').doc('rates').update(updates);
+    try {
+      final data = currentLiveRatesData.toDocMap();
+      await ApiService().saveSetting('rates', data);
+    } catch (e) {
+      debugPrint("Error saving live rates: $e");
     }
   }
 
   Future<void> updateDiamondRates(Map<String, double> newRates) async {
-    // Merge newRates into current _diamondRates first
     newRates.forEach((key, val) {
       _diamondRates[key] = val;
     });
 
-    final Map<String, Map<String, double>> nestedRates = {};
-    for (var clarity in clarities) {
-      nestedRates[clarity] = {};
-      for (var color in colorRanges) {
-        nestedRates[clarity]![color] = _diamondRates['${clarity}_$color'] ?? 0.0;
-      }
-    }
+    notifyListeners();
 
-    await _firestore.collection('settings').doc('rates').update({
-      'diamondRates': nestedRates,
-      'updatedAt': FieldValue.serverTimestamp(),
-    });
+    try {
+      final data = currentLiveRatesData.toDocMap();
+      await ApiService().saveSetting('rates', data);
+    } catch (e) {
+      debugPrint("Error saving diamond rates: $e");
+    }
   }
 
   Future<void> addProduct(Product product) async {
-    final Map<String, dynamic> json = product.toJson();
-
-    if (product.tagId.isNotEmpty) {
-      _deletedTagIds.remove(product.tagId.trim().toLowerCase());
-    }
-
     final docId = product.tagId.trim().isNotEmpty
         ? product.tagId.trim()
-        : _firestore.collection('jewelry_inventory').doc().id;
-    final updatedJson = Map<String, dynamic>.from(json);
-    updatedJson['tagId'] = docId;
+        : 'TAG_${DateTime.now().millisecondsSinceEpoch}';
 
-    await _firestore.collection('jewelry_inventory').doc(docId).set(updatedJson, SetOptions(merge: true));
-    await _firestore.collection('products').doc(docId).set(updatedJson, SetOptions(merge: true));
+    final updatedProduct = product.copyWith(tagId: docId);
 
-    // Save to Hostinger API
     try {
-      await ApiService().saveProduct(product.copyWith(tagId: docId));
+      await ApiService().saveProduct(updatedProduct);
     } catch (e) {
       debugPrint('Hostinger saveProduct error: $e');
     }
 
-    // Local update
-    final updatedProduct = product.copyWith(tagId: docId);
     final key = docId.toLowerCase();
     _jewelryInventoryMap[key] = updatedProduct;
     _productsMap[key] = updatedProduct;
@@ -1099,20 +862,13 @@ class AdminState extends ChangeNotifier {
   }
 
   Future<void> updateProduct(Product product) async {
-    final Map<String, dynamic> json = product.toJson();
-    final docId = product.tagId.trim();
-
-    await _firestore.collection('jewelry_inventory').doc(docId).set(json, SetOptions(merge: true));
-    await _firestore.collection('products').doc(docId).set(json, SetOptions(merge: true));
-
-    // Update in Hostinger API
     try {
       await ApiService().updateProduct(product);
     } catch (e) {
       debugPrint('Hostinger updateProduct error: $e');
     }
 
-    final key = docId.toLowerCase();
+    final key = product.tagId.trim().toLowerCase();
     _jewelryInventoryMap[key] = product;
     _productsMap[key] = product;
     final idx = _productsList.indexWhere((p) => p.tagId.toLowerCase() == key);
@@ -1123,7 +879,6 @@ class AdminState extends ChangeNotifier {
     }
     notifyListeners();
   }
-
 
   Future<void> deleteProduct(String tagId) async {
     String localGetBaseTagId(String id) {
@@ -1165,109 +920,43 @@ class AdminState extends ChangeNotifier {
       } catch (e) {
         debugPrint('Hostinger deleteProduct error: $e');
       }
-      try {
-        await _firestore.collection('jewelry_inventory').doc(id).delete();
-        await _firestore.collection('products').doc(id).delete();
-
-        // Also query by tagId field in case docId was auto-generated
-        final snap1 = await _firestore
-            .collection('jewelry_inventory')
-            .where('tagId', isEqualTo: id)
-            .get();
-        for (final doc in snap1.docs) {
-          await doc.reference.delete();
-        }
-
-        final snap2 = await _firestore
-            .collection('products')
-            .where('tagId', isEqualTo: id)
-            .get();
-        for (final doc in snap2.docs) {
-          await doc.reference.delete();
-        }
-      } catch (e) {
-        debugPrint('Error deleting product: $e');
-      }
     }
   }
-
-
-  Future<void> fetchAndSaveCloudinaryUrls() async {
-    // 1. YOUR CLOUDINARY CREDENTIALS
-    // Go to your Cloudinary dashboard to get these!
-    final String apiKey = '851329936937915'; 
-    final String apiSecret = 'sN8DF0_krnj59GZZCXllsJsdgew';
-    final String cloudName = 'df9pn9xey'; 
-
-    try {
-      debugPrint("Starting to fetch images from Cloudinary...");
-      
-      // 2. FETCH FROM CLOUDINARY
-      final String basicAuth = 'Basic ${base64Encode(utf8.encode('$apiKey:$apiSecret'))}';
-      final uri = Uri.parse('https://api.cloudinary.com/v1_1/$cloudName/resources/image?max_results=500');
-      
-      final response = await http.get(uri, headers: {'Authorization': basicAuth});
-      
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        final List resources = data['resources'];
-        
-        debugPrint("Found ${resources.length} images! Uploading to Firebase...");
-        
-        // 3. CREATE FIELD AND UPDATE IN FIREBASE
-        for (var res in resources) {
-          String imageUrl = res['secure_url'];
-          
-          // This creates a new collection called 'existing_cloudinary_media' 
-          // and saves the URL in a field named 'url'
-          await _firestore.collection('existing_cloudinary_media').add({
-            'url': imageUrl,
-            'format': res['format'],
-            'created_at': res['created_at'],
-          });
-        }
-        
-        debugPrint("SUCCESS: All URLs saved to Firebase!");
-      } else {
-        debugPrint("Failed to fetch from Cloudinary: ${response.body}");
-      }
-    } catch (e) {
-        debugPrint("Error syncing images: $e");
-    }
-  }
-
-  // --- Vendor Issues Logic ---
 
   Future<void> logVendorIssue(VendorIssue issue) async {
-    String nextId = 'VI-001';
     try {
-      final snap = await _firestore.collection('vendor_issues').orderBy('createdAt', descending: true).limit(1).get();
-      if (snap.docs.isNotEmpty) {
-        final lastId = snap.docs.first.id;
-        final match = RegExp(r'\d+').firstMatch(lastId);
-        if (match != null) {
-          final val = int.tryParse(match.group(0)!) ?? 0;
-          nextId = 'VI-${(val + 1).toString().padLeft(3, '0')}';
-        }
-      }
+      final docId = 'VI-${DateTime.now().millisecondsSinceEpoch}';
+      // Build a payload matching what vendor_issues.php expects
+      final payload = {
+        'docId': docId,
+        'vendorName': issue.vendor,
+        'status': issue.actionTaken,
+        'totalAmount': issue.refundAmount,
+        'notes': issue.notes,
+        'issueDate': issue.dateReported.toIso8601String(),
+        'items': [
+          {
+            'tagId': issue.tagId,
+            'productName': issue.productName,
+            'qty': issue.quantity,
+            'quantity': issue.quantity,
+            'issueType': issue.issueType,
+            'actionTaken': issue.actionTaken,
+            'refundAmount': issue.refundAmount,
+            'photoUrl': issue.photoUrl,
+          }
+        ],
+      };
+      await ApiService().createVendorIssue(payload);
     } catch (e) {
-      debugPrint("Error generating issue ID: $e");
+      debugPrint("Error logging vendor issue: $e");
     }
 
-    final docRef = _firestore.collection('vendor_issues').doc(nextId);
-    final newIssue = issue.copyWith(id: docRef.id);
-    await docRef.set({
-      ...newIssue.toJson(),
-      'createdAt': FieldValue.serverTimestamp(),
-    });
-
-    // Update product stock logic - deduct issue quantity from stock immediately
     final product = lookupProduct(issue.tagId);
     if (product != null) {
       final newQty = (product.quantity - issue.quantity).clamp(0, 999999);
       final newIssueQty = product.issueQuantity + issue.quantity;
-      
-      // Determine status of remaining good stock
+
       String newStatus;
       if (newQty == 0) {
         newStatus = 'Out of Stock';
@@ -1276,7 +965,7 @@ class AdminState extends ChangeNotifier {
       } else {
         newStatus = 'In Stock';
       }
-      
+
       final updatedProduct = product.copyWith(
         quantity: newQty,
         issueQuantity: newIssueQty,
@@ -1287,59 +976,58 @@ class AdminState extends ChangeNotifier {
   }
 
   Future<void> updateVendorIssueAction(String issueId, String tagId, String newAction) async {
-    // First, fetch the issue to see the current quantity
-    final issueDoc = await _firestore.collection('vendor_issues').doc(issueId).get();
-    if (!issueDoc.exists) return;
-
-    final issueData = VendorIssue.fromJson(issueDoc.data()!, id: issueId);
-    final previousAction = issueData.actionTaken;
-    if (previousAction == newAction) return;
-
-    // Update the issue in firestore
-    await _firestore.collection('vendor_issues').doc(issueId).update({
-      'actionTaken': newAction,
-    });
-
-    // Determine stock updates
-    final product = lookupProduct(tagId);
-    if (product != null) {
-      int newQty = product.quantity;
-      int newIssueQty = product.issueQuantity;
-
-      // Check if we are resolving the issue with replacement
-      if (newAction == 'Replacement Received' && previousAction != 'Replacement Received') {
-        // Replacement arrived: restore stock and clear issue quantity
-        newQty += issueData.quantity;
-        newIssueQty = (newIssueQty - issueData.quantity).clamp(0, 999999);
-      } else if (previousAction == 'Replacement Received' && newAction != 'Replacement Received') {
-        // Reverted from replacement: deduct stock back
-        newQty = (newQty - issueData.quantity).clamp(0, 999999);
-        newIssueQty += issueData.quantity;
-      } else if ((newAction == 'Returned to Vendor' || newAction == 'Refund Received' || newAction == 'Discarded') &&
-                 (previousAction == 'Pending' || previousAction == 'Damaged/Defective')) {
-        // Since quantity was already deducted at issue logging, just clear the pending issue quantity
-        newIssueQty = (newIssueQty - issueData.quantity).clamp(0, 999999);
-      } else if ((newAction == 'Pending' || newAction == 'Damaged/Defective') &&
-                 (previousAction == 'Returned to Vendor' || previousAction == 'Refund Received' || previousAction == 'Discarded')) {
-        // Reverted to pending: restore to issue quantity
-        newIssueQty += issueData.quantity;
-      }
-
-      String newStatus;
-      if (newQty == 0) {
-        newStatus = 'Out of Stock';
-      } else if (newQty < 5) {
-        newStatus = 'Low Stock';
-      } else {
-        newStatus = 'In Stock';
-      }
-
-      final updatedProduct = product.copyWith(
-        quantity: newQty,
-        issueQuantity: newIssueQty,
-        status: newStatus,
+    try {
+      // Fetch current issue to get previousAction and quantity
+      final allIssues = await ApiService().getVendorIssues();
+      final issueMap = allIssues.firstWhere(
+        (m) => m['id']?.toString() == issueId || m['docId']?.toString() == issueId,
+        orElse: () => <String, dynamic>{},
       );
-      await updateProduct(updatedProduct);
+      if (issueMap.isEmpty) return;
+
+      final issueData = VendorIssue.fromJson(issueMap, id: issueId);
+      final previousAction = issueData.actionTaken;
+      if (previousAction == newAction) return;
+
+      await ApiService().updateVendorIssue(issueId, {'status': newAction});
+
+      final product = lookupProduct(tagId);
+      if (product != null) {
+        int newQty = product.quantity;
+        int newIssueQty = product.issueQuantity;
+
+        if (newAction == 'Replacement Received' && previousAction != 'Replacement Received') {
+          newQty += issueData.quantity;
+          newIssueQty = (newIssueQty - issueData.quantity).clamp(0, 999999);
+        } else if (previousAction == 'Replacement Received' && newAction != 'Replacement Received') {
+          newQty = (newQty - issueData.quantity).clamp(0, 999999);
+          newIssueQty += issueData.quantity;
+        } else if ((newAction == 'Returned to Vendor' || newAction == 'Refund Received' || newAction == 'Discarded') &&
+                   (previousAction == 'Pending' || previousAction == 'Damaged/Defective')) {
+          newIssueQty = (newIssueQty - issueData.quantity).clamp(0, 999999);
+        } else if ((newAction == 'Pending' || newAction == 'Damaged/Defective') &&
+                   (previousAction == 'Returned to Vendor' || previousAction == 'Refund Received' || previousAction == 'Discarded')) {
+          newIssueQty += issueData.quantity;
+        }
+
+        String newStatus;
+        if (newQty == 0) {
+          newStatus = 'Out of Stock';
+        } else if (newQty < 5) {
+          newStatus = 'Low Stock';
+        } else {
+          newStatus = 'In Stock';
+        }
+
+        final updatedProduct = product.copyWith(
+          quantity: newQty,
+          issueQuantity: newIssueQty,
+          status: newStatus,
+        );
+        await updateProduct(updatedProduct);
+      }
+    } catch (e) {
+      debugPrint("Error updating vendor issue action: $e");
     }
   }
 
@@ -1354,13 +1042,10 @@ class AdminState extends ChangeNotifier {
   }) async {
     String nextId = 'RT-001';
     try {
-      final snap = await _firestore.collection('bills')
-          .orderBy('createdAt', descending: true)
-          .limit(100)
-          .get();
-      final returnBills = snap.docs.where((d) => d.data()['billType'] == 'Return').toList();
+      final bills = await ApiService().getBills();
+      final returnBills = bills.where((d) => d['billType'] == 'Return').toList();
       if (returnBills.isNotEmpty) {
-        final lastId = returnBills.first.data()['billNo'] as String? ?? '';
+        final lastId = returnBills.first['billNo'] as String? ?? '';
         final match = RegExp(r'\d+').firstMatch(lastId);
         if (match != null) {
           final val = int.tryParse(match.group(0)!) ?? 0;
@@ -1377,8 +1062,8 @@ class AdminState extends ChangeNotifier {
       'billType': 'Return',
       'customerName': customerName,
       'customerMobile': customerMobile,
-      'billDate': FieldValue.serverTimestamp(),
-      'createdAt': FieldValue.serverTimestamp(),
+      'billDate': DateTime.now().toIso8601String(),
+      'createdAt': DateTime.now().toIso8601String(),
       'items': items,
       'totalPayable': totalRefund,
       'returnReason': returnReason,
@@ -1386,7 +1071,7 @@ class AdminState extends ChangeNotifier {
       'paymentMode': paymentMode,
     };
 
-    await _firestore.collection('bills').add(billData);
+    await ApiService().createBill(billData);
 
     for (final item in items) {
       final tagId = item['tagId'];

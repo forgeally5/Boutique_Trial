@@ -3,7 +3,6 @@ import 'dart:typed_data';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:intl/intl.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 
 class PdfBillDetailGenerator {
   static Future<Uint8List> generate(Map<String, dynamic> docData, Map<String, dynamic>? profileData, bool isSupplier) async {
@@ -14,8 +13,11 @@ class PdfBillDetailGenerator {
     
     // Parse date
     final rawDate = docData['voucherDate'];
-    final dateStr = rawDate is Timestamp
-        ? DateFormat('dd/MM/yyyy EEE').format(rawDate.toDate())
+    final DateTime? parsedDate = rawDate is DateTime
+        ? rawDate
+        : (rawDate is String ? DateTime.tryParse(rawDate) : null);
+    final dateStr = parsedDate != null
+        ? DateFormat('dd/MM/yyyy EEE').format(parsedDate)
         : rawDate?.toString() ?? '';
 
     final acName = docData['acName']?.toString() ?? '';

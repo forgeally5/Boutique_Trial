@@ -2,7 +2,7 @@
 import 'dart:typed_data';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
-import 'package:cloud_firestore/cloud_firestore.dart';
+import '../services/api_service.dart';
 import 'package:printing/printing.dart';
 
 class SalesInvoiceData {
@@ -159,17 +159,16 @@ class PdfInvoiceApi {
     String themeColor = 'Brown';
 
     try {
-      final doc = await FirebaseFirestore.instance.collection('report_designer_settings').doc('default').get();
-      if (doc.exists && doc.data() != null) {
-        final d = doc.data()!;
-        businessName = d['businessName']?.toString() ?? businessName;
-        subtitle = d['subtitle']?.toString() ?? subtitle;
-        address = d['address']?.toString() ?? address;
-        gstNo = d['gstNo']?.toString() ?? gstNo;
-        footerText = d['footerText']?.toString() ?? footerText;
-        showLogo = d['showLogo'] ?? showLogo;
-        includeSignatureBlock = d['includeSignatureBlock'] ?? includeSignatureBlock;
-        themeColor = d['themeColor']?.toString() ?? themeColor;
+      final setting = await ApiService().getSetting('report_designer_settings');
+      if (setting is Map<String, dynamic>) {
+        businessName = setting['businessName']?.toString() ?? businessName;
+        subtitle = setting['subtitle']?.toString() ?? subtitle;
+        address = setting['address']?.toString() ?? address;
+        gstNo = setting['gstNo']?.toString() ?? gstNo;
+        footerText = setting['footerText']?.toString() ?? footerText;
+        showLogo = setting['showLogo'] ?? showLogo;
+        includeSignatureBlock = setting['includeSignatureBlock'] ?? includeSignatureBlock;
+        themeColor = setting['themeColor']?.toString() ?? themeColor;
       }
     } catch (e) {
       // Fallback to hardcoded defaults

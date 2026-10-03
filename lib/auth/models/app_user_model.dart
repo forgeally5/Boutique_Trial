@@ -1,4 +1,4 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'dart:convert';
 
 class PermissionsModel {
   // Inventory
@@ -179,29 +179,40 @@ class AppUserModel {
   });
 
   factory AppUserModel.fromMap(Map<String, dynamic> map, String id) {
+    dynamic permsRaw = map['permissions'];
+    if (permsRaw is String) {
+      try {
+        permsRaw = jsonDecode(permsRaw);
+      } catch (_) {}
+    }
     return AppUserModel(
-      uid: id,
-      email: map['email'] ?? '',
-      displayName: map['displayName'] ?? '',
-      role: map['role'] ?? 'salesman',
-      isActive: map['isActive'] ?? false,
+      uid: map['uid']?.toString() ?? id,
+      email: (map['email'] as String?)?.trim() ?? '',
+      displayName: map['displayName']?.toString() ?? map['name']?.toString() ?? '',
+      role: map['role']?.toString() ?? 'salesman',
+      isActive: map['isActive'] == true || map['is_active'] == 1 || map['is_active'] == true,
       plainPassword: map['plainPassword'],
-      permissions: PermissionsModel.fromMap(map['permissions']),
-      createdAt: map['createdAt'] is Timestamp
-          ? (map['createdAt'] as Timestamp).toDate()
-          : null,
+      permissions: PermissionsModel.fromMap(permsRaw is Map<String, dynamic> ? permsRaw : null),
+      createdAt: map['createdAt'] is DateTime
+          ? map['createdAt'] as DateTime
+          : (map['created_at'] != null || map['createdAt'] != null
+              ? DateTime.tryParse((map['created_at'] ?? map['createdAt']).toString())
+              : null),
     );
   }
 
   Map<String, dynamic> toMap() {
     return {
-      'email': email,
+      'uid': uid,
+      'name': displayName,
       'displayName': displayName,
+      'email': email,
       'role': role,
       'isActive': isActive,
+      'is_active': isActive ? 1 : 0,
       'plainPassword': plainPassword,
       'permissions': permissions.toMap(),
-      'createdAt': createdAt != null ? Timestamp.fromDate(createdAt!) : FieldValue.serverTimestamp(),
+      'createdAt': createdAt?.toIso8601String(),
     };
   }
 

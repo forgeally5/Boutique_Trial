@@ -470,11 +470,11 @@ class _ItemDialogState extends State<ItemDialog> {
                                     decoration: BoxDecoration(
                                       color: isHighlighted
                                           ? _brown
-                                          : _brown.withOpacity(0.1),
+                                          : _brown.withValues(alpha: 0.1),
                                       border: Border.all(
                                           color: isHighlighted
                                               ? _brown
-                                              : _brown.withOpacity(0.4)),
+                                              : _brown.withValues(alpha: 0.4)),
                                       borderRadius: BorderRadius.circular(20),
                                     ),
                                     child: Text(sug,
@@ -552,7 +552,7 @@ class _ItemDialogState extends State<ItemDialog> {
                                 return AnimatedContainer(
                                   duration: const Duration(milliseconds: 120),
                                   color: isHighlighted
-                                      ? _brown.withOpacity(0.09)
+                                      ? _brown.withValues(alpha: 0.09)
                                       : Colors.transparent,
                                   child: ListTile(
                                     dense: true,
@@ -589,17 +589,19 @@ class _ItemDialogState extends State<ItemDialog> {
                                             await widget.adminState
                                                 .renameCategory(
                                                     item, newVal);
-                                            if (_category == item)
+                                            if (_category == item) {
                                               setState(() =>
                                                   _category = newVal);
+                                            }
                                           } else if (type ==
                                               'Material') {
                                             await widget.adminState
                                                 .renameMaterial(
                                                     item, newVal);
-                                            if (_material == item)
+                                            if (_material == item) {
                                               setState(() =>
                                                   _material = newVal);
+                                            }
                                           } else if (type ==
                                               'Item Name') {
                                             await widget.adminState
@@ -616,20 +618,23 @@ class _ItemDialogState extends State<ItemDialog> {
                                             await widget.adminState
                                                 .updateWeightUnit(
                                                     item, newVal);
-                                            if (_weightUnit == item)
+                                            if (_weightUnit == item) {
                                               setState(() =>
                                                   _weightUnit = newVal);
+                                            }
                                           } else if (type == 'Unit') {
                                             await widget.adminState
                                                 .renameUnit(item, newVal);
-                                            if (_unit == item)
+                                            if (_unit == item) {
                                               setState(
                                                   () => _unit = newVal);
+                                            }
                                           } else if (type == 'Vendor') {
                                             await widget.adminState
                                                 .renameVendor(item, newVal);
-                                            if (_vendor == item)
+                                            if (_vendor == item) {
                                               setState(() => _vendor = newVal);
+                                            }
                                           }
                                           setDialogState(() {});
                                           setState(() {});

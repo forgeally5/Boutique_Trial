@@ -47,7 +47,7 @@ if ($method === 'GET') {
     if (!empty($where)) {
         $sql .= " WHERE " . implode(" AND ", $where);
     }
-    $sql .= " ORDER BY id DESC";
+    $sql .= " ORDER BY LENGTH(tag_id) ASC, tag_id ASC";
 
     $stmt = $pdo->prepare($sql);
     $stmt->execute($params);

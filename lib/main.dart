@@ -1,10 +1,8 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:firebase_core/firebase_core.dart';
 import 'auth/viewmodels/auth_viewmodel.dart';
 import 'auth/models/app_user_model.dart';
-import 'firebase_options.dart';
 import 'state/admin_state.dart';
 import 'services/local_db_service.dart';
 import 'views/inventory_view.dart';
@@ -17,10 +15,6 @@ import 'views/master/user_management_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
 
   await LocalDbService().init();
 

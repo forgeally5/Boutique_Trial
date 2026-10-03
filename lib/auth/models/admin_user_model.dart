@@ -1,20 +1,7 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
-
-/// Represents a document from the Firestore [admin_users] collection.
-///
-/// Fields in Firestore: createdAt, email, password, role.
-///
-/// IMPORTANT: [password] is stored in Firestore for legacy/reference purposes
-/// only. Authentication is performed exclusively through Firebase Authentication.
-/// This app never reads or uses the [password] field for auth.
+/// Represents an Admin user profile from Hostinger DB.
 class AdminUserModel {
-  /// The admin's email address (matches FirebaseAuth.currentUser.email).
   final String email;
-
-  /// The role assigned to this user (must be "admin" for access).
   final String role;
-
-  /// Timestamp when this document was created in Firestore.
   final DateTime? createdAt;
 
   const AdminUserModel({
@@ -23,14 +10,15 @@ class AdminUserModel {
     this.createdAt,
   });
 
-  /// Deserialise from a Firestore document map.
   factory AdminUserModel.fromMap(Map<String, dynamic> map) {
     return AdminUserModel(
       email: (map['email'] as String?)?.trim() ?? '',
       role: (map['role'] as String?)?.trim() ?? '',
-      createdAt: map['createdAt'] is Timestamp
-          ? (map['createdAt'] as Timestamp).toDate()
-          : null,
+      createdAt: map['createdAt'] is DateTime
+          ? map['createdAt'] as DateTime
+          : (map['created_at'] != null || map['createdAt'] != null
+              ? DateTime.tryParse((map['created_at'] ?? map['createdAt']).toString())
+              : null),
     );
   }
 

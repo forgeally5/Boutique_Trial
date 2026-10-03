@@ -1,5 +1,3 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
-
 class OverrideRequestModel {
   final String id;
   final String requesterUid;
@@ -24,19 +22,20 @@ class OverrideRequestModel {
       requesterName: map['requesterName'] ?? '',
       actionType: map['actionType'] ?? '',
       status: map['status'] ?? 'pending',
-      timestamp: map['timestamp'] is Timestamp
-          ? (map['timestamp'] as Timestamp).toDate()
-          : null,
+      timestamp: map['timestamp'] is DateTime
+          ? map['timestamp'] as DateTime
+          : (map['timestamp'] != null ? DateTime.tryParse(map['timestamp'].toString()) : null),
     );
   }
 
   Map<String, dynamic> toMap() {
     return {
+      'id': id,
       'requesterUid': requesterUid,
       'requesterName': requesterName,
       'actionType': actionType,
       'status': status,
-      'timestamp': timestamp != null ? Timestamp.fromDate(timestamp!) : FieldValue.serverTimestamp(),
+      'timestamp': timestamp?.toIso8601String(),
     };
   }
 }

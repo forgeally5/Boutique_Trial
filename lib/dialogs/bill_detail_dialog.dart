@@ -1,8 +1,8 @@
 import 'dart:io';
 import 'dart:convert';
 import 'dart:typed_data';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import '../../services/api_service.dart';
 import 'package:intl/intl.dart';
 import 'package:printing/printing.dart';
 import 'package:trial/utils/pdf_bill_detail_generator.dart';
@@ -25,8 +25,14 @@ class BillDetailDialog extends StatelessWidget {
     final voucherNo = docData['voucherNo']?.toString() ?? '';
     final billType = docData['billType']?.toString() ?? 'Sale';
     final rawDate = docData['voucherDate'];
-    final dateStr = rawDate is Timestamp
-        ? DateFormat('dd/MM/yyyy EEE').format(rawDate.toDate())
+    DateTime? parsedDate;
+    if (rawDate is DateTime) {
+      parsedDate = rawDate;
+    } else if (rawDate != null) {
+      parsedDate = DateTime.tryParse(rawDate.toString());
+    }
+    final dateStr = parsedDate != null
+        ? DateFormat('dd/MM/yyyy EEE').format(parsedDate)
         : rawDate?.toString() ?? '';
 
     final acName = docData['acName']?.toString() ?? '';
@@ -241,16 +247,17 @@ class BillDetailDialog extends StatelessWidget {
 
     Map<String, dynamic>? profileData;
     try {
-      final collection = isSupplier ? 'suppliers' : 'customers';
-      final snap = await FirebaseFirestore.instance
-          .collection(collection)
-          .where('name', isEqualTo: acName)
-          .limit(1)
-          .get();
-
-      if (snap.docs.isNotEmpty) {
-        profileData = snap.docs.first.data();
-        profileData['id'] = snap.docs.first.id;
+      final bills = await ApiService().getBills(customer: acName);
+      if (bills.isNotEmpty) {
+        final b = bills.first;
+        profileData = {
+          'id': b['id']?.toString() ?? '',
+          'name': acName,
+          'phone': b['phone'] ?? b['customerPhone'] ?? b['contactNumber'] ?? '',
+          'address': b['address'] ?? b['customerAddress'] ?? '',
+          'city': b['city'] ?? '',
+          'pincode': b['pincode'] ?? '',
+        };
       }
     } catch (e) {
       debugPrint('Error fetching profile for PDF: $e');
@@ -621,19 +628,21 @@ class _PartyDetailsFetchDialogState extends State<_PartyDetailsFetchDialog> {
 
   Future<void> _fetchDetails() async {
     try {
-      final collection = widget.isSupplier ? 'suppliers' : 'customers';
-      final snap = await FirebaseFirestore.instance
-          .collection(collection)
-          .where('name', isEqualTo: widget.name)
-          .limit(1)
-          .get();
+      final bills = await ApiService().getBills(customer: widget.name);
 
       if (!mounted) return;
       Navigator.pop(context); // Close loader
 
-      if (snap.docs.isNotEmpty) {
-        final data = snap.docs.first.data();
-        data['id'] = snap.docs.first.id;
+      if (bills.isNotEmpty) {
+        final b = bills.first;
+        final data = {
+          'id': b['id']?.toString() ?? '',
+          'name': widget.name,
+          'phone': b['phone'] ?? b['customerPhone'] ?? b['contactNumber'] ?? '',
+          'address': b['address'] ?? b['customerAddress'] ?? '',
+          'city': b['city'] ?? '',
+          'pincode': b['pincode'] ?? '',
+        };
         showDialog(
           context: context,
           builder: (context) => PartyProfileViewerDialog(
@@ -1037,4 +1046,5 @@ Future<void> _downloadFile(BuildContext context, String fileName, String base64S
     );
   }
 }
+
 
