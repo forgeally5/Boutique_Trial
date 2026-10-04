@@ -517,8 +517,8 @@ Future<Uint8List> generateStockReportPdf({
     final sold = (r['soldQty'] as num?)?.toInt() ?? 0;
     final price = (r['sellingPrice'] as num?)?.toDouble() ?? 0;
 
-    if (pricingType == 'Weight-Based') {
-      totalStockValue += grossWeight * ratePerGram;
+    if (pricingType == 'Weight-Based' && grossWeight > 0 && ratePerGram > 0) {
+      totalStockValue += balance * grossWeight * ratePerGram;
     } else {
       totalStockValue += balance * price;
     }
@@ -580,7 +580,7 @@ Future<Uint8List> generateStockReportPdf({
                 final sp = (r['sellingPrice'] as num?)?.toDouble() ?? 0;
                 
                 final displaySp = pricingType == 'Weight-Based' ? ratePerGram : sp;
-                final stockVal = pricingType == 'Weight-Based' ? (grossWeight * ratePerGram) : (balance * sp);
+                final stockVal = (pricingType == 'Weight-Based' && grossWeight > 0 && ratePerGram > 0) ? (balance * grossWeight * ratePerGram) : (balance * sp);
                 
                 String balanceStr = balance.toString();
                 if (pricingType == 'Weight-Based' && grossWeight > 0) {
@@ -662,10 +662,8 @@ Future<Uint8List> generateCategoryClosingStockPdf({
     'Sold Qty',
     'Closing Stock Qty',
     'Closing Stock Value (Rs.)',
-    'Stock Share (%)',
-    'Status'
   ];
-  const flexes = [1, 3, 2, 2, 2, 2, 2, 3, 2, 2];
+  const flexes = [1, 3, 2, 2, 2, 2, 2, 3];
 
   pdf.addPage(
     pw.MultiPage(
@@ -693,9 +691,6 @@ Future<Uint8List> generateCategoryClosingStockPdf({
                 final r = rows[i];
                 final closingVal =
                     (r['closingValue'] as num?)?.toDouble() ?? 0.0;
-                final share = totalClosingValue > 0
-                    ? (closingVal / totalClosingValue) * 100
-                    : 0.0;
 
                 return _buildTableRow([
                   '${i + 1}',
@@ -706,8 +701,6 @@ Future<Uint8List> generateCategoryClosingStockPdf({
                   '${r['totalSold'] ?? 0}',
                   '${r['closingQty'] ?? 0}',
                   'Rs. ${_numFmt.format(closingVal)}',
-                  '${share.toStringAsFixed(1)}%',
-                  r['status']?.toString() ?? '—',
                 ], flexes, regularFont, i.isOdd);
               }),
               // Grand Total Row
@@ -769,17 +762,6 @@ Future<Uint8List> generateCategoryClosingStockPdf({
                               font: boldFont,
                               fontSize: 8,
                               color: _kBurgundyPdf)),
-                    ),
-                    pw.Expanded(
-                      flex: flexes[8],
-                      child: pw.Text('100.0%',
-                          style: pw.TextStyle(
-                              font: boldFont, fontSize: 8, color: _kTextDark)),
-                    ),
-                    pw.Expanded(
-                      flex: flexes[9],
-                      child: pw.Text('',
-                          style: pw.TextStyle(font: boldFont, fontSize: 8)),
                     ),
                   ],
                 ),

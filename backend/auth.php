@@ -3,11 +3,11 @@ require_once __DIR__ . '/config.php';
 
 $pdo = getDbConnection();
 $method = $_SERVER['REQUEST_METHOD'];
-$action = $_GET['action'] ?? '';
+$input = getJsonInput();
+$action = $_GET['action'] ?? $input['action'] ?? '';
 
 // ─── LOGIN ─────────────────────────────────────────────────────────────
-if ($method === 'POST' && $action === 'login') {
-    $input = getJsonInput();
+if ($method === 'POST' && ($action === 'login' || empty($action) && isset($input['password']))) {
     $email = trim($input['email'] ?? '');
     $password = $input['password'] ?? '';
 
@@ -105,9 +105,8 @@ if ($method === 'POST' && $action === 'login') {
 }
 
 // ─── FORGOT PASSWORD (TIMING-ATTACK RESISTANT) ─────────────────────────
-if ($method === 'POST' && $action === 'forgot_password') {
+if ($method === 'POST' && ($action === 'forgot_password' || $action === 'forgot' || $action === 'reset_password')) {
     $startTime = microtime(true);
-    $input = getJsonInput();
     $email = trim($input['email'] ?? '');
 
     if (empty($email) || !filter_var($email, FILTER_VALIDATE_EMAIL)) {

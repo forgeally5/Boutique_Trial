@@ -151,10 +151,10 @@ class _StockReportScreenState extends State<StockReportScreen> {
         goodStock['totalReceived'] = totalReceived;
         goodStock['issueQty'] = issueQty;
         goodStock['soldQty'] = soldQty;
-        goodStock['balance'] = balance;
-        goodStock['stockValue'] = p.pricingType == 'Weight-Based' && p.grossWeight > 0 && p.ratePerGram > 0
-            ? (p.grossWeight * p.ratePerGram)
+        final double itemStockVal = p.pricingType == 'Weight-Based' && p.grossWeight > 0 && p.ratePerGram > 0
+            ? (balance * p.grossWeight * p.ratePerGram)
             : (balance * effectiveSp);
+        goodStock['stockValue'] = itemStockVal;
         rows.add(goodStock);
 
         // Aggregate into Category-wise Closing Stock
@@ -203,7 +203,7 @@ class _StockReportScreenState extends State<StockReportScreen> {
         String cStatus;
         if (closingQty <= 0) {
           cStatus = 'Out of Stock';
-        } else if (closingQty < 10) {
+        } else if (closingQty < 5) {
           cStatus = 'Low Stock';
         } else {
           cStatus = 'In Stock';
@@ -879,10 +879,8 @@ class _StockReportScreenState extends State<StockReportScreen> {
       'Sold Qty',
       'Closing Stock Qty',
       'Closing Value (₹)',
-      'Stock Share (%)',
-      'Status'
     ];
-    const flexes = [1, 4, 2, 2, 2, 2, 2, 3, 2, 2];
+    const flexes = [1, 4, 2, 2, 2, 2, 2, 3];
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: const BoxDecoration(
@@ -918,30 +916,11 @@ class _StockReportScreenState extends State<StockReportScreen> {
     final totalSold = (r['totalSold'] as num?)?.toInt() ?? 0;
     final closingQty = (r['closingQty'] as num?)?.toInt() ?? 0;
     final closingValue = (r['closingValue'] as num?)?.toDouble() ?? 0.0;
-    final status = r['status']?.toString() ?? 'In Stock';
     final products =
         (r['products'] as List<Map<String, dynamic>>?) ?? const [];
 
-    final totalVal = _catTotalClosingValue;
-    final sharePct = totalVal > 0 ? (closingValue / totalVal) * 100 : 0.0;
     final isExpanded = _expandedCategories.contains(category);
     final isAlt = i.isOdd;
-
-    Color statusColor;
-    Color statusBg;
-    switch (status) {
-      case 'Low Stock':
-        statusColor = BoutiqueColors.warning;
-        statusBg = BoutiqueColors.warningBg;
-        break;
-      case 'Out of Stock':
-        statusColor = BoutiqueColors.destructive;
-        statusBg = BoutiqueColors.destructiveBg;
-        break;
-      default:
-        statusColor = BoutiqueColors.success;
-        statusBg = BoutiqueColors.successBg;
-    }
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -1044,7 +1023,7 @@ class _StockReportScreenState extends State<StockReportScreen> {
                       '$closingQty',
                       color: closingQty == 0
                           ? BoutiqueColors.destructive
-                          : closingQty < 10
+                          : closingQty < 5
                               ? BoutiqueColors.warning
                               : BoutiqueColors.textPrimary,
                       bold: true,
@@ -1059,60 +1038,6 @@ class _StockReportScreenState extends State<StockReportScreen> {
                       '₹${_numFmt.format(closingValue)}',
                       color: BoutiqueColors.textPrimary,
                       bold: true,
-                    ),
-                  ),
-                ),
-                Expanded(
-                  flex: 2,
-                  child: Padding(
-                    padding: const EdgeInsets.only(right: 12),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(4),
-                            child: LinearProgressIndicator(
-                              value: (sharePct / 100).clamp(0.0, 1.0),
-                              minHeight: 6,
-                              backgroundColor: BoutiqueColors.borderLight,
-                              valueColor: const AlwaysStoppedAnimation<Color>(
-                                  BoutiqueColors.accent),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 6),
-                        SizedBox(
-                          width: 42,
-                          child: Text(
-                            '${sharePct.toStringAsFixed(1)}%',
-                            style: const TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                              color: BoutiqueColors.textSecondary,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                Expanded(
-                  flex: 2,
-                  child: Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: statusBg,
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Text(
-                      status,
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: statusColor,
-                        fontWeight: FontWeight.bold,
-                      ),
-                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
                 ),
@@ -1255,7 +1180,8 @@ class _StockReportScreenState extends State<StockReportScreen> {
                               flex: 2, child: _cell('₹${_numFmt.format(sp)}')),
                           Expanded(
                               flex: 2,
-                              child: _cell('₹${_numFmt.format(bal * sp)}',
+                              child: _cell(
+                                  '₹${_numFmt.format((p['stockValue'] as num?)?.toDouble() ?? (bal * sp))}',
                                   bold: true)),
                         ],
                       ),
@@ -1270,7 +1196,7 @@ class _StockReportScreenState extends State<StockReportScreen> {
   }
 
   Widget _catGrandTotalFooter() {
-    const flexes = [1, 4, 2, 2, 2, 2, 2, 3, 2, 2];
+    const flexes = [1, 4, 2, 2, 2, 2, 2, 3];
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       decoration: const BoxDecoration(
@@ -1330,11 +1256,6 @@ class _StockReportScreenState extends State<StockReportScreen> {
               ),
             ),
           ),
-          Expanded(
-            flex: flexes[8],
-            child: _cell('100.0%', bold: true),
-          ),
-          Expanded(flex: flexes[9], child: const SizedBox()),
         ],
       ),
     );

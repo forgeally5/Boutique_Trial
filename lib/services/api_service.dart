@@ -60,7 +60,10 @@ class ApiService {
     final res = await http.post(
       url,
       headers: _headers,
-      body: jsonEncode({'email': email.trim()}),
+      body: jsonEncode({
+        'action': 'forgot_password',
+        'email': email.trim(),
+      }),
     ).timeout(const Duration(seconds: 15));
 
     final data = jsonDecode(res.body);
