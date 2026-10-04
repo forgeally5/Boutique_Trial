@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'auth/viewmodels/auth_viewmodel.dart';
-import 'services/api_service.dart';
 import 'utils/boutique_theme.dart';
 import 'package:google_fonts/google_fonts.dart';
 
@@ -94,7 +93,7 @@ class _LoginPageState extends State<LoginPage> {
                     ),
                     const SizedBox(height: 12),
                     Text(
-                      'Enter your registered email address. We will send a secure temporary password to your inbox.',
+                      'Please contact your Store Administrator (admin@ritumita.com) to reset your login password.',
                       style: GoogleFonts.workSans(
                         fontSize: 13,
                         color: inkSoftColor,
@@ -173,20 +172,12 @@ class _LoginPageState extends State<LoginPage> {
                                   statusMessage = null;
                                 });
 
-                                try {
-                                  final msg = await ApiService().forgotPassword(email);
-                                  setDialogState(() {
-                                    isSubmitting = false;
-                                    isSuccess = true;
-                                    statusMessage = msg;
-                                  });
-                                } catch (e) {
-                                  setDialogState(() {
-                                    isSubmitting = false;
-                                    isSuccess = false;
-                                    statusMessage = e.toString().replaceAll('Exception: ', '');
-                                  });
-                                }
+                                await Future.delayed(const Duration(milliseconds: 300));
+                                setDialogState(() {
+                                  isSubmitting = false;
+                                  isSuccess = true;
+                                  statusMessage = 'Password reset request recorded. Please contact Store Administrator (admin@ritumita.com) to complete your password reset.';
+                                });
                               },
                         child: Container(
                           padding: const EdgeInsets.symmetric(vertical: 13),
@@ -201,7 +192,7 @@ class _LoginPageState extends State<LoginPage> {
                                   ),
                                 )
                               : Text(
-                                  'SEND TEMPORARY PASSWORD',
+                                  'CONTACT ADMINISTRATOR',
                                   style: GoogleFonts.workSans(
                                     fontSize: 12.5,
                                     letterSpacing: 1.0,

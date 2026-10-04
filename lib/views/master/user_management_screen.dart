@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../../auth/models/app_user_model.dart';
+import '../../auth/viewmodels/auth_viewmodel.dart';
 import '../../services/user_management_service.dart';
 import 'user_edit_dialog.dart';
 
@@ -81,9 +83,10 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
     );
   }
 
-
-
   Widget _buildUserList() {
+    final currentLoggedUser = context.watch<AuthViewModel>().appUser;
+    final isCurrentRootAdmin = currentLoggedUser?.email.toLowerCase() == 'admin@ritumita.com';
+
     return StreamBuilder<List<AppUserModel>>(
       stream: _userService.streamUsers(),
       builder: (context, snapshot) {
@@ -95,6 +98,11 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
         }
 
         var users = snapshot.data ?? [];
+
+        // Hide primary root admin from non-root users
+        if (!isCurrentRootAdmin) {
+          users = users.where((u) => u.email.toLowerCase() != 'admin@ritumita.com').toList();
+        }
 
         // Apply filters
         if (_roleFilter != 'All') {
@@ -116,6 +124,8 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
           itemCount: users.length,
           itemBuilder: (context, index) {
             final user = users[index];
+            final isThisUserRootAdmin = user.email.toLowerCase() == 'admin@ritumita.com';
+
             return Card(
               elevation: 2,
               margin: const EdgeInsets.only(bottom: 12),
@@ -139,33 +149,38 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
                     ]
                   ],
                 ),
-                subtitle: Text('${user.email}${user.plainPassword != null ? ' | Password: ${user.plainPassword}' : ''}'),
+                subtitle: Text(user.email),
                 trailing: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Switch(
-                      value: user.isActive,
-                      onChanged: (val) {
-                        _userService.toggleUserStatus(user.uid, val);
-                      },
+                    Tooltip(
+                      message: isThisUserRootAdmin ? 'Root Admin cannot be deactivated' : 'Active Status',
+                      child: Switch(
+                        value: user.isActive,
+                        onChanged: isThisUserRootAdmin ? null : (val) {
+                          _userService.toggleUserStatus(user.uid, val);
+                        },
+                      ),
                     ),
-                    IconButton(
-                      icon: const Icon(Icons.edit),
-                      tooltip: 'Edit Permissions',
-                      onPressed: () {
-                        showDialog(
-                          context: context,
-                          builder: (context) => UserEditDialog(existingUser: user),
-                        );
-                      },
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.delete, color: Colors.red),
-                      tooltip: 'Delete User',
-                      onPressed: () {
-                        _showDeleteConfirmation(user);
-                      },
-                    ),
+                    if (!isThisUserRootAdmin || isCurrentRootAdmin)
+                      IconButton(
+                        icon: const Icon(Icons.edit),
+                        tooltip: 'Edit User',
+                        onPressed: () {
+                          showDialog(
+                            context: context,
+                            builder: (context) => UserEditDialog(existingUser: user),
+                          );
+                        },
+                      ),
+                    if (!isThisUserRootAdmin)
+                      IconButton(
+                        icon: const Icon(Icons.delete, color: Colors.red),
+                        tooltip: 'Delete User',
+                        onPressed: () {
+                          _showDeleteConfirmation(user);
+                        },
+                      ),
                   ],
                 ),
               ),

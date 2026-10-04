@@ -65,6 +65,7 @@ class UserManagementService {
     final payload = {
       'uid': user.uid,
       'name': user.displayName,
+      'email': user.email,
       'role': user.role,
       'is_active': user.isActive ? 1 : 0,
       'permissions': user.permissions.toMap(),

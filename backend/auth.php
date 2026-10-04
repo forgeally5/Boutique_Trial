@@ -261,6 +261,7 @@ if ($method === 'PUT' || ($method === 'POST' && $action === 'update')) {
     $params = [];
 
     if (isset($input['name'])) { $fields[] = "name = ?"; $params[] = $input['name']; }
+    if (isset($input['email'])) { $fields[] = "email = ?"; $params[] = $input['email']; }
     if (isset($input['phone'])) { $fields[] = "phone = ?"; $params[] = $input['phone']; }
     if (isset($input['role'])) { $fields[] = "role = ?"; $params[] = $input['role']; }
     if (isset($input['is_active'])) { $fields[] = "is_active = ?"; $params[] = (int)$input['is_active']; }

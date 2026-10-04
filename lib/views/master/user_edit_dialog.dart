@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../../auth/models/app_user_model.dart';
+import '../../auth/viewmodels/auth_viewmodel.dart';
 import '../../services/user_management_service.dart';
 
 class UserEditDialog extends StatefulWidget {
@@ -85,6 +87,10 @@ class _UserEditDialogState extends State<UserEditDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final currentLoggedUser = context.watch<AuthViewModel>().appUser;
+    final isCurrentRootAdmin = currentLoggedUser?.email.toLowerCase() == 'admin@ritumita.com';
+    final isEditingRootAdmin = widget.existingUser?.email.toLowerCase() == 'admin@ritumita.com';
+
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Container(
@@ -120,7 +126,7 @@ class _UserEditDialogState extends State<UserEditDialog> {
                             TextFormField(
                               controller: _emailController,
                               decoration: const InputDecoration(labelText: 'Login ID (Email)', border: OutlineInputBorder()),
-                              enabled: widget.existingUser == null, // Disable email edit for existing users
+                              enabled: widget.existingUser == null || isCurrentRootAdmin || isEditingRootAdmin,
                               validator: (v) => v!.isEmpty ? 'Required' : null,
                             ),
                             const SizedBox(height: 16),
