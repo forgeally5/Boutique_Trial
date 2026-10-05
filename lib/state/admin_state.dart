@@ -1056,19 +1056,22 @@ class AdminState extends ChangeNotifier {
       debugPrint("Error generating return bill no: $e");
     }
 
+    final updatedItems = items.map((i) => {...i, 'originalBillNo': originalBillNo}).toList();
+
     final billData = {
       'billNo': nextId,
-      'originalBillNo': originalBillNo,
+      'originalBillNo': originalBillNo, // Might be dropped by backend
       'billType': 'Return',
       'customerName': customerName,
       'customerMobile': customerMobile,
       'billDate': DateTime.now().toIso8601String(),
       'createdAt': DateTime.now().toIso8601String(),
-      'items': items,
+      'items': updatedItems, // Safely stored as JSON by backend
       'totalPayable': totalRefund,
       'returnReason': returnReason,
       'returnStatus': 'Processed',
       'paymentMode': paymentMode,
+      'narration': 'Return for $originalBillNo',
     };
 
     await ApiService().createBill(billData);
@@ -1080,20 +1083,26 @@ class AdminState extends ChangeNotifier {
 
       final product = lookupProduct(tagId);
       if (product != null) {
-        final newQty = product.quantity + qty;
-        String newStatus;
-        if (newQty == 0) {
-          newStatus = 'Out of Stock';
-        } else if (newQty < 5) {
-          newStatus = 'Low Stock';
+        // Only add back to inventory if condition is Good
+        if (condition.toLowerCase() == 'good') {
+          final newQty = product.quantity + qty;
+          String newStatus;
+          if (newQty == 0) {
+            newStatus = 'Out of Stock';
+          } else if (newQty < 5) {
+            newStatus = 'Low Stock';
+          } else {
+            newStatus = 'In Stock';
+          }
+          
+          await updateProduct(product.copyWith(
+            quantity: newQty,
+            status: newStatus,
+          ));
         } else {
-          newStatus = 'In Stock';
+          // If defective, do not add back to sellable inventory.
+          // It is already logged as an issue in the return bill.
         }
-        
-        await updateProduct(product.copyWith(
-          quantity: newQty,
-          status: newStatus,
-        ));
         
         if (condition == 'Defective') {
           final issue = VendorIssue(

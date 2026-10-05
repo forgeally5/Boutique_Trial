@@ -551,10 +551,10 @@ class _IssueReportScreenState extends State<IssueReportScreen> {
   // ── Table Header ───────────────────────────────────────────────────────────
   Widget _tableHeader() {
     const cols = [
-      'Date', 'Product',
+      'Date', 'Party/Customer', 'Contact', 'Product',
       'Qty', 'Issue / Reason', 'Refund (₹)', 'Status', 'Actions'
     ];
-    const flexes = [2, 4, 1, 3, 2, 2, 2];
+    const flexes = [2, 3, 2, 4, 1, 3, 2, 2, 2];
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       decoration: const BoxDecoration(
@@ -615,6 +615,10 @@ class _IssueReportScreenState extends State<IssueReportScreen> {
         children: [
           // Date
           Expanded(flex: 2, child: _cell(r['date']?.toString() ?? '—')),
+          // Party/Customer
+          Expanded(flex: 3, child: _cell(r['counterpart']?.toString() ?? '—', bold: true)),
+          // Mobile
+          Expanded(flex: 2, child: _cell(r['mobile']?.toString() ?? '—')),
           // Product
           Expanded(
               flex: 4,

@@ -83,6 +83,47 @@ class _BillHistoryScreenState extends State<BillHistoryScreen> {
       final toDt = DateTime(_dateTo.year, _dateTo.month, _dateTo.day, 23, 59, 59);
 
       final list = <Map<String, dynamic>>[];
+      
+      // Retroactively find all returned bills by extracting from items or narration
+      final returnedItemsMap = <String, List<Map<String, dynamic>>>{};
+      
+      for (final b in hostingerBills) {
+        if (b['billType']?.toString().toUpperCase() == 'RETURN') {
+          String? orig = b['originalBillNo']?.toString();
+          final items = b['items'];
+          
+          if (orig == null || orig.isEmpty) {
+            if (items is List && items.isNotEmpty) {
+              for (final item in items) {
+                if (item is Map && item['originalBillNo'] != null) {
+                  orig = item['originalBillNo'].toString();
+                  break;
+                }
+              }
+            }
+          }
+          if (orig == null || orig.isEmpty) {
+             final narration = b['narration']?.toString() ?? '';
+             if (narration.startsWith('Return for ')) {
+               orig = narration.replaceAll('Return for ', '').trim();
+             }
+          }
+          if (orig != null && orig.isNotEmpty) {
+            final upperOrig = orig.trim().toUpperCase();
+            if (!returnedItemsMap.containsKey(upperOrig)) {
+              returnedItemsMap[upperOrig] = [];
+            }
+            if (items is List) {
+              for (final item in items) {
+                if (item is Map) {
+                  returnedItemsMap[upperOrig]!.add(Map<String, dynamic>.from(item));
+                }
+              }
+            }
+          }
+        }
+      }
+
       for (final hb in hostingerBills) {
         final bType = hb['billType']?.toString() ?? 'Sale';
         if (bType != 'Sale' && bType != 'Advance Payment') continue;
@@ -93,6 +134,35 @@ class _BillHistoryScreenState extends State<BillHistoryScreen> {
           final copy = Map<String, dynamic>.from(hb);
           copy['_docId'] = hb['doc_id'] ?? hb['docId'] ?? hb['id'] ?? '';
           copy['billNo'] = hb['bill_no'] ?? hb['billNo'] ?? hb['voucherNo'] ?? '';
+          
+          final myBillNo = copy['billNo'].toString().trim().toUpperCase();
+          if (returnedItemsMap.containsKey(myBillNo)) {
+            final retItems = returnedItemsMap[myBillNo]!;
+            copy['returnedItems'] = retItems; // Store for the detailed view
+            
+            // Calculate quantities
+            num totalOrigQty = 0;
+            final origItems = copy['items'];
+            if (origItems is List) {
+              for (final oi in origItems) {
+                if (oi is Map) {
+                  totalOrigQty += (oi['qty'] as num?) ?? 1;
+                }
+              }
+            }
+            
+            num totalRetQty = 0;
+            for (final ri in retItems) {
+              totalRetQty += (ri['qty'] as num?) ?? 1;
+            }
+            
+            if (totalRetQty >= totalOrigQty && totalOrigQty > 0) {
+              copy['isReturned'] = 1; // Fully returned
+            } else {
+              copy['isReturned'] = 2; // Partially returned
+            }
+          }
+          
           list.add(copy);
         }
       }
@@ -652,7 +722,27 @@ class _BillHistoryScreenState extends State<BillHistoryScreen> {
         children: [
           Text(b['billNo'] ?? '—', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: BoutiqueColors.accent)),
           const SizedBox(width: 8),
-          if (hasDue || isFullySettled)
+          if (b['isReturned'] == 1 || b['isReturned'] == true || b['isReturned'] == '1')
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFEE2E2), // light red bg
+                borderRadius: BorderRadius.circular(4),
+                border: Border.all(color: const Color(0xFFFCA5A5)),
+              ),
+              child: const Text('RETURNED', style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Color(0xFFDC2626))),
+            )
+          else if (b['isReturned'] == 2 || b['isReturned'] == '2')
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFEF3C7), // light amber bg
+                borderRadius: BorderRadius.circular(4),
+                border: Border.all(color: const Color(0xFFFCD34D)),
+              ),
+              child: const Text('PARTIAL RETURN', style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Color(0xFFD97706))),
+            )
+          else if (hasDue || isFullySettled)
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
               decoration: BoxDecoration(
@@ -937,7 +1027,7 @@ class _BillDetailDialogState extends State<_BillDetailDialog> {
       );
     }
 
-    Widget tableCell(String text, {bool isHeader = false, Alignment align = Alignment.center, bool bold = false}) {
+    Widget tableCell(String text, {bool isHeader = false, Alignment align = Alignment.center, bool bold = false, Color? color}) {
       return Container(
         padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
         alignment: align,
@@ -946,7 +1036,7 @@ class _BillDetailDialogState extends State<_BillDetailDialog> {
           style: TextStyle(
             fontSize: 11.5,
             fontWeight: (isHeader || bold) ? FontWeight.bold : FontWeight.normal,
-            color: isHeader ? Colors.white : textDark,
+            color: color ?? (isHeader ? Colors.white : textDark),
           ),
         ),
       );
@@ -1173,14 +1263,34 @@ class _BillDetailDialogState extends State<_BillDetailDialog> {
                           ...items.asMap().entries.map((e) {
                             final i = e.key + 1;
                             final r = e.value as Map<String, dynamic>;
+                            final tagId = r['tagId']?.toString() ?? '';
                             final itemName = r['name']?.toString() ?? '';
+                            
+                            num retQty = 0;
+                            final retItems = (widget.bill['returnedItems'] as List?) ?? [];
+                            for (var ri in retItems) {
+                              if (ri is Map && (ri['tagId']?.toString() == tagId || ri['name']?.toString() == itemName)) {
+                                retQty += (ri['qty'] as num?) ?? 1;
+                              }
+                            }
+                            
                             final qty = (r['qty'] as num?)?.toDouble() ?? 1.0;
                             final price = (r['price'] as num?)?.toDouble() ?? 0.0;
                             final lineAmt = (r['lineAmount'] as num?)?.toDouble() ?? 0.0;
+                            
+                            String nameDisplay = itemName;
+                            if (retQty > 0) {
+                              if (retQty >= qty) {
+                                nameDisplay = '$itemName  [RETURNED]';
+                              } else {
+                                nameDisplay = '$itemName  [RETURNED: ${retQty.toInt()}]';
+                              }
+                            }
+                            
                             return TableRow(
                               children: [
                                 tableCell('$i'),
-                                tableCell(itemName, align: Alignment.centerLeft),
+                                tableCell(nameDisplay, align: Alignment.centerLeft, color: retQty > 0 ? const Color(0xFFDC2626) : null),
                                 tableCell(price.toStringAsFixed(2)),
                                 tableCell('${qty.toInt()}'),
                                 tableCell(lineAmt.toStringAsFixed(2), bold: true),

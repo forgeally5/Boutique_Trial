@@ -44,18 +44,73 @@ class _CustomerReturnDialogState extends State<CustomerReturnDialog> {
         final data = matching.first;
         final items = (data['items'] as List?) ?? [];
         
-        setState(() {
-          _foundBill = data;
-          _billItems = items.map((i) => {
+        // Calculate already returned items
+        final returnedMap = <String, num>{};
+        for (final b in bills) {
+          if (b['billType']?.toString().toUpperCase() == 'RETURN') {
+            String? orig = b['originalBillNo']?.toString();
+            final rItems = b['items'];
+            if (orig == null || orig.isEmpty) {
+              if (rItems is List && rItems.isNotEmpty) {
+                for (final item in rItems) {
+                  if (item is Map && item['originalBillNo'] != null) {
+                    orig = item['originalBillNo'].toString();
+                    break;
+                  }
+                }
+              }
+            }
+            if (orig == null || orig.isEmpty) {
+               final narration = b['narration']?.toString() ?? '';
+               if (narration.startsWith('Return for ')) {
+                 orig = narration.replaceAll('Return for ', '').trim();
+               }
+            }
+            
+            if (orig != null && orig.trim().toUpperCase() == query.toUpperCase()) {
+              if (rItems is List) {
+                for (final ri in rItems) {
+                  if (ri is Map) {
+                    final key = '${ri['tagId']}_${ri['name']}';
+                    returnedMap[key] = (returnedMap[key] ?? 0) + ((ri['qty'] as num?) ?? 1);
+                  }
+                }
+              }
+            }
+          }
+        }
+        
+        final availableItems = items.map((i) {
+          final key = '${i['tagId']}_${i['name']}';
+          final alreadyRet = returnedMap[key] ?? 0;
+          final purchasedQty = (i['qty'] as num?) ?? 1;
+          final availableToReturn = purchasedQty - alreadyRet;
+          
+          if (availableToReturn <= 0) return null;
+          
+          return {
             'tagId': i['tagId'],
             'name': i['name'],
-            'purchasedQty': i['qty'],
+            'purchasedQty': availableToReturn,
             'unitPrice': (i['lineAmount'] ?? 0) / (i['qty'] ?? 1),
-            
             'isSelected': false,
-            'returnQty': i['qty'],
-            'condition': 'Defective', // 'Good' or 'Defective'
-          }).toList();
+            'returnQty': availableToReturn,
+            'condition': 'Defective',
+          };
+        }).where((i) => i != null).cast<Map<String, dynamic>>().toList();
+        
+        if (availableItems.isEmpty) {
+          if (mounted) BoutiqueToast.showError(context, 'All items in this bill have already been returned!');
+          setState(() {
+            _foundBill = null;
+            _billItems = [];
+          });
+          return;
+        }
+
+        setState(() {
+          _foundBill = data;
+          _billItems = availableItems;
         });
       }
     } catch (e) {
@@ -81,10 +136,7 @@ class _CustomerReturnDialogState extends State<CustomerReturnDialog> {
       BoutiqueToast.showError(context, 'Please select at least one item to return');
       return;
     }
-    if (_reasonCtrl.text.trim().isEmpty) {
-      BoutiqueToast.showError(context, 'Please enter a return reason');
-      return;
-    }
+    // Reason is now optional
 
     setState(() => _isSaving = true);
     try {
@@ -243,7 +295,7 @@ class _CustomerReturnDialogState extends State<CustomerReturnDialog> {
                     flex: 2,
                     child: TextFormField(
                       controller: _reasonCtrl,
-                      decoration: BoutiqueInputDecoration.field(labelText: 'Return Reason (Required)', hintText: 'e.g. Size didn\'t fit, Defective...'),
+                      decoration: BoutiqueInputDecoration.field(labelText: 'Return Reason (Optional)', hintText: 'e.g. Size didn\'t fit, Defective...'),
                     ),
                   ),
                   const SizedBox(width: 12),

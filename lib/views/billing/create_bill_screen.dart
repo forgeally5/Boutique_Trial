@@ -59,6 +59,7 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
   List<Product> _cachedProducts = [];
 
   List<String> _knownCustomers = [];
+  List<Map<String, String>> _knownCustomerData = [];
 
   @override
   void initState() {
@@ -75,13 +76,41 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
     try {
       final bills = await ApiService().getBills();
       final names = <String>{};
+      final custDataMap = <String, Map<String, String>>{};
+      
       for (final doc in bills) {
         final name = (doc['customerName'] ?? doc['customer_name'])?.toString().trim();
+        final mobile = (doc['customerMobile'] ?? doc['customer_mobile'])?.toString().trim();
+        final address = (doc['customerAddress'] ?? doc['customer_address'])?.toString().trim();
+        
         if (name != null && name.isNotEmpty && name.toLowerCase() != 'walk-in' && name.toLowerCase() != 'walk-in customer') {
           names.add(name);
         }
+        
+        if (mobile != null && mobile.isNotEmpty && mobile.length == 10) {
+          if (!custDataMap.containsKey(mobile)) {
+             custDataMap[mobile] = {
+               'name': name ?? '',
+               'mobile': mobile,
+               'address': address ?? '',
+             };
+          } else {
+             // If we already have this mobile but without address/name, try to fill it
+             if (custDataMap[mobile]!['name']!.isEmpty && name != null) {
+               custDataMap[mobile]!['name'] = name;
+             }
+             if (custDataMap[mobile]!['address']!.isEmpty && address != null) {
+               custDataMap[mobile]!['address'] = address;
+             }
+          }
+        }
       }
-      if (mounted) setState(() => _knownCustomers = names.toList()..sort());
+      if (mounted) {
+        setState(() {
+          _knownCustomers = names.toList()..sort();
+          _knownCustomerData = custDataMap.values.toList();
+        });
+      }
     } catch (_) {}
   }
 
@@ -142,10 +171,12 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
         int maxNo = 0;
         for (var b in bills) {
           final noStr = (b['billNo'] ?? b['bill_no'])?.toString() ?? '';
-          final match = RegExp(r'\d+').firstMatch(noStr);
-          if (match != null) {
-            final n = int.tryParse(match.group(0)!) ?? 0;
-            if (n > maxNo) maxNo = n;
+          if (noStr.toUpperCase().startsWith('SB-')) {
+            final match = RegExp(r'\d+').firstMatch(noStr);
+            if (match != null) {
+              final n = int.tryParse(match.group(0)!) ?? 0;
+              if (n > maxNo) maxNo = n;
+            }
           }
         }
         nextNum = maxNo + 1;
@@ -184,8 +215,58 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
     return true;
   }
 
+  void _showMobileErrorDialog() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        titlePadding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
+        contentPadding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(color: Colors.red.shade100, shape: BoxShape.circle),
+              child: const Icon(Icons.error_outline, color: Colors.red),
+            ),
+            const SizedBox(width: 12),
+            const Text('Invalid Mobile', style: TextStyle(fontFamily: 'serif', fontSize: 20, color: Colors.red, fontWeight: FontWeight.bold)),
+          ],
+        ),
+        content: const Text(
+          'Please enter a valid 10-digit mobile number.',
+          style: TextStyle(fontSize: 14, height: 1.4),
+        ),
+        actions: [
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              elevation: 0,
+            ),
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _saveBill(bool isSplit, String singleMode, List<Map<String, dynamic>> splitPayments) async {
     setState(() => _attemptedSave = true);
+    
+    final m = _customerMobileCtrl.text.trim();
+    if (m.isNotEmpty && !RegExp(r'^\d{10}$').hasMatch(m)) {
+      _showMobileErrorDialog();
+      return;
+    }
+    
+    if (!_hasValidRows) {
+      BoutiqueToast.showError(context, 'Please add at least one product before saving.');
+      return;
+    }
+
     if (!_canSave) {
       BoutiqueToast.showError(context, 'Please fill in all required fields correctly.');
       return;
@@ -774,15 +855,87 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
               const SizedBox(width: 16),
               // Mobile field — error shown only after save attempt, not on every keystroke
               Expanded(
-                child: TextField(
-                  controller: _customerMobileCtrl,
-                  keyboardType: TextInputType.phone,
-                  style: const TextStyle(fontSize: 13),
-                  decoration: BoutiqueInputDecoration.field(
-                    hintText: '10-digit mobile',
-                    labelText: 'Mobile Number',
-                    errorText: _mobileError(),
-                  ),
+                child: RawAutocomplete<Map<String, String>>(
+                  textEditingController: _customerMobileCtrl,
+                  focusNode: FocusNode(),
+                  displayStringForOption: (option) => option['mobile'] ?? '',
+                  optionsBuilder: (TextEditingValue textEditingValue) {
+                    if (textEditingValue.text.isEmpty) {
+                      return const Iterable<Map<String, String>>.empty();
+                    }
+                    final query = textEditingValue.text.toLowerCase();
+                    return _knownCustomerData.where((data) =>
+                        (data['mobile'] ?? '').contains(query));
+                  },
+                  onSelected: (Map<String, String> selection) {
+                    if (selection['name'] != null && selection['name']!.isNotEmpty) {
+                      _customerNameCtrl.text = selection['name']!;
+                    }
+                    if (selection['address'] != null && selection['address']!.isNotEmpty) {
+                      _customerAddressCtrl.text = selection['address']!;
+                      setState(() => _showExtraCustomerDetails = true);
+                    }
+                  },
+                  fieldViewBuilder: (BuildContext context,
+                      TextEditingController textEditingController,
+                      FocusNode focusNode,
+                      VoidCallback onFieldSubmitted) {
+                    return TextField(
+                      controller: textEditingController,
+                      focusNode: focusNode,
+                      keyboardType: TextInputType.phone,
+                      style: const TextStyle(fontSize: 13),
+                      decoration: BoutiqueInputDecoration.field(
+                        hintText: '10-digit mobile',
+                        labelText: 'Mobile Number',
+                        errorText: _mobileError(),
+                      ),
+                      onSubmitted: (String value) {
+                        final m = value.trim();
+                        if (m.isNotEmpty && !RegExp(r'^\d{10}$').hasMatch(m)) {
+                          _showMobileErrorDialog();
+                        }
+                        onFieldSubmitted();
+                      },
+                    );
+                  },
+                  optionsViewBuilder: (BuildContext context,
+                      AutocompleteOnSelected<Map<String, String>> onSelected,
+                      Iterable<Map<String, String>> options) {
+                    return Align(
+                      alignment: Alignment.topLeft,
+                      child: Material(
+                        elevation: 4.0,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8)),
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxHeight: 200, maxWidth: 300),
+                          child: ListView.builder(
+                            padding: EdgeInsets.zero,
+                            shrinkWrap: true,
+                            itemCount: options.length,
+                            itemBuilder: (BuildContext context, int index) {
+                              final option = options.elementAt(index);
+                              return InkWell(
+                                onTap: () => onSelected(option),
+                                child: Padding(
+                                  padding: const EdgeInsets.all(12.0),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(option['mobile'] ?? '', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                                      if (option['name'] != null && option['name']!.isNotEmpty)
+                                        Text(option['name']!, style: const TextStyle(fontSize: 11, color: BoutiqueColors.textSecondary)),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      ),
+                    );
+                  },
                 ),
               ),
             ],
@@ -1782,6 +1935,7 @@ class _BillSummaryPanel extends StatefulWidget {
   final void Function(bool isSplit, String singleMode, List<Map<String, dynamic>> splitPayments) onDownload;
 
   const _BillSummaryPanel({
+    super.key,
     required this.rows,
     required this.rowVersion,
     required this.extraDiscountCtrl,
