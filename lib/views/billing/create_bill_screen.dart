@@ -1147,9 +1147,11 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
                   itemBuilder: (context, index) {
                     final p = options.elementAt(index);
                     final stock = _getAvailableStock(p);
+                    final bool highlight = AutocompleteHighlightedOption.of(context) == index;
                     return InkWell(
                       onTap: () => onSelected(p),
-                      child: Padding(
+                      child: Container(
+                        color: highlight ? BoutiqueColors.accent.withValues(alpha: 0.15) : Colors.transparent,
                         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
