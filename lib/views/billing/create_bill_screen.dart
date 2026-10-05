@@ -495,7 +495,15 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
       _billDate = DateTime.now();
       _customerNameCtrl.clear();
       _customerMobileCtrl.clear();
+      _customerAddressCtrl.clear();
+      _showExtraCustomerDetails = false;
+      for (var f in _customFields) {
+        f['key']?.dispose();
+        f['value']?.dispose();
+      }
+      _customFields.clear();
       _rows.clear();
+      _rowVersion.value++;
       _topScanKey++;
       _extraDiscountCtrl.text = '0';
       _gstCtrl.text = '0';
@@ -591,6 +599,7 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
               padding: const EdgeInsets.all(32),
               child: SingleChildScrollView(
                 child: _BillSummaryPanel(
+                  key: ValueKey(_topScanKey),
                   rows: _rows,
                   rowVersion: _rowVersion,
                   extraDiscountCtrl: _extraDiscountCtrl,
