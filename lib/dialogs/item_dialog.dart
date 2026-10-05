@@ -1914,50 +1914,15 @@ class _ItemDialogState extends State<ItemDialog> {
   }
 
   Widget _dropdown(String label, String value, List<String> items, ValueChanged<String?> onChanged) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: const TextStyle(
-            fontSize: 12, fontWeight: FontWeight.w600, color: _lightBrown,
-          ),
-        ),
-        const SizedBox(height: 5),
-        GestureDetector(
-          onTap: () => _showSearchableDropdownDialog(
-            label: label,
-            currentValue: items.contains(value) ? value : (items.isNotEmpty ? items.first : ''),
-            items: items,
-            onSelected: onChanged,
-          ),
-          child: InputDecorator(
-            decoration: InputDecoration(
-              filled: true,
-              fillColor: Colors.white,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
-                borderSide: const BorderSide(color: _border),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
-                borderSide: const BorderSide(color: _brown, width: 1.5),
-              ),
-              suffixIcon: const Icon(Icons.arrow_drop_down, color: _lightBrown),
-            ),
-            child: Text(
-              items.contains(value) ? value : (items.isNotEmpty ? items.first : ''),
-              style: const TextStyle(color: _brown, fontSize: 14),
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-        ),
-      ],
+    return _CustomDropdown(
+      label: label,
+      value: value,
+      items: items,
+      onChanged: onChanged,
+      showSearchableDropdownDialog: _showSearchableDropdownDialog,
     );
   }
 
-  /// Dropdown with an inline error message below (for required dropdowns).
   Widget _dropdownWithError({
     required String label,
     required String value,
@@ -1965,51 +1930,13 @@ class _ItemDialogState extends State<ItemDialog> {
     String? error,
     required ValueChanged<String?> onChanged,
   }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: const TextStyle(
-            fontSize: 12, fontWeight: FontWeight.w600, color: _lightBrown,
-          ),
-        ),
-        const SizedBox(height: 5),
-        GestureDetector(
-          onTap: () => _showSearchableDropdownDialog(
-            label: label,
-            currentValue: items.contains(value) ? value : (items.isNotEmpty ? items.first : ''),
-            items: items,
-            onSelected: onChanged,
-          ),
-          child: InputDecorator(
-            decoration: InputDecoration(
-              filled: true,
-              fillColor: Colors.white,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
-                borderSide: BorderSide(color: error != null ? _errorColor : _border),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
-                borderSide: BorderSide(color: error != null ? _errorColor : _brown, width: 1.5),
-              ),
-              suffixIcon: const Icon(Icons.arrow_drop_down, color: _lightBrown),
-            ),
-            child: Text(
-              items.contains(value) ? value : (items.isNotEmpty ? items.first : ''),
-              style: const TextStyle(color: _brown, fontSize: 14),
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-        ),
-        if (error != null)
-          Padding(
-            padding: const EdgeInsets.only(top: 4, left: 2),
-            child: Text(error, style: const TextStyle(fontSize: 11, color: _errorColor)),
-          ),
-      ],
+    return _CustomDropdown(
+      label: label,
+      value: value,
+      items: items,
+      error: error,
+      onChanged: onChanged,
+      showSearchableDropdownDialog: _showSearchableDropdownDialog,
     );
   }
 
@@ -2033,6 +1960,109 @@ class _ItemDialogState extends State<ItemDialog> {
           },
         );
       },
+    );
+  }
+}
+
+// ── Custom Dropdown Field ───────────────────────────────────────────────────
+
+class _CustomDropdown extends StatefulWidget {
+  final String label;
+  final String value;
+  final List<String> items;
+  final String? error;
+  final ValueChanged<String?> onChanged;
+  final Function({required String label, required String currentValue, required List<String> items, required ValueChanged<String?> onSelected}) showSearchableDropdownDialog;
+
+  const _CustomDropdown({
+    required this.label,
+    required this.value,
+    required this.items,
+    this.error,
+    required this.onChanged,
+    required this.showSearchableDropdownDialog,
+  });
+
+  @override
+  State<_CustomDropdown> createState() => _CustomDropdownState();
+}
+
+class _CustomDropdownState extends State<_CustomDropdown> {
+  bool _isFocused = false;
+
+  static const _brown = Color(0xFF3E2723);
+  static const _lightBrown = Color(0xFF8D6E63);
+  static const _border = Color(0xFFE5DDD0);
+  static const _errorColor = Colors.redAccent;
+
+  void _openDialog() {
+    widget.showSearchableDropdownDialog(
+      label: widget.label,
+      currentValue: widget.items.contains(widget.value) ? widget.value : (widget.items.isNotEmpty ? widget.items.first : ''),
+      items: widget.items,
+      onSelected: widget.onChanged,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          widget.label,
+          style: const TextStyle(
+            fontSize: 12, fontWeight: FontWeight.w600, color: _lightBrown,
+          ),
+        ),
+        const SizedBox(height: 5),
+        Focus(
+          onFocusChange: (focused) {
+            if (mounted) {
+              setState(() {
+                _isFocused = focused;
+              });
+            }
+          },
+          onKeyEvent: (node, event) {
+            if (event is KeyDownEvent && (event.logicalKey == LogicalKeyboardKey.enter || event.logicalKey == LogicalKeyboardKey.space)) {
+              _openDialog();
+              return KeyEventResult.handled;
+            }
+            return KeyEventResult.ignored;
+          },
+          child: GestureDetector(
+            onTap: _openDialog,
+            child: InputDecorator(
+              isFocused: _isFocused,
+              decoration: InputDecoration(
+                filled: true,
+                fillColor: Colors.white,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide(color: widget.error != null ? _errorColor : _border),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide(color: widget.error != null ? _errorColor : _brown, width: 1.5),
+                ),
+                suffixIcon: const Icon(Icons.arrow_drop_down, color: _lightBrown),
+              ),
+              child: Text(
+                widget.items.contains(widget.value) ? widget.value : (widget.items.isNotEmpty ? widget.items.first : ''),
+                style: const TextStyle(color: _brown, fontSize: 14),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ),
+        ),
+        if (widget.error != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 4, left: 2),
+            child: Text(widget.error!, style: const TextStyle(fontSize: 11, color: _errorColor)),
+          ),
+      ],
     );
   }
 }

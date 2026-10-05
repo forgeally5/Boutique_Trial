@@ -93,6 +93,9 @@ class _StockReportScreenState extends State<StockReportScreen> {
       final rows = <Map<String, dynamic>>[];
       final catSet = <String>{};
       final Map<String, Map<String, dynamic>> catAgg = {};
+      
+      final Map<String, Map<String, dynamic>> productAgg = {};
+      final Map<String, Map<String, dynamic>> defectiveAgg = {};
 
       for (final p in productList) {
         final effectiveSp = p.sellingPrice > 0 ? p.sellingPrice : (p.finalPrice > 0 ? p.finalPrice : p.ratePerGram);
@@ -135,27 +138,33 @@ class _StockReportScreenState extends State<StockReportScreen> {
             : 'Uncategorized';
         catSet.add(cat);
 
-        // 1. Good / Sellable Stock Row
-        String status;
-        if (balance == 0) {
-          status = 'Out of Stock';
-        } else if (balance > 0 && balance < 5) {
-          status = 'Low Stock';
-        } else {
-          status = 'In Stock';
-        }
-
-        final goodStock = Map<String, dynamic>.from(data);
-        goodStock['category'] = cat;
-        goodStock['status'] = status;
-        goodStock['totalReceived'] = totalReceived;
-        goodStock['issueQty'] = issueQty;
-        goodStock['soldQty'] = soldQty;
         final double itemStockVal = p.pricingType == 'Weight-Based' && p.grossWeight > 0 && p.ratePerGram > 0
             ? (balance * p.grossWeight * p.ratePerGram)
             : (balance * effectiveSp);
-        goodStock['stockValue'] = itemStockVal;
-        rows.add(goodStock);
+
+        // Aggregate Product-Wise (Good Stock)
+        final prodKey = '${data['name']}_$cat';
+        if (productAgg.containsKey(prodKey)) {
+          final existing = productAgg[prodKey]!;
+          existing['quantity'] = (existing['quantity'] as int) + balance;
+          existing['totalReceived'] = (existing['totalReceived'] as int) + totalReceived;
+          existing['issueQty'] = (existing['issueQty'] as int) + issueQty;
+          existing['soldQty'] = (existing['soldQty'] as int) + soldQty;
+          existing['stockValue'] = (existing['stockValue'] as double) + itemStockVal;
+          if (!existing['tagId'].toString().contains(tagId) && existing['tagId'].toString().length < 30) {
+             existing['tagId'] = '${existing['tagId']}, $tagId';
+          } else if (!existing['tagId'].toString().endsWith('...')) {
+             existing['tagId'] = '${existing['tagId']}...';
+          }
+        } else {
+          final goodStock = Map<String, dynamic>.from(data);
+          goodStock['category'] = cat;
+          goodStock['totalReceived'] = totalReceived;
+          goodStock['issueQty'] = issueQty;
+          goodStock['soldQty'] = soldQty;
+          goodStock['stockValue'] = itemStockVal;
+          productAgg[prodKey] = goodStock;
+        }
 
         // Aggregate into Category-wise Closing Stock
         final entry = catAgg.putIfAbsent(cat, () {
@@ -172,30 +181,62 @@ class _StockReportScreenState extends State<StockReportScreen> {
         });
 
         entry['skuCount'] = (entry['skuCount'] as int) + 1;
-        entry['totalPurchased'] =
-            (entry['totalPurchased'] as int) + totalReceived;
+        entry['totalPurchased'] = (entry['totalPurchased'] as int) + totalReceived;
         entry['totalIssued'] = (entry['totalIssued'] as int) + issueQty;
         entry['totalSold'] = (entry['totalSold'] as int) + soldQty;
         entry['closingQty'] = (entry['closingQty'] as int) + balance;
-        entry['closingValue'] =
-            (entry['closingValue'] as double) + (goodStock['stockValue'] as double);
-        (entry['products'] as List<Map<String, dynamic>>).add(goodStock);
+        entry['closingValue'] = (entry['closingValue'] as double) + itemStockVal;
+        
+        final goodStockForCat = Map<String, dynamic>.from(data);
+        goodStockForCat['category'] = cat;
+        goodStockForCat['totalReceived'] = totalReceived;
+        goodStockForCat['issueQty'] = issueQty;
+        goodStockForCat['soldQty'] = soldQty;
+        goodStockForCat['stockValue'] = itemStockVal;
+        (entry['products'] as List<Map<String, dynamic>>).add(goodStockForCat);
 
-        // 2. Defective Stock Row (displayed separately in product-wise if any pcs are defective/damaged)
+        // 2. Defective Stock Row
         if (issueQty > 0) {
-          final defectiveStock = Map<String, dynamic>.from(data);
-          defectiveStock['category'] = cat;
-          defectiveStock['name'] = '${data['name']} (Defective)';
-          defectiveStock['quantity'] = issueQty;
-          defectiveStock['totalReceived'] = issueQty;
-          defectiveStock['issueQty'] = issueQty;
-          defectiveStock['soldQty'] = 0;
-          defectiveStock['balance'] = 0;
-          defectiveStock['status'] = 'Damaged/Defective';
-          defectiveStock['stockValue'] = issueQty * effectiveSp;
-          rows.add(defectiveStock);
+          if (defectiveAgg.containsKey(prodKey)) {
+             final existingDef = defectiveAgg[prodKey]!;
+             existingDef['quantity'] = (existingDef['quantity'] as int) + issueQty;
+             existingDef['totalReceived'] = (existingDef['totalReceived'] as int) + issueQty;
+             existingDef['issueQty'] = (existingDef['issueQty'] as int) + issueQty;
+             existingDef['stockValue'] = (existingDef['stockValue'] as double) + (issueQty * effectiveSp);
+             if (!existingDef['tagId'].toString().contains(tagId) && existingDef['tagId'].toString().length < 30) {
+               existingDef['tagId'] = '${existingDef['tagId']}, $tagId';
+             } else if (!existingDef['tagId'].toString().endsWith('...')) {
+               existingDef['tagId'] = '${existingDef['tagId']}...';
+             }
+          } else {
+            final defectiveStock = Map<String, dynamic>.from(data);
+            defectiveStock['category'] = cat;
+            defectiveStock['name'] = '${data['name']} (Defective)';
+            defectiveStock['quantity'] = issueQty;
+            defectiveStock['totalReceived'] = issueQty;
+            defectiveStock['issueQty'] = issueQty;
+            defectiveStock['soldQty'] = 0;
+            defectiveStock['balance'] = 0;
+            defectiveStock['status'] = 'Damaged/Defective';
+            defectiveStock['stockValue'] = issueQty * effectiveSp;
+            defectiveAgg[prodKey] = defectiveStock;
+          }
         }
       }
+
+      // Finalize status for aggregated rows
+      for (final row in productAgg.values) {
+         final bal = (row['quantity'] as num).toInt();
+         if (bal == 0) {
+           row['status'] = 'Out of Stock';
+         } else if (bal > 0 && bal < 5) {
+           row['status'] = 'Low Stock';
+         } else {
+           row['status'] = 'In Stock';
+         }
+         rows.add(row);
+      }
+      rows.addAll(defectiveAgg.values);
 
       // Finalize category rows with status & sort alphabetically
       final catRows = catAgg.values.map((e) {

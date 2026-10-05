@@ -457,6 +457,7 @@ class AdminState extends ChangeNotifier {
     _dynamicCategories.remove(trimmed);
     _deletedCategories.add(trimmed);
     notifyListeners();
+    try { await ApiService().deleteMasterItem('categories', trimmed); } catch (_) {}
   }
 
   void addMaterial(String newMat) {
@@ -495,6 +496,7 @@ class AdminState extends ChangeNotifier {
     _dynamicMaterials.remove(trimmed);
     _deletedMaterials.add(trimmed);
     notifyListeners();
+    try { await ApiService().deleteMasterItem('materials', trimmed); } catch (_) {}
   }
 
   void addVendor(String newVendor) {
@@ -532,6 +534,7 @@ class AdminState extends ChangeNotifier {
     _dynamicVendors.remove(trimmed);
     _deletedVendors.add(trimmed);
     notifyListeners();
+    try { await ApiService().deleteMasterItem('vendors', trimmed); } catch (_) {}
   }
 
   void addUnit(String newUnit) {
@@ -570,6 +573,7 @@ class AdminState extends ChangeNotifier {
     _dynamicUnits.remove(trimmed);
     _deletedUnits.add(trimmed);
     notifyListeners();
+    try { await ApiService().deleteMasterItem('units', trimmed); } catch (_) {}
   }
 
   Future<void> addWeightUnit(String unit) async {
@@ -612,6 +616,7 @@ class AdminState extends ChangeNotifier {
     _dynamicWeightUnits.remove(trimmed);
     _deletedWeightUnits.add(trimmed);
     notifyListeners();
+    try { await ApiService().deleteMasterItem('weight_units', trimmed); } catch (_) {}
   }
 
   void addItemName(String newName) {
@@ -650,6 +655,7 @@ class AdminState extends ChangeNotifier {
     _dynamicItemNames.remove(trimmed);
     _deletedItemNames.add(trimmed);
     notifyListeners();
+    try { await ApiService().deleteMasterItem('item_names', trimmed); } catch (_) {}
   }
 
   // ─── Fetch from collections (both jewelry_inventory & products) ──────────

@@ -441,6 +441,11 @@ class ApiService {
     await http.post(uri, headers: _headers, body: jsonEncode({'type': type, 'name': name}));
   }
 
+  Future<void> deleteMasterItem(String type, String name) async {
+    final uri = Uri.parse('$baseUrl/masters.php?action=delete&type=${Uri.encodeComponent(type)}&name=${Uri.encodeComponent(name)}');
+    await http.post(uri, headers: _headers);
+  }
+
   // ─── SETTINGS ────────────────────────────────────────────────────────
   Future<dynamic> getSetting(String key) async {
     final uri = Uri.parse('$baseUrl/settings.php?key=${Uri.encodeComponent(key)}');

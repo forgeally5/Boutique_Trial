@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:printing/printing.dart';
 import '../../state/admin_state.dart';
@@ -35,6 +36,9 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
   int _topScanKey = 0;
   TextEditingController? _topEntryTextCtrl;
   FocusNode? _topEntryFieldFocus;
+  List<Product> _currentAutocompleteOptions = [];
+  int _autocompleteHighlightIndex = -1;
+  StateSetter? _optionsViewStateSetter;
 
   // Summary controllers — managed separately so only summary panel rebuilds
   final _extraDiscountCtrl = TextEditingController(text: '0');
@@ -658,10 +662,18 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
   Widget build(BuildContext context) {
     return Container(
       color: BoutiqueColors.bgMain,
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Left: Customer Info + Item Table
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final double minW = 1200.0;
+          final double width = constraints.maxWidth > minW ? constraints.maxWidth : minW;
+          return SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minWidth: width, maxWidth: width),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Left: Customer Info + Item Table
           Expanded(
             flex: 7,
             child: SingleChildScrollView(
@@ -721,6 +733,10 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
             ),
           ),
         ],
+              ),
+            ),
+          );
+        },
       ),
     );
   }
@@ -1122,32 +1138,42 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
         displayStringForOption: (p) => '${p.tagId} - ${p.name}',
         optionsBuilder: (textEditingValue) {
           final query = textEditingValue.text.toLowerCase().trim();
-          if (query.isEmpty) return const Iterable<Product>.empty();
-          return _cachedProducts.where((p) {
+          if (query.isEmpty) {
+            _currentAutocompleteOptions = [];
+            _autocompleteHighlightIndex = -1;
+            return const Iterable<Product>.empty();
+          }
+          final options = _cachedProducts.where((p) {
             final isW = p.pricingType == 'Weight-Based';
             final inStock = isW ? _getAvailableWeight(p) > 0 : _getAvailableStock(p) > 0;
             return inStock && (
               p.tagId.toLowerCase().contains(query) ||
               p.name.toLowerCase().contains(query)
             );
-          }).take(25);
+          }).take(25).toList();
+          _currentAutocompleteOptions = options;
+          _autocompleteHighlightIndex = options.isNotEmpty ? 0 : -1;
+          return options;
         },
         optionsViewBuilder: (context, onSelected, options) {
-          return Align(
-            alignment: Alignment.topLeft,
-            child: Material(
-              elevation: 4,
-              borderRadius: BorderRadius.circular(8),
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxHeight: 250, maxWidth: 420),
-                child: ListView.builder(
-                  padding: EdgeInsets.zero,
-                  shrinkWrap: true,
-                  itemCount: options.length,
-                  itemBuilder: (context, index) {
-                    final p = options.elementAt(index);
-                    final stock = _getAvailableStock(p);
-                    final bool highlight = AutocompleteHighlightedOption.of(context) == index;
+          return StatefulBuilder(
+            builder: (context, setStateOverlay) {
+              _optionsViewStateSetter = setStateOverlay;
+              return Align(
+                alignment: Alignment.topLeft,
+                child: Material(
+                  elevation: 4,
+                  borderRadius: BorderRadius.circular(8),
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxHeight: 250, maxWidth: 420),
+                    child: ListView.builder(
+                      padding: EdgeInsets.zero,
+                      shrinkWrap: true,
+                      itemCount: options.length,
+                      itemBuilder: (context, index) {
+                        final p = options.elementAt(index);
+                        final stock = _getAvailableStock(p);
+                        final bool highlight = _autocompleteHighlightIndex == index;
                     return InkWell(
                       onTap: () => onSelected(p),
                       child: Container(
@@ -1178,14 +1204,45 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
                       ),
                     );
                   },
+                    ),
+                  ),
                 ),
-              ),
-            ),
+              );
+            }
           );
         },
         fieldViewBuilder: (context, textCtrl, focusNode, onFieldSubmitted) {
           _topEntryTextCtrl = textCtrl;
           _topEntryFieldFocus = focusNode;
+
+          focusNode.onKeyEvent = (node, event) {
+            if (event is KeyDownEvent) {
+              if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
+                if (_currentAutocompleteOptions.isNotEmpty) {
+                  _autocompleteHighlightIndex = (_autocompleteHighlightIndex + 1) % _currentAutocompleteOptions.length;
+                  _optionsViewStateSetter?.call(() {});
+                  return KeyEventResult.handled;
+                }
+              } else if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
+                if (_currentAutocompleteOptions.isNotEmpty) {
+                  _autocompleteHighlightIndex = (_autocompleteHighlightIndex - 1 + _currentAutocompleteOptions.length) % _currentAutocompleteOptions.length;
+                  _optionsViewStateSetter?.call(() {});
+                  return KeyEventResult.handled;
+                }
+              } else if (event.logicalKey == LogicalKeyboardKey.enter) {
+                if (_currentAutocompleteOptions.isNotEmpty && _autocompleteHighlightIndex >= 0 && _autocompleteHighlightIndex < _currentAutocompleteOptions.length) {
+                  final p = _currentAutocompleteOptions[_autocompleteHighlightIndex];
+                  _addProductToBill(p, 1);
+                  setState(() => _topScanKey++);
+                  _topEntryTextCtrl?.clear();
+                  WidgetsBinding.instance.addPostFrameCallback((_) => _topEntryFieldFocus?.requestFocus());
+                  return KeyEventResult.handled;
+                }
+              }
+            }
+            return KeyEventResult.ignored;
+          };
+
           return TextField(
             controller: textCtrl,
             focusNode: focusNode,

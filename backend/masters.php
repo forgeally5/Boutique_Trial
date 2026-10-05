@@ -58,7 +58,8 @@ if ($method === 'PUT') {
 }
 
 // ─── DELETE MASTER ITEM ────────────────────────────────────────────────
-if ($method === 'DELETE') {
+$action = $_GET['action'] ?? '';
+if ($method === 'DELETE' || ($method === 'POST' && $action === 'delete')) {
     $type = $_GET['type'] ?? (getJsonInput()['type'] ?? '');
     $name = $_GET['name'] ?? (getJsonInput()['name'] ?? '');
 

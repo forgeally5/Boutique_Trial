@@ -156,7 +156,13 @@ if ($method === 'PUT' || ($method === 'POST' && $action === 'update')) {
         'isFullyPaid'    => 'is_fully_paid',
         'paymentStatus'  => 'payment_status',
         'balanceReturned'=> 'balance_returned',
-        'narration'      => 'narration'
+        'narration'      => 'narration',
+        'customerName'   => 'customer_name',
+        'customerMobile' => 'customer_mobile',
+        'customerAddress'=> 'customer_address',
+        'paymentMode'    => 'payment_mode',
+        'lastPaymentDate'=> 'last_payment_date',
+        'lastPaymentMode'=> 'last_payment_mode'
     ];
 
     foreach ($fieldsToUpdate as $jsonKey => $dbCol) {

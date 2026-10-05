@@ -973,6 +973,133 @@ class _BillDetailDialogState extends State<_BillDetailDialog> {
     );
   }
 
+  void _openEditCustomerDialog() {
+    final nameCtrl = TextEditingController(text: widget.bill['customerName']?.toString() ?? '');
+    final mobileCtrl = TextEditingController(text: widget.bill['customerMobile']?.toString() ?? '');
+    final addressCtrl = TextEditingController(text: widget.bill['customerAddress']?.toString() ?? '');
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Edit Customer Details', style: TextStyle(color: BoutiqueColors.accent)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: 'Customer Name')),
+            const SizedBox(height: 8),
+            TextField(controller: mobileCtrl, decoration: const InputDecoration(labelText: 'Mobile Number')),
+            const SizedBox(height: 8),
+            TextField(controller: addressCtrl, decoration: const InputDecoration(labelText: 'Address')),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel', style: TextStyle(color: BoutiqueColors.textSecondary)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: BoutiqueColors.accent),
+            onPressed: () async {
+              try {
+                final newName = nameCtrl.text.trim();
+                final newMobile = mobileCtrl.text.trim();
+                final newAddr = addressCtrl.text.trim();
+                
+                final docId = widget.bill['docId'] ?? widget.bill['_id'];
+                if (docId == null) throw Exception('No document ID found');
+
+                await ApiService().updateBill(docId.toString(), {
+                  'customerName': newName,
+                  'customerMobile': newMobile,
+                  'customerAddress': newAddr,
+                });
+                
+                setState(() {
+                  widget.bill['customerName'] = newName;
+                  widget.bill['customerMobile'] = newMobile;
+                  widget.bill['customerAddress'] = newAddr;
+                });
+                widget.onUpdated?.call();
+                if (ctx.mounted) {
+                   Navigator.pop(ctx);
+                   BoutiqueToast.showSuccess(context, 'Customer updated successfully');
+                }
+              } catch(e) {
+                if (ctx.mounted) BoutiqueToast.showError(ctx, 'Error updating: $e');
+              }
+            },
+            child: const Text('Save', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _openEditItemsDialog() {
+    final items = List<Map<String, dynamic>>.from(widget.bill['items'] ?? []);
+    final controllers = items.map((e) => TextEditingController(text: e['name']?.toString() ?? '')).toList();
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Edit Product Names', style: TextStyle(color: BoutiqueColors.accent)),
+        content: SizedBox(
+          width: 400,
+          child: ListView.builder(
+            shrinkWrap: true,
+            itemCount: items.length,
+            itemBuilder: (c, i) => Padding(
+              padding: const EdgeInsets.only(bottom: 8.0),
+              child: TextField(
+                controller: controllers[i],
+                decoration: InputDecoration(
+                  labelText: 'Item ${i + 1}',
+                  hintText: 'Enter new product name',
+                ),
+              ),
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel', style: TextStyle(color: BoutiqueColors.textSecondary)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: BoutiqueColors.accent),
+            onPressed: () async {
+              try {
+                final newItems = List<Map<String, dynamic>>.from(items);
+                for (int i = 0; i < newItems.length; i++) {
+                  newItems[i]['name'] = controllers[i].text.trim();
+                }
+
+                final docId = widget.bill['docId'] ?? widget.bill['_id'];
+                if (docId == null) throw Exception('No document ID found');
+
+                await ApiService().updateBill(docId.toString(), {
+                  'items': newItems,
+                });
+                
+                setState(() {
+                  widget.bill['items'] = newItems;
+                });
+                widget.onUpdated?.call();
+                if (ctx.mounted) {
+                   Navigator.pop(ctx);
+                   BoutiqueToast.showSuccess(context, 'Items updated successfully');
+                }
+              } catch(e) {
+                if (ctx.mounted) BoutiqueToast.showError(ctx, 'Error updating: $e');
+              }
+            },
+            child: const Text('Save', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final bill = widget.bill;
@@ -1054,16 +1181,20 @@ class _BillDetailDialogState extends State<_BillDetailDialog> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // Top Action Toolbar
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            Wrap(
+              alignment: WrapAlignment.spaceBetween,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 16,
+              runSpacing: 16,
               children: [
-                Row(
+                Wrap(
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 10,
                   children: [
                     const Text(
                       'Invoice Preview',
                       style: TextStyle(fontFamily: 'serif', fontSize: 20, fontWeight: FontWeight.bold, color: BoutiqueColors.textPrimary),
                     ),
-                    const SizedBox(width: 10),
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                       decoration: BoxDecoration(
@@ -1082,7 +1213,9 @@ class _BillDetailDialogState extends State<_BillDetailDialog> {
                     ),
                   ],
                 ),
-                Row(
+                Wrap(
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 8,
                   children: [
                     if (hasDue)
                       ElevatedButton.icon(
@@ -1108,6 +1241,30 @@ class _BillDetailDialogState extends State<_BillDetailDialog> {
                         label: const Text('Edit Payment', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                         onPressed: _openSettleDialog,
                       ),
+                    const SizedBox(width: 8),
+                    OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: BoutiqueColors.accent,
+                        side: const BorderSide(color: BoutiqueColors.border),
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
+                      icon: const Icon(Icons.person_outline, size: 16),
+                      label: const Text('Edit Customer', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                      onPressed: _openEditCustomerDialog,
+                    ),
+                    const SizedBox(width: 8),
+                    OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: BoutiqueColors.accent,
+                        side: const BorderSide(color: BoutiqueColors.border),
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
+                      icon: const Icon(Icons.edit_square, size: 16),
+                      label: const Text('Edit Items', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                      onPressed: _openEditItemsDialog,
+                    ),
                     const SizedBox(width: 8),
                     IconButton(
                       icon: const Icon(Icons.print_outlined, color: BoutiqueColors.accent),
