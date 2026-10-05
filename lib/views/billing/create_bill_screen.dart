@@ -1359,38 +1359,56 @@ class _BillRowWidgetState extends State<_BillRowWidget> {
       ),
       child: Row(
         children: [
-          // Product search — Autocomplete so only visible suggestions are built
+          // Product display — read-only when selected, or autocomplete if null
           Expanded(
             flex: 4,
-            child: _ProductAutocomplete(
-              products: widget.products,
-              selected: row.product,
-              getAvailableStock: (p) => widget.getAvailableStock(p, row),
-              getAvailableWeight: (p) => widget.getAvailableWeight(p, row),
-              onSelected: (p) {
-                final isW = p.pricingType == 'Weight-Based';
-                final available = widget.getAvailableStock(p, row);
-                final availWeight = widget.getAvailableWeight(p, row);
-                if (available <= 0 || (isW && availWeight <= 0)) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Item is out of stock (already selected in other rows).'), backgroundColor: Colors.red),
-                  );
-                  return;
-                }
-                setState(() {
-                  row.product = p;
-                  if (row.qty > available) row.qty = available.toDouble();
-                  if (p.pricingType == 'Weight-Based') {
-                    row.price = p.ratePerGram > 0 ? p.ratePerGram : 0.0;
-                  } else {
-                    row.price = p.finalPrice > 0 ? p.finalPrice : p.mrp;
-                  }
-                  row.discountValue = p.discountValue;
-                  row.discountType = p.discountType;
-                });
-                widget.onChanged();
-              },
-            ),
+            child: row.product != null
+                ? Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: BoutiqueColors.border),
+                    ),
+                    child: Text(
+                      '${row.product!.tagId} - ${row.product!.name}',
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                        color: BoutiqueColors.textPrimary,
+                      ),
+                    ),
+                  )
+                : _ProductAutocomplete(
+                    products: widget.products,
+                    selected: row.product,
+                    getAvailableStock: (p) => widget.getAvailableStock(p, row),
+                    getAvailableWeight: (p) => widget.getAvailableWeight(p, row),
+                    onSelected: (p) {
+                      final isW = p.pricingType == 'Weight-Based';
+                      final available = widget.getAvailableStock(p, row);
+                      final availWeight = widget.getAvailableWeight(p, row);
+                      if (available <= 0 || (isW && availWeight <= 0)) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Item is out of stock (already selected in other rows).'), backgroundColor: Colors.red),
+                        );
+                        return;
+                      }
+                      setState(() {
+                        row.product = p;
+                        if (row.qty > available) row.qty = available.toDouble();
+                        if (p.pricingType == 'Weight-Based') {
+                          row.price = p.ratePerGram > 0 ? p.ratePerGram : 0.0;
+                        } else {
+                          row.price = p.finalPrice > 0 ? p.finalPrice : p.mrp;
+                        }
+                        row.discountValue = p.discountValue;
+                        row.discountType = p.discountType;
+                      });
+                      widget.onChanged();
+                    },
+                  ),
           ),
           const SizedBox(width: 8),
           IconButton(
