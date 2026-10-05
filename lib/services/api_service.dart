@@ -361,7 +361,9 @@ class ApiService {
     String? startDate,
     String? endDate,
   }) async {
-    final qParams = <String, String>{};
+    final qParams = <String, String>{
+      '_t': DateTime.now().millisecondsSinceEpoch.toString(), // Prevent browser caching on Web
+    };
     if (customer != null && customer.isNotEmpty) qParams['customer'] = customer;
     if (pendingOnly) qParams['pendingOnly'] = 'true';
     if (startDate != null) qParams['startDate'] = startDate;

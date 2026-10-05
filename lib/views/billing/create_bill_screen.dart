@@ -139,11 +139,16 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
       final bills = await ApiService().getBills();
       int nextNum = 1;
       if (bills.isNotEmpty) {
-        final lastNo = (bills.first['billNo'] ?? bills.first['bill_no'])?.toString() ?? '';
-        final match = RegExp(r'\d+').firstMatch(lastNo);
-        if (match != null) {
-          nextNum = (int.tryParse(match.group(0)!) ?? 0) + 1;
+        int maxNo = 0;
+        for (var b in bills) {
+          final noStr = (b['billNo'] ?? b['bill_no'])?.toString() ?? '';
+          final match = RegExp(r'\d+').firstMatch(noStr);
+          if (match != null) {
+            final n = int.tryParse(match.group(0)!) ?? 0;
+            if (n > maxNo) maxNo = n;
+          }
         }
+        nextNum = maxNo + 1;
       }
       if (mounted) _billNoCtrl.text = 'SB-${nextNum.toString().padLeft(3, '0')}';
     } catch (_) {
