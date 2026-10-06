@@ -41,10 +41,10 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
   StateSetter? _optionsViewStateSetter;
 
   // Summary controllers — managed separately so only summary panel rebuilds
-  final _extraDiscountCtrl = TextEditingController(text: '0');
+  final _extraDiscountCtrl = TextEditingController(text: '');
   String _extraDiscountType = '₹';
 
-  final _gstCtrl = TextEditingController(text: '0');
+  final _gstCtrl = TextEditingController(text: '');
   String _gstType = 'No GST';
 
   final _adjustmentCtrl = TextEditingController(text: '');
@@ -676,8 +676,9 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
                   // Left: Customer Info + Item Table
           Expanded(
             flex: 7,
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(32),
+            child: FocusTraversalGroup(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(32),
               child: Column(
                 children: [
                   _buildCustomerSection(),
@@ -686,14 +687,16 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
                 ],
               ),
             ),
+            ),
           ),
 
           // Right: Summary Panel — isolated widget that manages its own rebuilds
           Expanded(
             flex: 5,
-            child: Container(
-              height: double.infinity,
-              color: BoutiqueColors.bgCard,
+            child: FocusTraversalGroup(
+              child: Container(
+                height: double.infinity,
+                color: BoutiqueColors.bgCard,
               padding: const EdgeInsets.all(32),
               child: SingleChildScrollView(
                 child: _BillSummaryPanel(
@@ -714,7 +717,7 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
                     setState(() {
                       _gstType = t;
                       if (t == 'No GST') {
-                        _gstCtrl.text = '0';
+                        _gstCtrl.text = '';
                       } else if (t == '5%') {
                         _gstCtrl.text = '5';
                       } else if (t == '12%') {
@@ -730,6 +733,7 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
                   onDownload: (isSplit, singleMode, splitPayments) => _downloadInvoice(isSplit, singleMode, splitPayments),
                 ),
               ),
+            ),
             ),
           ),
         ],
@@ -810,16 +814,26 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
             children: [
               // Customer name autocomplete
               Expanded(
-                child: RawAutocomplete<String>(
+                child: RawAutocomplete<Map<String, String>>(
                   textEditingController: _customerNameCtrl,
                   focusNode: FocusNode(),
+                  displayStringForOption: (option) => option['name'] ?? '',
                   optionsBuilder: (TextEditingValue textEditingValue) {
                     if (textEditingValue.text.isEmpty) {
-                      return const Iterable<String>.empty();
+                      return const Iterable<Map<String, String>>.empty();
                     }
                     final query = textEditingValue.text.toLowerCase();
-                    return _knownCustomers.where((name) =>
-                        name.toLowerCase().contains(query));
+                    return _knownCustomerData.where((data) =>
+                        (data['name'] ?? '').toLowerCase().contains(query));
+                  },
+                  onSelected: (Map<String, String> selection) {
+                    if (selection['mobile'] != null && selection['mobile']!.isNotEmpty) {
+                      _customerMobileCtrl.text = selection['mobile']!;
+                    }
+                    if (selection['address'] != null && selection['address']!.isNotEmpty) {
+                      _customerAddressCtrl.text = selection['address']!;
+                      setState(() => _showExtraCustomerDetails = true);
+                    }
                   },
                   fieldViewBuilder: (BuildContext context,
                       TextEditingController textEditingController,
@@ -828,6 +842,7 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
                     return TextField(
                       controller: textEditingController,
                       focusNode: focusNode,
+                      textInputAction: TextInputAction.next,
                       style: const TextStyle(fontSize: 13),
                       decoration: BoutiqueInputDecoration.field(
                           hintText: 'Walk-in Customer', labelText: 'Customer Name'),
@@ -837,8 +852,8 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
                     );
                   },
                   optionsViewBuilder: (BuildContext context,
-                      AutocompleteOnSelected<String> onSelected,
-                      Iterable<String> options) {
+                      AutocompleteOnSelected<Map<String, String>> onSelected,
+                      Iterable<Map<String, String>> options) {
                     return Align(
                       alignment: Alignment.topLeft,
                       child: Material(
@@ -853,13 +868,17 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
                             itemCount: options.length,
                             itemBuilder: (BuildContext context, int index) {
                               final option = options.elementAt(index);
-                              return InkWell(
-                                onTap: () => onSelected(option),
-                                child: Padding(
-                                  padding: const EdgeInsets.all(12.0),
-                                  child: Text(option, style: const TextStyle(fontSize: 13)),
-                                ),
-                              );
+                              return Builder(builder: (context) {
+                                final bool highlight = AutocompleteHighlightedOption.of(context) == index;
+                                return InkWell(
+                                  onTap: () => onSelected(option),
+                                  child: Container(
+                                    color: highlight ? BoutiqueColors.accentSoft : null,
+                                    padding: const EdgeInsets.all(12.0),
+                                    child: Text(option['name'] ?? '', style: const TextStyle(fontSize: 13)),
+                                  ),
+                                );
+                              });
                             },
                           ),
                         ),
@@ -900,6 +919,8 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
                       controller: textEditingController,
                       focusNode: focusNode,
                       keyboardType: TextInputType.phone,
+                      textInputAction: TextInputAction.next,
+                      inputFormatters: [LengthLimitingTextInputFormatter(10), FilteringTextInputFormatter.digitsOnly],
                       style: const TextStyle(fontSize: 13),
                       decoration: BoutiqueInputDecoration.field(
                         hintText: '10-digit mobile',
@@ -932,20 +953,24 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
                             itemCount: options.length,
                             itemBuilder: (BuildContext context, int index) {
                               final option = options.elementAt(index);
-                              return InkWell(
-                                onTap: () => onSelected(option),
-                                child: Padding(
-                                  padding: const EdgeInsets.all(12.0),
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(option['mobile'] ?? '', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
-                                      if (option['name'] != null && option['name']!.isNotEmpty)
-                                        Text(option['name']!, style: const TextStyle(fontSize: 11, color: BoutiqueColors.textSecondary)),
-                                    ],
+                              return Builder(builder: (context) {
+                                final bool highlight = AutocompleteHighlightedOption.of(context) == index;
+                                return InkWell(
+                                  onTap: () => onSelected(option),
+                                  child: Container(
+                                    color: highlight ? BoutiqueColors.accentSoft : null,
+                                    padding: const EdgeInsets.all(12.0),
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(option['mobile'] ?? '', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                                        if (option['name'] != null && option['name']!.isNotEmpty)
+                                          Text(option['name']!, style: const TextStyle(fontSize: 11, color: BoutiqueColors.textSecondary)),
+                                      ],
+                                    ),
                                   ),
-                                ),
-                              );
+                                );
+                              });
                             },
                           ),
                         ),
@@ -959,6 +984,7 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
           const SizedBox(height: 16),
           TextField(
             controller: _narrationCtrl,
+            textInputAction: TextInputAction.next,
             style: const TextStyle(fontSize: 13, color: BoutiqueColors.textPrimary),
             decoration: BoutiqueInputDecoration.field(hintText: 'Narration / Remarks', labelText: 'Narration'),
           ),
@@ -1752,8 +1778,21 @@ class _BillRowWidgetState extends State<_BillRowWidget> {
               children: [
                 Text('₹${row.lineAmount.toStringAsFixed(2)}',
                     style: const TextStyle(fontFamily: 'serif', fontSize: 15, fontWeight: FontWeight.bold, color: BoutiqueColors.textPrimary)),
-                Text(row.product?.pricingType == 'Weight-Based' ? '@ ₹${row.price}/${row.product?.weightUnit ?? 'g'}' : '@ ₹${row.price}',
-                    style: const TextStyle(fontSize: 11, color: BoutiqueColors.textSecondary)),
+                InkWell(
+                  onTap: () => _editPriceDialog(),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4.0),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(row.product?.pricingType == 'Weight-Based' ? '@ ₹${row.price}/${row.product?.weightUnit ?? 'g'}' : '@ ₹${row.price}',
+                            style: const TextStyle(fontSize: 12, color: BoutiqueColors.accent, fontWeight: FontWeight.bold, decoration: TextDecoration.underline, decorationStyle: TextDecorationStyle.dashed)),
+                        const SizedBox(width: 4),
+                        const Icon(Icons.edit_rounded, size: 12, color: BoutiqueColors.accent),
+                      ],
+                    ),
+                  ),
+                ),
               ],
             ),
           ),
@@ -1845,6 +1884,35 @@ class _BillRowWidgetState extends State<_BillRowWidget> {
         setState(() => widget.row.weight = result);
         widget.onChanged();
       }
+    }
+  }
+
+  Future<void> _editPriceDialog() async {
+    final ctrl = TextEditingController(text: widget.row.price > 0 ? widget.row.price.toString() : '');
+    final result = await showDialog<double>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Edit Item Price', style: TextStyle(fontFamily: 'serif', color: BoutiqueColors.accent)),
+        content: TextField(
+          controller: ctrl,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          decoration: const InputDecoration(border: OutlineInputBorder(), labelText: 'Price', prefixText: '₹ '),
+          autofocus: true,
+          onSubmitted: (v) => Navigator.pop(ctx, double.tryParse(v)),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: BoutiqueColors.accent),
+            onPressed: () => Navigator.pop(ctx, double.tryParse(ctrl.text)), 
+            child: const Text('Save', style: TextStyle(color: Colors.white))
+          ),
+        ],
+      ),
+    );
+    if (result != null && result >= 0) {
+      setState(() => widget.row.price = result);
+      widget.onChanged();
     }
   }
 }
@@ -2019,7 +2087,7 @@ class _BillSummaryPanel extends StatefulWidget {
 class _BillSummaryPanelState extends State<_BillSummaryPanel> {
   bool _isSplitPayment = false;
   String _singlePaymentMode = 'Cash';
-  final List<Map<String, dynamic>> _splitPayments = [{'mode': 'Cash', 'amountCtrl': TextEditingController(text: '0')}];
+  final List<Map<String, dynamic>> _splitPayments = [{'mode': 'Cash', 'amountCtrl': TextEditingController(text: '')}];
   final List<String> _paymentModes = ['Cash', 'GPay', 'Bank Transfer', 'Card', 'UPI', 'Other'];
 
   @override
@@ -2105,6 +2173,7 @@ class _BillSummaryPanelState extends State<_BillSummaryPanel> {
                   child: TextField(
                     controller: widget.extraDiscountCtrl,
                     keyboardType: TextInputType.number,
+                    textInputAction: TextInputAction.next,
                     style: const TextStyle(fontSize: 13),
                     decoration: BoutiqueInputDecoration.field(hintText: '0'),
                   ),
@@ -2139,6 +2208,7 @@ class _BillSummaryPanelState extends State<_BillSummaryPanel> {
                   child: TextField(
                     controller: widget.gstCtrl,
                     keyboardType: TextInputType.number,
+                    textInputAction: TextInputAction.next,
                     style: const TextStyle(fontSize: 13),
                     decoration: BoutiqueInputDecoration.field(hintText: '0'),
                   ),
@@ -2158,6 +2228,7 @@ class _BillSummaryPanelState extends State<_BillSummaryPanel> {
                   child: TextField(
                     controller: widget.adjustmentCtrl,
                     keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    textInputAction: TextInputAction.next,
                     style: const TextStyle(fontSize: 13),
                     decoration: BoutiqueInputDecoration.field(hintText: 'e.g. 100'),
                   ),
@@ -2201,6 +2272,7 @@ class _BillSummaryPanelState extends State<_BillSummaryPanel> {
                     child: TextField(
                       controller: widget.amountReceivedCtrl,
                       keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      textInputAction: TextInputAction.next,
                       style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: BoutiqueColors.accent),
                       decoration: BoutiqueInputDecoration.field(hintText: 'Empty = Full Pay'),
                       onChanged: (val) async {
@@ -2469,7 +2541,7 @@ class _BillSummaryPanelState extends State<_BillSummaryPanel> {
                 alignment: Alignment.centerLeft,
                 child: TextButton.icon(
                   onPressed: () {
-                    setState(() => _splitPayments.add({'mode': 'Cash', 'amountCtrl': TextEditingController(text: '0')}));
+                    setState(() => _splitPayments.add({'mode': 'Cash', 'amountCtrl': TextEditingController(text: '')}));
                   },
                   icon: const Icon(Icons.add, size: 16),
                   label: const Text('Add Payment Mode', style: TextStyle(fontSize: 12)),

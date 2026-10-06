@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 /// A reusable searchable dropdown widget that shows a dialog with a search bar.
 /// When users type, the list filters in real-time to show matching options.
@@ -132,7 +133,10 @@ class _SearchableDropdownDialog extends StatefulWidget {
 
 class _SearchableDropdownDialogState extends State<_SearchableDropdownDialog> {
   final TextEditingController _searchCtrl = TextEditingController();
+  final FocusNode _focusNode = FocusNode();
+  final ScrollController _scrollCtrl = ScrollController();
   List<String> _filtered = [];
+  int _highlightIdx = -1;
 
   static const _brown = Color(0xFF3E2723);
   static const _lightBrown = Color(0xFF8D6E63);
@@ -148,6 +152,7 @@ class _SearchableDropdownDialogState extends State<_SearchableDropdownDialog> {
   void _onSearch(String query) {
     final q = query.trim().toLowerCase();
     setState(() {
+      _highlightIdx = -1;
       if (q.isEmpty) {
         _filtered = List.from(widget.items);
       } else {
@@ -157,9 +162,56 @@ class _SearchableDropdownDialogState extends State<_SearchableDropdownDialog> {
     });
   }
 
+  KeyEventResult _onKeyEvent(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+      return KeyEventResult.ignored;
+    }
+    final key = event.logicalKey;
+
+    if (key == LogicalKeyboardKey.arrowDown) {
+      setState(() {
+        if (_highlightIdx < _filtered.length - 1) {
+          _highlightIdx++;
+          _scrollToHighlight();
+        }
+      });
+      return KeyEventResult.handled;
+    } else if (key == LogicalKeyboardKey.arrowUp) {
+      setState(() {
+        if (_highlightIdx > 0) {
+          _highlightIdx--;
+          _scrollToHighlight();
+        }
+      });
+      return KeyEventResult.handled;
+    } else if (key == LogicalKeyboardKey.enter || key == LogicalKeyboardKey.numpadEnter) {
+      if (_highlightIdx >= 0 && _highlightIdx < _filtered.length) {
+        widget.onSelected(_filtered[_highlightIdx]);
+        return KeyEventResult.handled;
+      }
+    }
+    return KeyEventResult.ignored;
+  }
+
+  void _scrollToHighlight() {
+    if (!_scrollCtrl.hasClients || _highlightIdx < 0) return;
+    final itemHeight = 46.0; // Approximate height of each item
+    final offset = _highlightIdx * itemHeight;
+    final maxScroll = _scrollCtrl.position.maxScrollExtent;
+    final viewportDimension = _scrollCtrl.position.viewportDimension;
+    
+    if (offset < _scrollCtrl.offset) {
+      _scrollCtrl.animateTo(offset, duration: const Duration(milliseconds: 100), curve: Curves.easeOut);
+    } else if (offset + itemHeight > _scrollCtrl.offset + viewportDimension) {
+      _scrollCtrl.animateTo(offset + itemHeight - viewportDimension, duration: const Duration(milliseconds: 100), curve: Curves.easeOut);
+    }
+  }
+
   @override
   void dispose() {
     _searchCtrl.dispose();
+    _focusNode.dispose();
+    _scrollCtrl.dispose();
     super.dispose();
   }
 
@@ -206,38 +258,43 @@ class _SearchableDropdownDialogState extends State<_SearchableDropdownDialog> {
             // ── Search Bar ─────────────────────
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-              child: TextField(
-                controller: _searchCtrl,
-                autofocus: true,
-                onChanged: _onSearch,
-                style: const TextStyle(fontSize: 14, color: _brown),
-                decoration: InputDecoration(
-                  hintText: 'Type to search...',
-                  hintStyle:
-                      TextStyle(color: Colors.grey.shade400, fontSize: 14),
-                  prefixIcon:
-                      const Icon(Icons.search, color: _lightBrown, size: 20),
-                  suffixIcon: _searchCtrl.text.isNotEmpty
-                      ? IconButton(
-                          icon: const Icon(Icons.clear,
-                              color: Colors.grey, size: 18),
-                          onPressed: () {
-                            _searchCtrl.clear();
-                            _onSearch('');
-                          },
-                        )
-                      : null,
-                  filled: true,
-                  fillColor: const Color(0xFFF9F6F0),
-                  contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: const BorderSide(color: _border),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: const BorderSide(color: _accent, width: 1.5),
+              child: Focus(
+                onKeyEvent: _onKeyEvent,
+                child: TextField(
+                  controller: _searchCtrl,
+                  focusNode: _focusNode,
+                  autofocus: true,
+                  onChanged: _onSearch,
+                  style: const TextStyle(fontSize: 14, color: _brown),
+                  decoration: InputDecoration(
+                    hintText: 'Type to search...',
+                    hintStyle:
+                        TextStyle(color: Colors.grey.shade400, fontSize: 14),
+                    prefixIcon:
+                        const Icon(Icons.search, color: _lightBrown, size: 20),
+                    suffixIcon: _searchCtrl.text.isNotEmpty
+                        ? IconButton(
+                            icon: const Icon(Icons.clear,
+                                color: Colors.grey, size: 18),
+                            onPressed: () {
+                              _searchCtrl.clear();
+                              _onSearch('');
+                              _focusNode.requestFocus();
+                            },
+                          )
+                        : null,
+                    filled: true,
+                    fillColor: const Color(0xFFF9F6F0),
+                    contentPadding:
+                        const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(color: _border),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(color: _accent, width: 1.5),
+                    ),
                   ),
                 ),
               ),
@@ -276,21 +333,24 @@ class _SearchableDropdownDialogState extends State<_SearchableDropdownDialog> {
                       ),
                     )
                   : ListView.builder(
+                      controller: _scrollCtrl,
                       shrinkWrap: true,
                       padding: const EdgeInsets.only(bottom: 12),
                       itemCount: _filtered.length,
                       itemBuilder: (ctx, i) {
                         final item = _filtered[i];
                         final isSelected = item == widget.currentValue;
+                        final isHighlighted = i == _highlightIdx;
+                        
                         return InkWell(
                           onTap: () => widget.onSelected(item),
                           child: Container(
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 20, vertical: 13),
                             decoration: BoxDecoration(
-                              color: isSelected
-                                  ? _accent.withValues(alpha: 0.07)
-                                  : null,
+                              color: isHighlighted 
+                                  ? _accent.withValues(alpha: 0.15) 
+                                  : (isSelected ? _accent.withValues(alpha: 0.07) : null),
                               border: Border(
                                 bottom:
                                     BorderSide(color: Colors.grey.shade100),
@@ -303,16 +363,18 @@ class _SearchableDropdownDialogState extends State<_SearchableDropdownDialog> {
                                     item,
                                     style: TextStyle(
                                       fontSize: 14,
-                                      fontWeight: isSelected
+                                      fontWeight: (isSelected || isHighlighted)
                                           ? FontWeight.w600
                                           : FontWeight.w400,
-                                      color: isSelected ? _accent : _brown,
+                                      color: (isSelected || isHighlighted) ? _accent : _brown,
                                     ),
                                   ),
                                 ),
-                                if (isSelected)
+                                if (isSelected && !isHighlighted)
                                   const Icon(Icons.check_rounded,
                                       color: _accent, size: 18),
+                                if (isHighlighted)
+                                  const Icon(Icons.keyboard_return_rounded, color: _accent, size: 16),
                               ],
                             ),
                           ),

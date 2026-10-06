@@ -10,6 +10,7 @@ import '../models/vendor_issue.dart';
 
 import '../services/live_rate_service.dart';
 import '../services/api_service.dart';
+import '../services/local_db_service.dart';
 
 
 class AdminState extends ChangeNotifier {
@@ -197,6 +198,16 @@ class AdminState extends ChangeNotifier {
     return null;
   }
 
+
+  void _initDeletedMasters() {
+    _deletedCategories.addAll(LocalDbService().getDeletedMasters('categories'));
+    _deletedMaterials.addAll(LocalDbService().getDeletedMasters('materials'));
+    _deletedUnits.addAll(LocalDbService().getDeletedMasters('units'));
+    _deletedWeightUnits.addAll(LocalDbService().getDeletedMasters('weight_units'));
+    _deletedItemNames.addAll(LocalDbService().getDeletedMasters('item_names'));
+    _deletedVendors.addAll(LocalDbService().getDeletedMasters('vendors'));
+  }
+
   AdminState() {
     // Initialize diamond rates to 0.0
     for (var clarity in clarities) {
@@ -204,6 +215,7 @@ class AdminState extends ChangeNotifier {
         _diamondRates['${clarity}_$range'] = 0.0;
       }
     }
+    _initDeletedMasters();
     _listenToLiveRates();
     fetchProducts();
     fetchMetalGroups();
@@ -464,6 +476,7 @@ class AdminState extends ChangeNotifier {
     final trimmed = newMat.trim();
     if (trimmed.isNotEmpty) {
       _deletedMaterials.remove(trimmed);
+      LocalDbService().removeDeletedMaster('materials', trimmed);
       if (!_dynamicMaterials.contains(trimmed)) {
         _dynamicMaterials.add(trimmed);
         try {
@@ -480,7 +493,9 @@ class AdminState extends ChangeNotifier {
     if (newTrimmed.isEmpty || oldTrimmed == newTrimmed) return;
 
     _deletedMaterials.remove(newTrimmed);
+    LocalDbService().removeDeletedMaster('materials', newTrimmed);
     _deletedMaterials.add(oldTrimmed);
+    LocalDbService().saveDeletedMaster('materials', oldTrimmed);
     _dynamicMaterials.remove(oldTrimmed);
     if (!_dynamicMaterials.contains(newTrimmed)) {
       _dynamicMaterials.add(newTrimmed);
@@ -495,6 +510,7 @@ class AdminState extends ChangeNotifier {
     final trimmed = mat.trim();
     _dynamicMaterials.remove(trimmed);
     _deletedMaterials.add(trimmed);
+    LocalDbService().saveDeletedMaster('materials', trimmed);
     notifyListeners();
     try { await ApiService().deleteMasterItem('materials', trimmed); } catch (_) {}
   }
@@ -503,6 +519,7 @@ class AdminState extends ChangeNotifier {
     final trimmed = newVendor.trim();
     if (trimmed.isNotEmpty) {
       _deletedVendors.remove(trimmed);
+      LocalDbService().removeDeletedMaster('vendors', trimmed);
       if (!_dynamicVendors.contains(trimmed)) {
         _dynamicVendors.add(trimmed);
         try {
@@ -518,7 +535,9 @@ class AdminState extends ChangeNotifier {
     final newTrimmed = newVendor.trim();
     if (newTrimmed.isEmpty || oldTrimmed == newTrimmed) return;
     _deletedVendors.remove(newTrimmed);
+    LocalDbService().removeDeletedMaster('vendors', newTrimmed);
     _deletedVendors.add(oldTrimmed);
+    LocalDbService().saveDeletedMaster('vendors', oldTrimmed);
     _dynamicVendors.remove(oldTrimmed);
     if (!_dynamicVendors.contains(newTrimmed)) {
       _dynamicVendors.add(newTrimmed);
@@ -533,6 +552,7 @@ class AdminState extends ChangeNotifier {
     final trimmed = vendor.trim();
     _dynamicVendors.remove(trimmed);
     _deletedVendors.add(trimmed);
+    LocalDbService().saveDeletedMaster('vendors', trimmed);
     notifyListeners();
     try { await ApiService().deleteMasterItem('vendors', trimmed); } catch (_) {}
   }
@@ -541,6 +561,7 @@ class AdminState extends ChangeNotifier {
     final trimmed = newUnit.trim();
     if (trimmed.isNotEmpty) {
       _deletedUnits.remove(trimmed);
+      LocalDbService().removeDeletedMaster('units', trimmed);
       if (!_dynamicUnits.contains(trimmed)) {
         _dynamicUnits.add(trimmed);
         try {
@@ -557,7 +578,9 @@ class AdminState extends ChangeNotifier {
     if (newTrimmed.isEmpty || oldTrimmed == newTrimmed) return;
 
     _deletedUnits.remove(newTrimmed);
+    LocalDbService().removeDeletedMaster('units', newTrimmed);
     _deletedUnits.add(oldTrimmed);
+    LocalDbService().saveDeletedMaster('units', oldTrimmed);
     _dynamicUnits.remove(oldTrimmed);
     if (!_dynamicUnits.contains(newTrimmed)) {
       _dynamicUnits.add(newTrimmed);
@@ -572,6 +595,7 @@ class AdminState extends ChangeNotifier {
     final trimmed = unit.trim();
     _dynamicUnits.remove(trimmed);
     _deletedUnits.add(trimmed);
+    LocalDbService().saveDeletedMaster('units', trimmed);
     notifyListeners();
     try { await ApiService().deleteMasterItem('units', trimmed); } catch (_) {}
   }
@@ -581,6 +605,7 @@ class AdminState extends ChangeNotifier {
     if (trimmed.isEmpty) return;
     if (!_defaultWeightUnits.contains(trimmed)) {
       _deletedWeightUnits.remove(trimmed);
+      LocalDbService().removeDeletedMaster('weight_units', trimmed);
       if (!_dynamicWeightUnits.contains(trimmed)) {
         _dynamicWeightUnits.add(trimmed);
         try {
@@ -598,7 +623,9 @@ class AdminState extends ChangeNotifier {
 
     if (!_defaultWeightUnits.contains(newTrimmed)) {
       _deletedWeightUnits.remove(newTrimmed);
+    LocalDbService().removeDeletedMaster('weight_units', newTrimmed);
       _deletedWeightUnits.add(oldTrimmed);
+    LocalDbService().saveDeletedMaster('weight_units', oldTrimmed);
       _dynamicWeightUnits.remove(oldTrimmed);
       if (!_dynamicWeightUnits.contains(newTrimmed)) {
         _dynamicWeightUnits.add(newTrimmed);
@@ -615,6 +642,7 @@ class AdminState extends ChangeNotifier {
     if (trimmed.isEmpty) return;
     _dynamicWeightUnits.remove(trimmed);
     _deletedWeightUnits.add(trimmed);
+    LocalDbService().saveDeletedMaster('weight_units', trimmed);
     notifyListeners();
     try { await ApiService().deleteMasterItem('weight_units', trimmed); } catch (_) {}
   }
@@ -623,6 +651,7 @@ class AdminState extends ChangeNotifier {
     final trimmed = newName.trim();
     if (trimmed.isNotEmpty) {
       _deletedItemNames.remove(trimmed);
+      LocalDbService().removeDeletedMaster('item_names', trimmed);
       if (!_dynamicItemNames.contains(trimmed)) {
         _dynamicItemNames.add(trimmed);
         try {
@@ -639,7 +668,9 @@ class AdminState extends ChangeNotifier {
     if (newTrimmed.isEmpty || oldTrimmed == newTrimmed) return;
 
     _deletedItemNames.remove(newTrimmed);
+    LocalDbService().removeDeletedMaster('item_names', newTrimmed);
     _deletedItemNames.add(oldTrimmed);
+    LocalDbService().saveDeletedMaster('item_names', oldTrimmed);
     _dynamicItemNames.remove(oldTrimmed);
     if (!_dynamicItemNames.contains(newTrimmed)) {
       _dynamicItemNames.add(newTrimmed);
@@ -654,6 +685,7 @@ class AdminState extends ChangeNotifier {
     final trimmed = name.trim();
     _dynamicItemNames.remove(trimmed);
     _deletedItemNames.add(trimmed);
+    LocalDbService().saveDeletedMaster('item_names', trimmed);
     notifyListeners();
     try { await ApiService().deleteMasterItem('item_names', trimmed); } catch (_) {}
   }

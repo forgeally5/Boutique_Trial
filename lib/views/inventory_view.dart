@@ -387,6 +387,8 @@ class _InventoryViewState extends State<InventoryView> {
                         flex: 3,
                         child: TextField(
                           controller: _searchCtrl,
+                          autofocus: true,
+                          textInputAction: TextInputAction.next,
                           style: const TextStyle(fontSize: 13),
                           decoration: BoutiqueInputDecoration.field(
                             hintText: 'Search product name or tag ID...',

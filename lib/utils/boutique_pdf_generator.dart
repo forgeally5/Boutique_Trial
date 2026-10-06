@@ -71,12 +71,39 @@ class BoutiquePdfGenerator {
     final customerMobile = bill['customerMobile']?.toString().trim() ?? '';
     final customerAddress = bill['customerAddress']?.toString().trim() ?? '';
     
-    final items = (bill['items'] as List<dynamic>?) ?? [];
+    final rawItems = (bill['items'] as List<dynamic>?) ?? [];
+    final items = List<dynamic>.from(rawItems);
     
-    final subtotal = (bill['subtotal'] as num?)?.toDouble() ?? 0.0;
-    final discAmt = (bill['extraDiscountAmount'] as num?)?.toDouble() ?? 0.0;
-    final taxAmt = (bill['taxAmount'] as num?)?.toDouble() ?? 0.0;
+    var subtotal = (bill['subtotal'] as num?)?.toDouble() ?? 0.0;
+    var discAmt = (bill['extraDiscountAmount'] as num?)?.toDouble() ?? 0.0;
+    var taxAmt = (bill['taxAmount'] as num?)?.toDouble() ?? 0.0;
     final total = (bill['totalPayable'] as num?)?.toDouble() ?? 0.0;
+    final adjustment = (bill['adjustment'] as num?)?.toDouble() ?? 0.0;
+    
+    if (adjustment != 0 && items.isNotEmpty) {
+      double currentSum = items.fold(0.0, (s, i) => s + ((i['lineAmount'] as num?)?.toDouble() ?? 0.0));
+      if (currentSum > 0) {
+        for (int i = 0; i < items.length; i++) {
+          final r = Map<String, dynamic>.from(items[i]);
+          final originalLineAmt = (r['lineAmount'] as num?)?.toDouble() ?? 0.0;
+          final originalQty = (r['qty'] as num?)?.toDouble() ?? 1.0;
+          
+          final newLineAmt = (originalLineAmt / currentSum) * total;
+          r['lineAmount'] = newLineAmt;
+          r['price'] = originalQty > 0 ? (newLineAmt / originalQty) : newLineAmt;
+          items[i] = r;
+        }
+      } else {
+        final r = Map<String, dynamic>.from(items[0]);
+        r['price'] = total;
+        r['lineAmount'] = total;
+        items[0] = r;
+      }
+      subtotal = total;
+      discAmt = 0.0;
+      taxAmt = 0.0;
+    }
+
     final amountReceived = (bill['amountReceived'] as num?)?.toDouble() ?? total;
     final pendingBalance = (bill['pendingBalance'] as num?)?.toDouble() ??
         (total - amountReceived).clamp(0.0, double.infinity);

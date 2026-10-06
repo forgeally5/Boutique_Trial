@@ -198,615 +198,33 @@ class _ItemDialogState extends State<ItemDialog> {
     );
   }
 
+
   void _showManageMasterListDialog(String type) {
-    final ctrl = TextEditingController();
-    final focusNode = FocusNode();
-    final chipScrollCtrl = ScrollController();
-    bool dialogOpen = true;
-    int highlightIdx = -1; // -1=none; 0..chips-1=chip; chips..total=list row
-
-    void safeFocus() {
-      if (!dialogOpen) return; // Don't fire after dialog closes
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (dialogOpen && focusNode.canRequestFocus) {
-          focusNode.requestFocus();
-        }
-      });
-    }
-
-    void doAdd(String val, StateSetter setDialogState) {
-      final text = val.trim();
-      if (text.isEmpty) return;
-      if (type == 'Category') {
-        widget.adminState.addCategory(text);
-        setState(() => _category = text);
-      } else if (type == 'Material') {
-        widget.adminState.addMaterial(text);
-        setState(() => _material = text);
-      } else if (type == 'Item Name') {
-        widget.adminState.addItemName(text);
-        setState(() {
-          _itemName = text;
-          _nameCtrl.text = text;
-        });
-      } else if (type == 'Weight Unit') {
-        widget.adminState.addWeightUnit(text);
-        setState(() => _weightUnit = text);
-      } else if (type == 'Unit') {
-        widget.adminState.addUnit(text);
-        setState(() => _unit = text);
-      } else if (type == 'Vendor') {
-        widget.adminState.addVendor(text);
-        setState(() => _vendor = text);
-      }
-      ctrl.clear();
-      setDialogState(() { highlightIdx = -1; });
-      safeFocus();
-    }
-
     showDialog(
       context: context,
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            List<String> currentItems;
-            if (type == 'Category') {
-              currentItems = widget.adminState.categories.where((c) => c != 'All Categories').toList();
-            } else if (type == 'Material') {
-              currentItems = widget.adminState.materials;
-            } else if (type == 'Item Name') {
-              currentItems = widget.adminState.itemNames;
-            } else if (type == 'Weight Unit') {
-              currentItems = widget.adminState.weightUnits;
-            } else if (type == 'Vendor') {
-              currentItems = widget.adminState.vendors;
-            } else {
-              currentItems = widget.adminState.units;
-            }
-
-            // Filter list by what's typed — shows matching items & drives autocomplete
-            final query = ctrl.text.trim().toLowerCase();
-            final filtered = query.isEmpty
-                ? currentItems
-                : currentItems.where((it) => it.toLowerCase().contains(query)).toList();
-
-            // Suggestions = items that START WITH the query (for quick autofill), excluding exact match
-            final suggestions = query.isEmpty
-                ? <String>[]
-                : currentItems
-                    .where((it) =>
-                        it.toLowerCase().startsWith(query) &&
-                        it.toLowerCase() != query)
-                    .toList();
-
-            final totalChips = suggestions.length;
-            final totalItems = filtered.length;
-            final totalNav = totalChips + totalItems;
-
-            // Clamp highlight when lists shrink (e.g. user keeps typing)
-            final clampedHighlight = (highlightIdx >= totalNav && totalNav > 0)
-                ? totalNav - 1
-                : highlightIdx;
-
-            // ── Keyboard handler ─────────────────────────────────────────
-            KeyEventResult onKey(FocusNode node, KeyEvent event) {
-              if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
-                return KeyEventResult.ignored;
-              }
-              final key = event.logicalKey;
-
-              // Enter — only intercept when something is highlighted
-              if ((key == LogicalKeyboardKey.enter ||
-                      key == LogicalKeyboardKey.numpadEnter) &&
-                  clampedHighlight >= 0) {
-                if (clampedHighlight < totalChips) {
-                  final sug = suggestions[clampedHighlight];
-                  ctrl.text = sug;
-                  ctrl.selection =
-                      TextSelection.fromPosition(TextPosition(offset: sug.length));
-                  setDialogState(() { highlightIdx = -1; });
-                  safeFocus();
-                } else {
-                  final item = filtered[clampedHighlight - totalChips];
-                  ctrl.text = item;
-                  ctrl.selection =
-                      TextSelection.fromPosition(TextPosition(offset: item.length));
-                  setDialogState(() { highlightIdx = -1; });
-                  safeFocus();
-                }
-                return KeyEventResult.handled;
-              }
-
-              // Down arrow — move forward through chips then list
-              if (key == LogicalKeyboardKey.arrowDown) {
-                setDialogState(() {
-                  highlightIdx = clampedHighlight < totalNav - 1
-                      ? clampedHighlight + 1
-                      : -1; // wrap back to text field
-                });
-                return KeyEventResult.handled;
-              }
-
-              // Up arrow — move backward
-              if (key == LogicalKeyboardKey.arrowUp) {
-                setDialogState(() {
-                  highlightIdx = clampedHighlight > -1
-                      ? clampedHighlight - 1
-                      : totalNav - 1; // wrap to end
-                });
-                return KeyEventResult.handled;
-              }
-
-              // Right arrow — move right within chips only
-              if (key == LogicalKeyboardKey.arrowRight &&
-                  clampedHighlight >= 0 &&
-                  clampedHighlight < totalChips - 1) {
-                setDialogState(() { highlightIdx = clampedHighlight + 1; });
-                if (chipScrollCtrl.hasClients) {
-                  final target = chipScrollCtrl.offset + 100.0;
-                  final max = chipScrollCtrl.position.maxScrollExtent;
-                  chipScrollCtrl.animateTo(target > max ? max : target, 
-                      duration: const Duration(milliseconds: 150), curve: Curves.easeOut);
-                }
-                return KeyEventResult.handled;
-              }
-
-              // Left arrow — move left within chips only
-              if (key == LogicalKeyboardKey.arrowLeft &&
-                  clampedHighlight > 0 &&
-                  clampedHighlight < totalChips) {
-                setDialogState(() { highlightIdx = clampedHighlight - 1; });
-                if (chipScrollCtrl.hasClients) {
-                  final target = chipScrollCtrl.offset - 100.0;
-                  chipScrollCtrl.animateTo(target < 0 ? 0 : target, 
-                      duration: const Duration(milliseconds: 150), curve: Curves.easeOut);
-                }
-                return KeyEventResult.handled;
-              }
-
-              return KeyEventResult.ignored;
-            }
-
-            return AlertDialog(
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-              title: Row(
-                children: [
-                  const Icon(Icons.settings_outlined, color: _brown),
-                  const SizedBox(width: 8),
-                  Text('Manage $type List',
-                      style: const TextStyle(
-                          fontFamily: 'serif',
-                          color: _brown,
-                          fontWeight: FontWeight.bold)),
-                ],
-              ),
-              content: Focus(
-                canRequestFocus: false,
-                skipTraversal: true,
-                onKeyEvent: onKey,
-                child: ConstrainedBox(
-                constraints: const BoxConstraints(minWidth: 400, maxWidth: 400, maxHeight: 480),
-                child: Column(
-                  children: [
-                    // ── Input row ─────────────────────────────────────────
-                    Row(
-                      children: [
-                        Expanded(
-                          child: TextField(
-                            controller: ctrl,
-                            focusNode: focusNode,
-                            autofocus: true,
-                            decoration: InputDecoration(
-                              hintText: 'Type to search or add new $type...',
-                              contentPadding: const EdgeInsets.symmetric(
-                                  horizontal: 14, vertical: 10),
-                              border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(8)),
-                              suffixIcon: ctrl.text.isNotEmpty
-                                  ? IconButton(
-                                      icon: const Icon(Icons.clear, size: 18),
-                                      onPressed: () {
-                                        ctrl.clear();
-                                        setDialogState(() {});
-                                        focusNode.requestFocus();
-                                      },
-                                    )
-                                  : null,
-                            ),
-                            // Typing resets highlight so keyboard nav doesn't interfere
-                            onChanged: (_) => setDialogState(() { highlightIdx = -1; }),
-                            onSubmitted: (val) =>
-                                doAdd(val, setDialogState),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        ElevatedButton(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: _brown,
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 14, vertical: 12),
-                            shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(8)),
-                          ),
-                          onPressed: () =>
-                              doAdd(ctrl.text, setDialogState),
-                          child: const Text('Add',
-                              style: TextStyle(color: Colors.white)),
-                        ),
-                      ],
-                    ),
-
-                    // ── Autocomplete suggestion chips ─────────────────────
-                    if (suggestions.isNotEmpty) ...[
-                      const SizedBox(height: 8),
-                      SizedBox(
-                        height: 34,
-                        child: ScrollConfiguration(
-                          behavior: ScrollConfiguration.of(context).copyWith(
-                            dragDevices: {PointerDeviceKind.touch, PointerDeviceKind.mouse},
-                          ),
-                          child: SingleChildScrollView(
-                            controller: chipScrollCtrl,
-                            scrollDirection: Axis.horizontal,
-                            child: Row(
-                            children: suggestions.asMap().entries.map((e) {
-                              final idx = e.key;
-                              final sug = e.value;
-                              final isHighlighted = clampedHighlight == idx;
-                              return Padding(
-                                padding: const EdgeInsets.only(right: 6),
-                                child: GestureDetector(
-                                  onTap: () {
-                                    ctrl.text = sug;
-                                    ctrl.selection = TextSelection.fromPosition(
-                                        TextPosition(offset: sug.length));
-                                    setDialogState(() { highlightIdx = -1; });
-                                    safeFocus();
-                                  },
-                                  child: AnimatedContainer(
-                                    duration: const Duration(milliseconds: 150),
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 12, vertical: 6),
-                                    decoration: BoxDecoration(
-                                      color: isHighlighted
-                                          ? _brown
-                                          : _brown.withValues(alpha: 0.1),
-                                      border: Border.all(
-                                          color: isHighlighted
-                                              ? _brown
-                                              : _brown.withValues(alpha: 0.4)),
-                                      borderRadius: BorderRadius.circular(20),
-                                    ),
-                                    child: Text(sug,
-                                        style: TextStyle(
-                                            fontSize: 13,
-                                            color: isHighlighted
-                                                ? Colors.white
-                                                : _brown,
-                                            fontWeight: FontWeight.w500)),
-                                  ),
-                                ),
-                              );
-                            }).toList(),
-                          ),
-                        ),
-                        ),
-                      ),
-                      // Keyboard hint
-                      Padding(
-                        padding: const EdgeInsets.only(top: 3),
-                        child: Align(
-                          alignment: Alignment.centerRight,
-                          child: Text(
-                            '← → to navigate chips  ↵ to select',
-                            style: TextStyle(
-                                fontSize: 10,
-                                color: Colors.grey[400],
-                                fontStyle: FontStyle.italic),
-                          ),
-                        ),
-                      ),
-                    ],
-
-                    const SizedBox(height: 10),
-                    const Divider(height: 1),
-                    const SizedBox(height: 6),
-
-                    // ── Filtered list header ──────────────────────────────
-                    if (query.isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 6),
-                        child: Align(
-                          alignment: Alignment.centerLeft,
-                          child: Text(
-                            '${filtered.length} match${filtered.length == 1 ? '' : 'es'} for "$query"',
-                            style: TextStyle(
-                                fontSize: 11,
-                                color: Colors.grey[600],
-                                fontStyle: FontStyle.italic),
-                          ),
-                        ),
-                      ),
-
-                    // ── Scrollable list ───────────────────────────────────
-                    Expanded(
-                      child: filtered.isEmpty
-                          ? Center(
-                              child: Text(
-                              query.isEmpty
-                                  ? 'No items in list'
-                                  : 'No matches — press Add to create "$query"',
-                              textAlign: TextAlign.center,
-                              style: const TextStyle(
-                                  color: Colors.grey, fontSize: 13),
-                            ))
-                          : ListView.separated(
-                              itemCount: filtered.length,
-                              separatorBuilder: (_, _) =>
-                                  const Divider(height: 1),
-                              itemBuilder: (ctx, i) {
-                                final item = filtered[i];
-                                final listHighlightIdx = totalChips + i;
-                                final isHighlighted =
-                                    clampedHighlight == listHighlightIdx;
-                                return AnimatedContainer(
-                                  duration: const Duration(milliseconds: 120),
-                                  color: isHighlighted
-                                      ? _brown.withValues(alpha: 0.09)
-                                      : Colors.transparent,
-                                  child: ListTile(
-                                    dense: true,
-                                    title: Text(item,
-                                        style: TextStyle(
-                                            fontSize: 14,
-                                            fontWeight: isHighlighted
-                                                ? FontWeight.bold
-                                                : FontWeight.w500,
-                                            color: isHighlighted
-                                                ? _brown
-                                                : null)),
-                                    // Highlighted row shows a small Enter hint
-                                    leading: isHighlighted
-                                        ? const Icon(Icons.subdirectory_arrow_left,
-                                            size: 14, color: _lightBrown)
-                                        : null,
-                                    trailing: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      IconButton(
-                                        icon: const Icon(
-                                            Icons.edit_outlined,
-                                            color: _lightBrown,
-                                            size: 20),
-                                        tooltip: 'Edit $type',
-                                        onPressed: () =>
-                                            _showEditItemPrompt(
-                                                context,
-                                                type,
-                                                item,
-                                                (newVal) async {
-                                          if (type == 'Category') {
-                                            await widget.adminState
-                                                .renameCategory(
-                                                    item, newVal);
-                                            if (_category == item) {
-                                              setState(() =>
-                                                  _category = newVal);
-                                            }
-                                          } else if (type ==
-                                              'Material') {
-                                            await widget.adminState
-                                                .renameMaterial(
-                                                    item, newVal);
-                                            if (_material == item) {
-                                              setState(() =>
-                                                  _material = newVal);
-                                            }
-                                          } else if (type ==
-                                              'Item Name') {
-                                            await widget.adminState
-                                                .renameItemName(
-                                                    item, newVal);
-                                            if (_itemName == item) {
-                                              setState(() {
-                                                _itemName = newVal;
-                                                _nameCtrl.text = newVal;
-                                              });
-                                            }
-                                          } else if (type ==
-                                              'Weight Unit') {
-                                            await widget.adminState
-                                                .updateWeightUnit(
-                                                    item, newVal);
-                                            if (_weightUnit == item) {
-                                              setState(() =>
-                                                  _weightUnit = newVal);
-                                            }
-                                          } else if (type == 'Unit') {
-                                            await widget.adminState
-                                                .renameUnit(item, newVal);
-                                            if (_unit == item) {
-                                              setState(
-                                                  () => _unit = newVal);
-                                            }
-                                          } else if (type == 'Vendor') {
-                                            await widget.adminState
-                                                .renameVendor(item, newVal);
-                                            if (_vendor == item) {
-                                              setState(() => _vendor = newVal);
-                                            }
-                                          }
-                                          setDialogState(() {});
-                                          setState(() {});
-                                        }),
-                                      ),
-                                      IconButton(
-                                        icon: const Icon(
-                                            Icons.delete_outline,
-                                            color: Colors.redAccent,
-                                            size: 20),
-                                        tooltip: 'Delete $type',
-                                        onPressed: () async {
-                                          final confirm =
-                                              await showDialog<bool>(
-                                            context: context,
-                                            builder: (c) => AlertDialog(
-                                              shape:
-                                                  RoundedRectangleBorder(
-                                                      borderRadius:
-                                                          BorderRadius
-                                                              .circular(
-                                                                  14)),
-                                              title: Text(
-                                                  'Delete $type',
-                                                  style: const TextStyle(
-                                                      fontFamily: 'serif',
-                                                      color: _brown,
-                                                      fontWeight:
-                                                          FontWeight
-                                                              .bold)),
-                                              content: Text(
-                                                  'Are you sure you want to remove "$item" from $type list?'),
-                                              actions: [
-                                                TextButton(
-                                                  onPressed: () =>
-                                                      Navigator.pop(
-                                                          c, false),
-                                                  child: const Text(
-                                                      'Cancel',
-                                                      style: TextStyle(
-                                                          color:
-                                                              Colors.grey)),
-                                                ),
-                                                ElevatedButton(
-                                                  style: ElevatedButton
-                                                      .styleFrom(
-                                                          backgroundColor:
-                                                              Colors
-                                                                  .redAccent),
-                                                  onPressed: () =>
-                                                      Navigator.pop(
-                                                          c, true),
-                                                  child: const Text(
-                                                      'Delete',
-                                                      style: TextStyle(
-                                                          color:
-                                                              Colors.white)),
-                                                ),
-                                              ],
-                                            ),
-                                          );
-                                          if (confirm == true) {
-                                            if (type == 'Category') {
-                                              await widget.adminState
-                                                  .deleteCategory(item);
-                                              if (_category == item) {
-                                                setState(() => _category =
-                                                    _availableCategories
-                                                            .isNotEmpty
-                                                        ? _availableCategories
-                                                            .first
-                                                        : '');
-                                              }
-                                            } else if (type ==
-                                                'Material') {
-                                              await widget.adminState
-                                                  .deleteMaterial(item);
-                                              if (_material == item) {
-                                                setState(() => _material =
-                                                    _availableMaterials
-                                                            .isNotEmpty
-                                                        ? _availableMaterials
-                                                            .first
-                                                        : '');
-                                              }
-                                            } else if (type ==
-                                                'Item Name') {
-                                              await widget.adminState
-                                                  .deleteItemName(item);
-                                              if (_itemName == item) {
-                                                setState(() {
-                                                  _itemName =
-                                                      _availableItemNames
-                                                              .isNotEmpty
-                                                          ? _availableItemNames
-                                                              .first
-                                                          : '';
-                                                  _nameCtrl.text =
-                                                      _itemName;
-                                                });
-                                              }
-                                            } else if (type ==
-                                                'Weight Unit') {
-                                              await widget.adminState
-                                                  .deleteWeightUnit(item);
-                                              if (_weightUnit == item) {
-                                                setState(() => _weightUnit =
-                                                    _availableWeightUnits
-                                                            .isNotEmpty
-                                                        ? _availableWeightUnits
-                                                            .first
-                                                        : '');
-                                              }
-                                            } else if (type == 'Unit') {
-                                              await widget.adminState
-                                                  .deleteUnit(item);
-                                              if (_unit == item) {
-                                                setState(() => _unit =
-                                                    _availableUnits
-                                                            .isNotEmpty
-                                                        ? _availableUnits
-                                                            .first
-                                                        : '');
-                                              }
-                                            } else if (type == 'Vendor') {
-                                              await widget.adminState
-                                                  .deleteVendor(item);
-                                              if (_vendor == item) {
-                                                setState(() => _vendor =
-                                                    _availableVendors
-                                                            .isNotEmpty
-                                                        ? _availableVendors
-                                                            .first
-                                                        : '');
-                                              }
-                                            }
-                                            setDialogState(() {});
-                                            setState(() {});
-                                          }
-                                          safeFocus();
-                                        },
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              );
-                            },
-                          ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(ctx),
-                  child: const Text('Close',
-                      style: TextStyle(
-                          color: _brown, fontWeight: FontWeight.bold)),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    ).then((_) {
-      dialogOpen = false;
-      ctrl.dispose();
-      focusNode.dispose();
-      chipScrollCtrl.dispose();
-      _grossWeightCtrl.dispose();
-    });
+      builder: (ctx) => _MasterListDialog(
+        type: type,
+        adminState: widget.adminState,
+        onCategoryChanged: (v) => setState(() => _category = v),
+        onMaterialChanged: (v) => setState(() => _material = v),
+        onItemNameChanged: (v) => setState(() { _itemName = v; _nameCtrl.text = v; }),
+        onWeightUnitChanged: (v) => setState(() => _weightUnit = v),
+        onUnitChanged: (v) => setState(() => _unit = v),
+        onVendorChanged: (v) => setState(() => _vendor = v),
+        availableCategories: _availableCategories,
+        availableMaterials: _availableMaterials,
+        availableItemNames: _availableItemNames,
+        availableWeightUnits: _availableWeightUnits,
+        availableUnits: _availableUnits,
+        availableVendors: _availableVendors,
+        currentCategory: _category,
+        currentMaterial: _material,
+        currentItemName: _itemName,
+        currentWeightUnit: _weightUnit,
+        currentUnit: _unit,
+        currentVendor: _vendor,
+      ),
+    );
   }
 
   void _onAdminStateChanged() {
@@ -1852,6 +1270,7 @@ class _ItemDialogState extends State<ItemDialog> {
     int maxLines = 1,
     void Function(String)? onChanged,
     List<TextInputFormatter>? inputFormatters,
+    TextInputAction textInputAction = TextInputAction.next,
   }) {
     final hasError = error != null;
     return Column(
@@ -1868,11 +1287,12 @@ class _ItemDialogState extends State<ItemDialog> {
           controller: controller,
           maxLines: maxLines,
           onChanged: onChanged,
-          keyboardType: isNum
-              ? (isInt
-                  ? TextInputType.number
-                  : const TextInputType.numberWithOptions(decimal: true))
-              : TextInputType.text,
+          textInputAction: maxLines > 1 ? TextInputAction.newline : textInputAction,
+          keyboardType: maxLines > 1 
+              ? TextInputType.multiline
+              : (isNum
+                  ? (isInt ? TextInputType.number : const TextInputType.numberWithOptions(decimal: true))
+                  : TextInputType.text),
           inputFormatters: [
             if (isNum && isInt) FilteringTextInputFormatter.digitsOnly,
             if (isNum && !isInt)
@@ -2100,7 +1520,10 @@ class _SearchableDropdownDialog extends StatefulWidget {
 
 class _SearchableDropdownDialogState extends State<_SearchableDropdownDialog> {
   final TextEditingController _searchCtrl = TextEditingController();
+  final FocusNode _focusNode = FocusNode();
+  final ScrollController _scrollCtrl = ScrollController();
   List<String> _filtered = [];
+  int _highlightIdx = -1;
 
   static const _brown = Color(0xFF3E2723);
   static const _lightBrown = Color(0xFF8D6E63);
@@ -2116,6 +1539,7 @@ class _SearchableDropdownDialogState extends State<_SearchableDropdownDialog> {
   void _onSearch(String query) {
     final q = query.trim().toLowerCase();
     setState(() {
+      _highlightIdx = -1;
       if (q.isEmpty) {
         _filtered = List.from(widget.items);
       } else {
@@ -2126,9 +1550,56 @@ class _SearchableDropdownDialogState extends State<_SearchableDropdownDialog> {
     });
   }
 
+  KeyEventResult _onKeyEvent(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+      return KeyEventResult.ignored;
+    }
+    final key = event.logicalKey;
+
+    if (key == LogicalKeyboardKey.arrowDown) {
+      setState(() {
+        if (_highlightIdx < _filtered.length - 1) {
+          _highlightIdx++;
+          _scrollToHighlight();
+        }
+      });
+      return KeyEventResult.handled;
+    } else if (key == LogicalKeyboardKey.arrowUp) {
+      setState(() {
+        if (_highlightIdx > 0) {
+          _highlightIdx--;
+          _scrollToHighlight();
+        }
+      });
+      return KeyEventResult.handled;
+    } else if (key == LogicalKeyboardKey.enter || key == LogicalKeyboardKey.numpadEnter) {
+      if (_highlightIdx >= 0 && _highlightIdx < _filtered.length) {
+        widget.onSelected(_filtered[_highlightIdx]);
+        return KeyEventResult.handled;
+      }
+    }
+    return KeyEventResult.ignored;
+  }
+
+  void _scrollToHighlight() {
+    if (!_scrollCtrl.hasClients || _highlightIdx < 0) return;
+    final itemHeight = 46.0; // Approximate height of each item
+    final offset = _highlightIdx * itemHeight;
+    final maxScroll = _scrollCtrl.position.maxScrollExtent;
+    final viewportDimension = _scrollCtrl.position.viewportDimension;
+    
+    if (offset < _scrollCtrl.offset) {
+      _scrollCtrl.animateTo(offset, duration: const Duration(milliseconds: 100), curve: Curves.easeOut);
+    } else if (offset + itemHeight > _scrollCtrl.offset + viewportDimension) {
+      _scrollCtrl.animateTo(offset + itemHeight - viewportDimension, duration: const Duration(milliseconds: 100), curve: Curves.easeOut);
+    }
+  }
+
   @override
   void dispose() {
     _searchCtrl.dispose();
+    _focusNode.dispose();
+    _scrollCtrl.dispose();
     super.dispose();
   }
 
@@ -2173,34 +1644,39 @@ class _SearchableDropdownDialogState extends State<_SearchableDropdownDialog> {
             // ── Search Bar ─────────────────────
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-              child: TextField(
-                controller: _searchCtrl,
-                autofocus: true,
-                onChanged: _onSearch,
-                style: const TextStyle(fontSize: 14, color: _brown),
-                decoration: InputDecoration(
-                  hintText: 'Type to search...',
-                  hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 14),
-                  prefixIcon: const Icon(Icons.search, color: _lightBrown, size: 20),
-                  suffixIcon: _searchCtrl.text.isNotEmpty
-                      ? IconButton(
-                          icon: const Icon(Icons.clear, color: Colors.grey, size: 18),
-                          onPressed: () {
-                            _searchCtrl.clear();
-                            _onSearch('');
-                          },
-                        )
-                      : null,
-                  filled: true,
-                  fillColor: const Color(0xFFF9F6F0),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: const BorderSide(color: _border),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: const BorderSide(color: _accent, width: 1.5),
+              child: Focus(
+                onKeyEvent: _onKeyEvent,
+                child: TextField(
+                  controller: _searchCtrl,
+                  focusNode: _focusNode,
+                  autofocus: true,
+                  onChanged: _onSearch,
+                  style: const TextStyle(fontSize: 14, color: _brown),
+                  decoration: InputDecoration(
+                    hintText: 'Type to search...',
+                    hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 14),
+                    prefixIcon: const Icon(Icons.search, color: _lightBrown, size: 20),
+                    suffixIcon: _searchCtrl.text.isNotEmpty
+                        ? IconButton(
+                            icon: const Icon(Icons.clear, color: Colors.grey, size: 18),
+                            onPressed: () {
+                              _searchCtrl.clear();
+                              _onSearch('');
+                              _focusNode.requestFocus();
+                            },
+                          )
+                        : null,
+                    filled: true,
+                    fillColor: const Color(0xFFF9F6F0),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(color: _border),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(color: _accent, width: 1.5),
+                    ),
                   ),
                 ),
               ),
@@ -2237,18 +1713,23 @@ class _SearchableDropdownDialogState extends State<_SearchableDropdownDialog> {
                       ),
                     )
                   : ListView.builder(
+                      controller: _scrollCtrl,
                       shrinkWrap: true,
                       padding: const EdgeInsets.only(bottom: 12),
                       itemCount: _filtered.length,
                       itemBuilder: (ctx, i) {
                         final item = _filtered[i];
                         final isSelected = item == widget.currentValue;
+                        final isHighlighted = i == _highlightIdx;
+                        
                         return InkWell(
                           onTap: () => widget.onSelected(item),
                           child: Container(
                             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 13),
                             decoration: BoxDecoration(
-                              color: isSelected ? _accent.withValues(alpha: 0.07) : null,
+                              color: isHighlighted 
+                                  ? _accent.withValues(alpha: 0.15) 
+                                  : (isSelected ? _accent.withValues(alpha: 0.07) : null),
                               border: Border(
                                 bottom: BorderSide(color: Colors.grey.shade100),
                               ),
@@ -2260,13 +1741,15 @@ class _SearchableDropdownDialogState extends State<_SearchableDropdownDialog> {
                                     item,
                                     style: TextStyle(
                                       fontSize: 14,
-                                      fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
-                                      color: isSelected ? _accent : _brown,
+                                      fontWeight: (isSelected || isHighlighted) ? FontWeight.w600 : FontWeight.w400,
+                                      color: (isSelected || isHighlighted) ? _accent : _brown,
                                     ),
                                   ),
                                 ),
-                                if (isSelected)
+                                if (isSelected && !isHighlighted)
                                   const Icon(Icons.check_rounded, color: _accent, size: 18),
+                                if (isHighlighted)
+                                  const Icon(Icons.keyboard_return_rounded, color: _accent, size: 16),
                               ],
                             ),
                           ),
@@ -2280,3 +1763,526 @@ class _SearchableDropdownDialogState extends State<_SearchableDropdownDialog> {
     );
   }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// _MasterListDialog — proper StatefulWidget so FocusNode/controllers are
+// disposed by Flutter's lifecycle (not manually), preventing "used after
+// disposed" crashes when AdminState.notifyListeners() triggers parent rebuilds.
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _MasterListDialog extends StatefulWidget {
+  final String type;
+  final AdminState adminState;
+  final void Function(String) onCategoryChanged;
+  final void Function(String) onMaterialChanged;
+  final void Function(String) onItemNameChanged;
+  final void Function(String) onWeightUnitChanged;
+  final void Function(String) onUnitChanged;
+  final void Function(String) onVendorChanged;
+  final List<String> availableCategories;
+  final List<String> availableMaterials;
+  final List<String> availableItemNames;
+  final List<String> availableWeightUnits;
+  final List<String> availableUnits;
+  final List<String> availableVendors;
+  final String currentCategory;
+  final String currentMaterial;
+  final String currentItemName;
+  final String currentWeightUnit;
+  final String currentUnit;
+  final String currentVendor;
+
+  const _MasterListDialog({
+    required this.type,
+    required this.adminState,
+    required this.onCategoryChanged,
+    required this.onMaterialChanged,
+    required this.onItemNameChanged,
+    required this.onWeightUnitChanged,
+    required this.onUnitChanged,
+    required this.onVendorChanged,
+    required this.availableCategories,
+    required this.availableMaterials,
+    required this.availableItemNames,
+    required this.availableWeightUnits,
+    required this.availableUnits,
+    required this.availableVendors,
+    required this.currentCategory,
+    required this.currentMaterial,
+    required this.currentItemName,
+    required this.currentWeightUnit,
+    required this.currentUnit,
+    required this.currentVendor,
+  });
+
+  @override
+  State<_MasterListDialog> createState() => _MasterListDialogState();
+}
+
+class _MasterListDialogState extends State<_MasterListDialog> {
+  late final TextEditingController _ctrl;
+  late final FocusNode _focusNode;
+  late final ScrollController _chipScrollCtrl;
+  late final ScrollController _listScrollCtrl;
+  int _highlightIdx = -1;
+
+  static const Color _brown = Color(0xFF6D4C41);
+  static const Color _lightBrown = Color(0xFF8D6E63);
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = TextEditingController();
+    _focusNode = FocusNode();
+    _chipScrollCtrl = ScrollController();
+    _listScrollCtrl = ScrollController();
+    _ctrl.addListener(() { if (mounted) setState(() {}); });
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    _focusNode.dispose();
+    _chipScrollCtrl.dispose();
+    _listScrollCtrl.dispose();
+    super.dispose();
+  }
+
+  List<String> get _currentItems {
+    switch (widget.type) {
+      case 'Category': return widget.adminState.categories.where((c) => c != 'All Categories').toList();
+      case 'Material': return widget.adminState.materials;
+      case 'Item Name': return widget.adminState.itemNames;
+      case 'Weight Unit': return widget.adminState.weightUnits;
+      case 'Vendor': return widget.adminState.vendors;
+      default: return widget.adminState.units;
+    }
+  }
+
+  void _safeFocus() {
+    if (!mounted) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _focusNode.canRequestFocus) {
+        _focusNode.requestFocus();
+      }
+    });
+  }
+
+  void _doAdd(String val) {
+    final text = val.trim();
+    if (text.isEmpty) return;
+    switch (widget.type) {
+      case 'Category':
+        widget.adminState.addCategory(text);
+        widget.onCategoryChanged(text);
+        break;
+      case 'Material':
+        widget.adminState.addMaterial(text);
+        widget.onMaterialChanged(text);
+        break;
+      case 'Item Name':
+        widget.adminState.addItemName(text);
+        widget.onItemNameChanged(text);
+        break;
+      case 'Weight Unit':
+        widget.adminState.addWeightUnit(text);
+        widget.onWeightUnitChanged(text);
+        break;
+      case 'Unit':
+        widget.adminState.addUnit(text);
+        widget.onUnitChanged(text);
+        break;
+      case 'Vendor':
+        widget.adminState.addVendor(text);
+        widget.onVendorChanged(text);
+        break;
+    }
+    _ctrl.clear();
+    if (mounted) setState(() { _highlightIdx = -1; });
+    _safeFocus();
+  }
+
+  void _scrollList(int newHighlight, int totalChips) {
+    if (newHighlight >= totalChips && _listScrollCtrl.hasClients) {
+      final listIdx = newHighlight - totalChips;
+      const itemHeight = 48.0;
+      final offset = listIdx * itemHeight;
+      final viewport = _listScrollCtrl.position.viewportDimension;
+      if (offset < _listScrollCtrl.offset) {
+        _listScrollCtrl.animateTo(offset,
+            duration: const Duration(milliseconds: 100), curve: Curves.easeOut);
+      } else if (offset + itemHeight > _listScrollCtrl.offset + viewport) {
+        _listScrollCtrl.animateTo(offset + itemHeight - viewport,
+            duration: const Duration(milliseconds: 100), curve: Curves.easeOut);
+      }
+    }
+  }
+
+  KeyEventResult _onKey(FocusNode node, KeyEvent event,
+      {required int totalNav, required int totalChips,
+       required List<String> suggestions, required List<String> filtered}) {
+    if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+      return KeyEventResult.ignored;
+    }
+    final key = event.logicalKey;
+    final clamped = (_highlightIdx >= totalNav && totalNav > 0) ? totalNav - 1 : _highlightIdx;
+
+    if ((key == LogicalKeyboardKey.enter || key == LogicalKeyboardKey.numpadEnter) && clamped >= 0) {
+      if (clamped < totalChips) {
+        final sug = suggestions[clamped];
+        _ctrl.text = sug;
+        _ctrl.selection = TextSelection.fromPosition(TextPosition(offset: sug.length));
+        setState(() { _highlightIdx = -1; });
+        _safeFocus();
+      } else {
+        final item = filtered[clamped - totalChips];
+        _ctrl.text = item;
+        _ctrl.selection = TextSelection.fromPosition(TextPosition(offset: item.length));
+        setState(() { _highlightIdx = -1; });
+        _safeFocus();
+      }
+      return KeyEventResult.handled;
+    }
+
+    if (key == LogicalKeyboardKey.arrowDown) {
+      final next = clamped < totalNav - 1 ? clamped + 1 : -1;
+      setState(() { _highlightIdx = next; });
+      _scrollList(next, totalChips);
+      return KeyEventResult.handled;
+    }
+
+    if (key == LogicalKeyboardKey.arrowUp) {
+      final prev = clamped > -1 ? clamped - 1 : totalNav - 1;
+      setState(() { _highlightIdx = prev; });
+      _scrollList(prev, totalChips);
+      return KeyEventResult.handled;
+    }
+
+    if (key == LogicalKeyboardKey.arrowRight && clamped >= 0 && clamped < totalChips - 1) {
+      setState(() { _highlightIdx = clamped + 1; });
+      if (_chipScrollCtrl.hasClients) {
+        final t = _chipScrollCtrl.offset + 100.0;
+        final max = _chipScrollCtrl.position.maxScrollExtent;
+        _chipScrollCtrl.animateTo(t > max ? max : t,
+            duration: const Duration(milliseconds: 150), curve: Curves.easeOut);
+      }
+      return KeyEventResult.handled;
+    }
+
+    if (key == LogicalKeyboardKey.arrowLeft && clamped > 0 && clamped < totalChips) {
+      setState(() { _highlightIdx = clamped - 1; });
+      if (_chipScrollCtrl.hasClients) {
+        final t = _chipScrollCtrl.offset - 100.0;
+        _chipScrollCtrl.animateTo(t < 0 ? 0 : t,
+            duration: const Duration(milliseconds: 150), curve: Curves.easeOut);
+      }
+      return KeyEventResult.handled;
+    }
+
+    return KeyEventResult.ignored;
+  }
+
+  Future<void> _confirmDelete(String item) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (c) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        title: Text('Delete ${widget.type}',
+            style: const TextStyle(fontFamily: 'serif', color: _brown, fontWeight: FontWeight.bold)),
+        content: Text('Are you sure you want to remove "$item" from ${widget.type} list?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(c, false),
+            child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
+            onPressed: () => Navigator.pop(c, true),
+            child: const Text('Delete', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true || !mounted) return;
+
+    switch (widget.type) {
+      case 'Category':
+        await widget.adminState.deleteCategory(item);
+        if (widget.currentCategory == item) {
+          widget.onCategoryChanged(widget.availableCategories.isNotEmpty ? widget.availableCategories.first : '');
+        }
+        break;
+      case 'Material':
+        await widget.adminState.deleteMaterial(item);
+        if (widget.currentMaterial == item) {
+          widget.onMaterialChanged(widget.availableMaterials.isNotEmpty ? widget.availableMaterials.first : '');
+        }
+        break;
+      case 'Item Name':
+        await widget.adminState.deleteItemName(item);
+        if (widget.currentItemName == item) {
+          widget.onItemNameChanged(widget.availableItemNames.isNotEmpty ? widget.availableItemNames.first : '');
+        }
+        break;
+      case 'Weight Unit':
+        await widget.adminState.deleteWeightUnit(item);
+        if (widget.currentWeightUnit == item) {
+          widget.onWeightUnitChanged(widget.availableWeightUnits.isNotEmpty ? widget.availableWeightUnits.first : '');
+        }
+        break;
+      case 'Unit':
+        await widget.adminState.deleteUnit(item);
+        if (widget.currentUnit == item) {
+          widget.onUnitChanged(widget.availableUnits.isNotEmpty ? widget.availableUnits.first : '');
+        }
+        break;
+      case 'Vendor':
+        await widget.adminState.deleteVendor(item);
+        if (widget.currentVendor == item) {
+          widget.onVendorChanged(widget.availableVendors.isNotEmpty ? widget.availableVendors.first : '');
+        }
+        break;
+    }
+    if (mounted) setState(() {});
+    _safeFocus();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final currentItems = _currentItems;
+    final query = _ctrl.text.trim().toLowerCase();
+    final filtered = query.isEmpty
+        ? currentItems
+        : currentItems.where((it) => it.toLowerCase().contains(query)).toList();
+    final suggestions = query.isEmpty
+        ? <String>[]
+        : currentItems.where((it) => it.toLowerCase().startsWith(query) && it.toLowerCase() != query).toList();
+    final totalChips = suggestions.length;
+    final totalNav = totalChips + filtered.length;
+    final clamped = (_highlightIdx >= totalNav && totalNav > 0) ? totalNav - 1 : _highlightIdx;
+
+    return AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      title: Row(children: [
+        const Icon(Icons.settings_outlined, color: _brown),
+        const SizedBox(width: 8),
+        Text('Manage ${widget.type} List',
+            style: const TextStyle(fontFamily: 'serif', color: _brown, fontWeight: FontWeight.bold)),
+      ]),
+      content: Focus(
+        canRequestFocus: false,
+        skipTraversal: true,
+        onKeyEvent: (node, event) => _onKey(node, event,
+            totalNav: totalNav, totalChips: totalChips,
+            suggestions: suggestions, filtered: filtered),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minWidth: 400, maxWidth: 400, maxHeight: 480),
+          child: Column(children: [
+            // ── Input row
+            Row(children: [
+              Expanded(
+                child: TextField(
+                  controller: _ctrl,
+                  focusNode: _focusNode,
+                  autofocus: true,
+                  decoration: InputDecoration(
+                    hintText: 'Type to search or add new ${widget.type}...',
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                    suffixIcon: _ctrl.text.isNotEmpty
+                        ? IconButton(
+                            icon: const Icon(Icons.clear, size: 18),
+                            onPressed: () {
+                              _ctrl.clear();
+                              setState(() {});
+                              _focusNode.requestFocus();
+                            })
+                        : null,
+                  ),
+                  onChanged: (_) => setState(() { _highlightIdx = -1; }),
+                  onSubmitted: _doAdd,
+                ),
+              ),
+              const SizedBox(width: 8),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _brown,
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+                onPressed: () => _doAdd(_ctrl.text),
+                child: const Text('Add', style: TextStyle(color: Colors.white)),
+              ),
+            ]),
+
+            // ── Suggestion chips
+            if (suggestions.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              SizedBox(
+                height: 34,
+                child: ScrollConfiguration(
+                  behavior: ScrollConfiguration.of(context).copyWith(
+                      dragDevices: {PointerDeviceKind.touch, PointerDeviceKind.mouse}),
+                  child: SingleChildScrollView(
+                    controller: _chipScrollCtrl,
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: suggestions.asMap().entries.map((e) {
+                        final isH = clamped == e.key;
+                        return Padding(
+                          padding: const EdgeInsets.only(right: 6),
+                          child: GestureDetector(
+                            onTap: () {
+                              _ctrl.text = e.value;
+                              _ctrl.selection = TextSelection.fromPosition(TextPosition(offset: e.value.length));
+                              setState(() { _highlightIdx = -1; });
+                              _safeFocus();
+                            },
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 150),
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                              decoration: BoxDecoration(
+                                color: isH ? _brown : _brown.withValues(alpha: 0.1),
+                                border: Border.all(color: isH ? _brown : _brown.withValues(alpha: 0.4)),
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              child: Text(e.value,
+                                  style: TextStyle(
+                                      fontSize: 13,
+                                      color: isH ? Colors.white : _brown,
+                                      fontWeight: FontWeight.w500)),
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.only(top: 3),
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: Text('← → to navigate chips  ↵ to select',
+                      style: TextStyle(fontSize: 10, color: Colors.grey[400], fontStyle: FontStyle.italic)),
+                ),
+              ),
+            ],
+
+            const SizedBox(height: 10),
+            const Divider(height: 1),
+            const SizedBox(height: 6),
+
+            if (query.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    '${filtered.length} match${filtered.length == 1 ? '' : 'es'} for "$query"',
+                    style: TextStyle(fontSize: 11, color: Colors.grey[600], fontStyle: FontStyle.italic),
+                  ),
+                ),
+              ),
+
+            // ── List
+            Expanded(
+              child: filtered.isEmpty
+                  ? Center(child: Text(
+                      query.isEmpty ? 'No items in list' : 'No matches — press Add to create "$query"',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(color: Colors.grey, fontSize: 13)))
+                  : ListView.separated(
+                      controller: _listScrollCtrl,
+                      itemCount: filtered.length,
+                      separatorBuilder: (_, __) => const Divider(height: 1),
+                      itemBuilder: (ctx, i) {
+                        final item = filtered[i];
+                        final isH = clamped == totalChips + i;
+                        return AnimatedContainer(
+                          duration: const Duration(milliseconds: 120),
+                          color: isH ? _brown.withValues(alpha: 0.09) : Colors.transparent,
+                          child: ListTile(
+                            dense: true,
+                            leading: isH ? const Icon(Icons.subdirectory_arrow_left, size: 14, color: _lightBrown) : null,
+                            title: Text(item,
+                                style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: isH ? FontWeight.bold : FontWeight.w500,
+                                    color: isH ? _brown : null)),
+                            trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                              IconButton(
+                                icon: const Icon(Icons.edit_outlined, color: _lightBrown, size: 20),
+                                tooltip: 'Edit ${widget.type}',
+                                onPressed: () async {
+                                  // Simple rename dialog
+                                  final ctrl2 = TextEditingController(text: item);
+                                  final newVal = await showDialog<String>(
+                                    context: context,
+                                    builder: (c) => AlertDialog(
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                                      title: Text('Edit ${widget.type}',
+                                          style: const TextStyle(fontFamily: 'serif', color: _brown, fontWeight: FontWeight.bold)),
+                                      content: TextField(
+                                        controller: ctrl2,
+                                        autofocus: true,
+                                        decoration: InputDecoration(
+                                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                                          hintText: 'New name...',
+                                        ),
+                                        onSubmitted: (v) => Navigator.pop(c, v.trim()),
+                                      ),
+                                      actions: [
+                                        TextButton(onPressed: () => Navigator.pop(c), child: const Text('Cancel', style: TextStyle(color: Colors.grey))),
+                                        ElevatedButton(
+                                          style: ElevatedButton.styleFrom(backgroundColor: _brown),
+                                          onPressed: () => Navigator.pop(c, ctrl2.text.trim()),
+                                          child: const Text('Save', style: TextStyle(color: Colors.white)),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                  ctrl2.dispose();
+                                  if (newVal == null || newVal.isEmpty || newVal == item || !mounted) return;
+                                  switch (widget.type) {
+                                    case 'Category': await widget.adminState.renameCategory(item, newVal);
+                                      if (widget.currentCategory == item) widget.onCategoryChanged(newVal); break;
+                                    case 'Material': await widget.adminState.renameMaterial(item, newVal);
+                                      if (widget.currentMaterial == item) widget.onMaterialChanged(newVal); break;
+                                    case 'Item Name': await widget.adminState.renameItemName(item, newVal);
+                                      if (widget.currentItemName == item) widget.onItemNameChanged(newVal); break;
+                                    case 'Weight Unit': await widget.adminState.updateWeightUnit(item, newVal);
+                                      if (widget.currentWeightUnit == item) widget.onWeightUnitChanged(newVal); break;
+                                    case 'Unit': await widget.adminState.renameUnit(item, newVal);
+                                      if (widget.currentUnit == item) widget.onUnitChanged(newVal); break;
+                                    case 'Vendor': await widget.adminState.renameVendor(item, newVal);
+                                      if (widget.currentVendor == item) widget.onVendorChanged(newVal); break;
+                                  }
+                                  if (mounted) setState(() {});
+                                  _safeFocus();
+                                },
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 20),
+                                tooltip: 'Delete ${widget.type}',
+                                onPressed: () => _confirmDelete(item),
+                              ),
+                            ]),
+                          ),
+                        );
+                      },
+                    ),
+            ),
+          ]),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Close', style: TextStyle(color: _brown, fontWeight: FontWeight.bold)),
+        ),
+      ],
+    );
+  }
+}
+

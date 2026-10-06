@@ -147,6 +147,7 @@ class _AdminHomeShellState extends State<AdminHomeShell> {
 
   void _switchTab(int index) {
     if (index == _activeTabIndex) return;
+    LocalDbService().saveActiveTab(index);
     setState(() {
       _activeTabIndex = index;
     });
@@ -159,7 +160,10 @@ class _AdminHomeShellState extends State<AdminHomeShell> {
       final perms = context.read<AuthViewModel>().appUser?.permissions ?? PermissionsModel.adminPreset();
       if (mounted && _activeTabIndex == 0) {
         setState(() {
-          if (perms.viewInventory) {
+          final savedTab = LocalDbService().getActiveTab();
+          if (savedTab != null) {
+            _activeTabIndex = savedTab;
+          } else if (perms.viewInventory) {
             _activeTabIndex = 1;
           } else if (perms.salesEntry) {
             _activeTabIndex = 2;
@@ -341,6 +345,7 @@ class _AdminHomeShellState extends State<AdminHomeShell> {
             child: const Text('Cancel', style: TextStyle(color: BoutiqueColors.textSecondary)),
           ),
           ElevatedButton(
+            autofocus: true,
             style: ElevatedButton.styleFrom(
               backgroundColor: BoutiqueColors.destructive,
               foregroundColor: Colors.white,

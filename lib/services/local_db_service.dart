@@ -8,13 +8,62 @@ class LocalDbService {
   LocalDbService._internal();
 
   static const String _boxName = 'offline_entries';
+  static const String _deletedMastersBox = 'deleted_masters';
+  static const String _settingsBox = 'app_settings';
   bool _isInitialized = false;
 
   Future<void> init() async {
     if (_isInitialized) return;
     await Hive.initFlutter();
     await Hive.openBox(_boxName);
+    await Hive.openBox(_deletedMastersBox);
+    await Hive.openBox(_settingsBox);
     _isInitialized = true;
+  }
+
+  void saveActiveTab(int index) {
+    try {
+      Hive.box(_settingsBox).put('active_tab', index);
+    } catch (_) {}
+  }
+
+  int? getActiveTab() {
+    try {
+      return Hive.box(_settingsBox).get('active_tab');
+    } catch (_) {
+      return null;
+    }
+  }
+
+  void saveDeletedMaster(String type, String name) {
+    try {
+      final box = Hive.box(_deletedMastersBox);
+      List<String> list = box.get(type, defaultValue: <String>[])?.cast<String>() ?? [];
+      if (!list.contains(name)) {
+        list.add(name);
+        box.put(type, list);
+      }
+    } catch (_) {}
+  }
+
+  List<String> getDeletedMasters(String type) {
+    try {
+      final box = Hive.box(_deletedMastersBox);
+      return box.get(type, defaultValue: <String>[])?.cast<String>() ?? [];
+    } catch (_) {
+      return [];
+    }
+  }
+
+  void removeDeletedMaster(String type, String name) {
+    try {
+      final box = Hive.box(_deletedMastersBox);
+      List<String> list = box.get(type, defaultValue: <String>[])?.cast<String>() ?? [];
+      if (list.contains(name)) {
+        list.remove(name);
+        box.put(type, list);
+      }
+    } catch (_) {}
   }
 
   Future<void> insertEntry(String collectionName, Map<String, dynamic> data, {String operation = 'ADD', String? docId}) async {

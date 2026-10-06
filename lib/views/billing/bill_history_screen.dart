@@ -980,58 +980,75 @@ class _BillDetailDialogState extends State<_BillDetailDialog> {
 
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Edit Customer Details', style: TextStyle(color: BoutiqueColors.accent)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: 'Customer Name')),
-            const SizedBox(height: 8),
-            TextField(controller: mobileCtrl, decoration: const InputDecoration(labelText: 'Mobile Number')),
-            const SizedBox(height: 8),
-            TextField(controller: addressCtrl, decoration: const InputDecoration(labelText: 'Address')),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel', style: TextStyle(color: BoutiqueColors.textSecondary)),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: BoutiqueColors.accent),
-            onPressed: () async {
-              try {
-                final newName = nameCtrl.text.trim();
-                final newMobile = mobileCtrl.text.trim();
-                final newAddr = addressCtrl.text.trim();
-                
-                final docId = widget.bill['docId'] ?? widget.bill['_id'];
-                if (docId == null) throw Exception('No document ID found');
+      builder: (ctx) {
+        Future<void> handleSave() async {
+          try {
+            final newName = nameCtrl.text.trim();
+            final newMobile = mobileCtrl.text.trim();
+            final newAddr = addressCtrl.text.trim();
+            
+            final docId = widget.bill['docId'] ?? widget.bill['_id'];
+            if (docId == null) throw Exception('No document ID found');
 
-                await ApiService().updateBill(docId.toString(), {
-                  'customerName': newName,
-                  'customerMobile': newMobile,
-                  'customerAddress': newAddr,
-                });
-                
-                setState(() {
-                  widget.bill['customerName'] = newName;
-                  widget.bill['customerMobile'] = newMobile;
-                  widget.bill['customerAddress'] = newAddr;
-                });
-                widget.onUpdated?.call();
-                if (ctx.mounted) {
-                   Navigator.pop(ctx);
-                   BoutiqueToast.showSuccess(context, 'Customer updated successfully');
-                }
-              } catch(e) {
-                if (ctx.mounted) BoutiqueToast.showError(ctx, 'Error updating: $e');
-              }
-            },
-            child: const Text('Save', style: TextStyle(color: Colors.white)),
+            await ApiService().updateBill(docId.toString(), {
+              'customerName': newName,
+              'customerMobile': newMobile,
+              'customerAddress': newAddr,
+            });
+            
+            setState(() {
+              widget.bill['customerName'] = newName;
+              widget.bill['customerMobile'] = newMobile;
+              widget.bill['customerAddress'] = newAddr;
+            });
+            widget.onUpdated?.call();
+            if (ctx.mounted) {
+               Navigator.pop(ctx);
+               BoutiqueToast.showSuccess(context, 'Customer updated successfully');
+            }
+          } catch(e) {
+            if (ctx.mounted) BoutiqueToast.showError(ctx, 'Error updating: $e');
+          }
+        }
+
+        return AlertDialog(
+          title: const Text('Edit Customer Details', style: TextStyle(color: BoutiqueColors.accent)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: nameCtrl, 
+                textInputAction: TextInputAction.next,
+                decoration: const InputDecoration(labelText: 'Customer Name')
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: mobileCtrl, 
+                textInputAction: TextInputAction.next,
+                decoration: const InputDecoration(labelText: 'Mobile Number')
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: addressCtrl, 
+                textInputAction: TextInputAction.done,
+                onSubmitted: (_) => handleSave(),
+                decoration: const InputDecoration(labelText: 'Address')
+              ),
+            ],
           ),
-        ],
-      ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel', style: TextStyle(color: BoutiqueColors.textSecondary)),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: BoutiqueColors.accent),
+              onPressed: handleSave,
+              child: const Text('Save', style: TextStyle(color: Colors.white)),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -1041,62 +1058,68 @@ class _BillDetailDialogState extends State<_BillDetailDialog> {
 
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Edit Product Names', style: TextStyle(color: BoutiqueColors.accent)),
-        content: SizedBox(
-          width: 400,
-          child: ListView.builder(
-            shrinkWrap: true,
-            itemCount: items.length,
-            itemBuilder: (c, i) => Padding(
-              padding: const EdgeInsets.only(bottom: 8.0),
-              child: TextField(
-                controller: controllers[i],
-                decoration: InputDecoration(
-                  labelText: 'Item ${i + 1}',
-                  hintText: 'Enter new product name',
+      builder: (ctx) {
+        Future<void> handleSave() async {
+          try {
+            final newItems = List<Map<String, dynamic>>.from(items);
+            for (int i = 0; i < newItems.length; i++) {
+              newItems[i]['name'] = controllers[i].text.trim();
+            }
+
+            final docId = widget.bill['docId'] ?? widget.bill['_id'];
+            if (docId == null) throw Exception('No document ID found');
+
+            await ApiService().updateBill(docId.toString(), {
+              'items': newItems,
+            });
+            
+            setState(() {
+              widget.bill['items'] = newItems;
+            });
+            widget.onUpdated?.call();
+            if (ctx.mounted) {
+               Navigator.pop(ctx);
+               BoutiqueToast.showSuccess(context, 'Items updated successfully');
+            }
+          } catch(e) {
+            if (ctx.mounted) BoutiqueToast.showError(ctx, 'Error updating: $e');
+          }
+        }
+
+        return AlertDialog(
+          title: const Text('Edit Product Names', style: TextStyle(color: BoutiqueColors.accent)),
+          content: SizedBox(
+            width: 400,
+            child: ListView.builder(
+              shrinkWrap: true,
+              itemCount: items.length,
+              itemBuilder: (c, i) => Padding(
+                padding: const EdgeInsets.only(bottom: 8.0),
+                child: TextField(
+                  controller: controllers[i],
+                  textInputAction: i == items.length - 1 ? TextInputAction.done : TextInputAction.next,
+                  onSubmitted: (_) => handleSave(),
+                  decoration: InputDecoration(
+                    labelText: 'Item ${i + 1}',
+                    hintText: 'Enter new product name',
+                  ),
                 ),
               ),
             ),
           ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel', style: TextStyle(color: BoutiqueColors.textSecondary)),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: BoutiqueColors.accent),
-            onPressed: () async {
-              try {
-                final newItems = List<Map<String, dynamic>>.from(items);
-                for (int i = 0; i < newItems.length; i++) {
-                  newItems[i]['name'] = controllers[i].text.trim();
-                }
-
-                final docId = widget.bill['docId'] ?? widget.bill['_id'];
-                if (docId == null) throw Exception('No document ID found');
-
-                await ApiService().updateBill(docId.toString(), {
-                  'items': newItems,
-                });
-                
-                setState(() {
-                  widget.bill['items'] = newItems;
-                });
-                widget.onUpdated?.call();
-                if (ctx.mounted) {
-                   Navigator.pop(ctx);
-                   BoutiqueToast.showSuccess(context, 'Items updated successfully');
-                }
-              } catch(e) {
-                if (ctx.mounted) BoutiqueToast.showError(ctx, 'Error updating: $e');
-              }
-            },
-            child: const Text('Save', style: TextStyle(color: Colors.white)),
-          ),
-        ],
-      ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel', style: TextStyle(color: BoutiqueColors.textSecondary)),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: BoutiqueColors.accent),
+              onPressed: handleSave,
+              child: const Text('Save', style: TextStyle(color: Colors.white)),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -1106,11 +1129,37 @@ class _BillDetailDialogState extends State<_BillDetailDialog> {
     final fmt = DateFormat('dd/MM/yyyy');
     final billDate = bill['billDate'] ?? bill['voucherDate'] ?? bill['date'];
     final dateStr = fmt.format(_parseBillDate(billDate));
-    final items = (bill['items'] as List?) ?? [];
+    final rawItems = (bill['items'] as List?) ?? [];
+    final items = List<dynamic>.from(rawItems);
     final total = (bill['totalPayable'] as num?)?.toDouble() ?? 0.0;
-    final subtotal = (bill['subtotal'] as num?)?.toDouble() ?? 0.0;
-    final extraDisc = (bill['extraDiscountAmount'] as num?)?.toDouble() ?? 0.0;
-    final tax = (bill['taxAmount'] as num?)?.toDouble() ?? 0.0;
+    var subtotal = (bill['subtotal'] as num?)?.toDouble() ?? 0.0;
+    var extraDisc = (bill['extraDiscountAmount'] as num?)?.toDouble() ?? 0.0;
+    var tax = (bill['taxAmount'] as num?)?.toDouble() ?? 0.0;
+    final adjustment = (bill['adjustment'] as num?)?.toDouble() ?? 0.0;
+    
+    if (adjustment != 0 && items.isNotEmpty) {
+      double currentSum = items.fold(0.0, (s, i) => s + ((i['lineAmount'] as num?)?.toDouble() ?? 0.0));
+      if (currentSum > 0) {
+        for (int i = 0; i < items.length; i++) {
+          final r = Map<String, dynamic>.from(items[i]);
+          final originalLineAmt = (r['lineAmount'] as num?)?.toDouble() ?? 0.0;
+          final originalQty = (r['qty'] as num?)?.toDouble() ?? 1.0;
+          
+          final newLineAmt = (originalLineAmt / currentSum) * total;
+          r['lineAmount'] = newLineAmt;
+          r['price'] = originalQty > 0 ? (newLineAmt / originalQty) : newLineAmt;
+          items[i] = r;
+        }
+      } else {
+        final r = Map<String, dynamic>.from(items[0]);
+        r['price'] = total;
+        r['lineAmount'] = total;
+        items[0] = r;
+      }
+      subtotal = total;
+      extraDisc = 0.0;
+      tax = 0.0;
+    }
     final billType = bill['billType']?.toString() ?? 'Sale';
     final amountReceived = (bill['amountReceived'] as num?)?.toDouble() ?? total;
     final pendingBalance = (bill['pendingBalance'] as num?)?.toDouble() ?? (total - amountReceived).clamp(0.0, double.infinity);
