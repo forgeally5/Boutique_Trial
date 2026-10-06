@@ -148,6 +148,8 @@ class _VendorIssueDialogState extends State<VendorIssueDialog> {
         return TextFormField(
           controller: textCtrl,
           focusNode: focusNode,
+          autofocus: true,
+          textInputAction: TextInputAction.next,
           decoration: BoutiqueInputDecoration.field(
             hintText: 'Search product...',
             labelText: 'Product',
@@ -268,6 +270,7 @@ class _VendorIssueDialogState extends State<VendorIssueDialog> {
                     child: TextFormField(
                       controller: _vendorCtrl,
                       enabled: _vendorEditable,
+                      textInputAction: TextInputAction.next,
                       decoration: BoutiqueInputDecoration.field(
                         labelText: 'Vendor / Supplier Name',
                         hintText: 'e.g. Ravi Textiles',
@@ -299,6 +302,7 @@ class _VendorIssueDialogState extends State<VendorIssueDialog> {
               TextFormField(
                 controller: _qtyCtrl,
                 keyboardType: TextInputType.number,
+                textInputAction: TextInputAction.next,
                 decoration: BoutiqueInputDecoration.field(labelText: 'Qty Affected', hintText: ''),
                 validator: (v) {
                   if (v == null || v.isEmpty) return 'Required';
@@ -363,6 +367,7 @@ class _VendorIssueDialogState extends State<VendorIssueDialog> {
                     child: TextFormField(
                       controller: _refundCtrl,
                       keyboardType: TextInputType.number,
+                      textInputAction: TextInputAction.next,
                       decoration: BoutiqueInputDecoration.field(labelText: 'Refund Amount (₹)', hintText: ''),
                     ),
                   ),
@@ -373,6 +378,8 @@ class _VendorIssueDialogState extends State<VendorIssueDialog> {
               TextFormField(
                 controller: _notesCtrl,
                 maxLines: 2,
+                textInputAction: TextInputAction.done,
+                onFieldSubmitted: (_) => _save(),
                 decoration: BoutiqueInputDecoration.field(labelText: 'Notes (Optional)', hintText: ''),
               ),
               const SizedBox(height: 24),

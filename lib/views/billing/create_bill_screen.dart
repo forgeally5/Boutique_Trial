@@ -842,6 +842,7 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
                     return TextField(
                       controller: textEditingController,
                       focusNode: focusNode,
+                      autofocus: true,
                       textInputAction: TextInputAction.next,
                       style: const TextStyle(fontSize: 13),
                       decoration: BoutiqueInputDecoration.field(

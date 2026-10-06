@@ -134,6 +134,7 @@ class _IssueReportScreenState extends State<IssueReportScreen> {
               'id': '',
               'tagId': itemMap['tagId'] ?? itemMap['tag_id'] ?? '',
               'actionTaken': '',
+              '_bill': data,
             });
           }
         }
@@ -436,60 +437,51 @@ class _IssueReportScreenState extends State<IssueReportScreen> {
           ),
           const SizedBox(width: 12),
           // Add Issue / Return
-          PopupMenuButton<String>(
-            tooltip: 'Log an issue or return',
-            position: PopupMenuPosition.under,
-            onSelected: (value) async {
-              if (value == 'vendor') {
-                final res = await showDialog(
-                  context: context,
-                  builder: (ctx) => VendorIssueDialog(state: context.read<AdminState>()),
-                );
-                if (res == true) _load();
-              } else if (value == 'customer') {
-                final res = await showDialog(
-                  context: context,
-                  builder: (ctx) => CustomerReturnDialog(state: context.read<AdminState>()),
-                );
-                if (res == true) _load();
-              }
+          MenuAnchor(
+            builder: (context, controller, child) {
+              return ElevatedButton.icon(
+                onPressed: () {
+                  if (controller.isOpen) {
+                    controller.close();
+                  } else {
+                    controller.open();
+                  }
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: BoutiqueColors.accent,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  elevation: 0,
+                ),
+                icon: const Icon(Icons.add, size: 18),
+                label: const Text('Log Issue / Return', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+              );
             },
-            itemBuilder: (ctx) => [
-              const PopupMenuItem(
-                value: 'customer',
-                child: Row(
-                  children: [
-                    Icon(Icons.assignment_return_rounded, size: 18, color: BoutiqueColors.textPrimary),
-                    SizedBox(width: 8),
-                    Text('Log Customer Return'),
-                  ],
-                ),
+            menuChildren: [
+              MenuItemButton(
+                leadingIcon: const Icon(Icons.assignment_return_rounded, size: 18, color: BoutiqueColors.textPrimary),
+                onPressed: () async {
+                  final res = await showDialog(
+                    context: context,
+                    builder: (ctx) => CustomerReturnDialog(state: context.read<AdminState>()),
+                  );
+                  if (res == true) _load();
+                },
+                child: const Text('Log Customer Return'),
               ),
-              const PopupMenuItem(
-                value: 'vendor',
-                child: Row(
-                  children: [
-                    Icon(Icons.local_shipping_outlined, size: 18, color: BoutiqueColors.textPrimary),
-                    SizedBox(width: 8),
-                    Text('Log Vendor Issue'),
-                  ],
-                ),
+              MenuItemButton(
+                leadingIcon: const Icon(Icons.local_shipping_outlined, size: 18, color: BoutiqueColors.textPrimary),
+                onPressed: () async {
+                  final res = await showDialog(
+                    context: context,
+                    builder: (ctx) => VendorIssueDialog(state: context.read<AdminState>()),
+                  );
+                  if (res == true) _load();
+                },
+                child: const Text('Log Vendor Issue'),
               ),
             ],
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-              decoration: BoxDecoration(
-                color: BoutiqueColors.accent,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: const Row(
-                children: [
-                  Icon(Icons.add, size: 18, color: Colors.white),
-                  SizedBox(width: 6),
-                  Text('Log Issue / Return', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 13)),
-                ],
-              ),
-            ),
           ),
           const SizedBox(width: 8),
           // Refresh
@@ -660,46 +652,60 @@ class _IssueReportScreenState extends State<IssueReportScreen> {
               ),
             ),
           ),
-          // Action (download & edit – vendor only)
+          // Action (download & edit)
           Expanded(
             flex: 2,
-            child: isVendor
-                ? Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.download_rounded,
-                            size: 16, color: Color(0xFF1E7E34)),
-                        tooltip: 'Download Issue Bill (.xlsx)',
-                        onPressed: () async {
-                          final issue = VendorIssue(
-                            id: r['id'] ?? '',
-                            tagId: r['tagId'] ?? '',
-                            productName: r['productName'] ?? '',
-                            vendor: r['counterpart'] ?? '',
-                            quantity: (r['qty'] as num?)?.toInt() ?? 1,
-                            issueType: r['issueReason'] ?? '',
-                            actionTaken: r['actionTaken'] ?? 'Pending',
-                            dateReported: r['_dt'] as DateTime? ?? DateTime.now(),
-                            notes: '',
-                            refundAmount: (r['refundAmount'] as num?)?.toDouble() ?? 0.0,
-                          );
-                          await ExcelGenerator.downloadVendorIssueBillExcel(issue: issue);
-                          if (mounted) {
-                            BoutiqueToast.showSuccess(context, 'Issue Bill (.xlsx) downloaded!');
-                          }
-                        },
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.edit,
-                            size: 16, color: BoutiqueColors.accent),
-                        tooltip: 'Update action',
-                        onPressed: () => _updateVendorAction(
-                            r['id'], r['tagId'], r['actionTaken']),
-                      ),
-                    ],
-                  )
-                : const SizedBox.shrink(),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (isVendor) ...[
+                  IconButton(
+                    icon: const Icon(Icons.download_rounded, size: 16, color: Color(0xFF1E7E34)),
+                    tooltip: 'Download Issue Bill (.xlsx)',
+                    onPressed: () async {
+                      final issue = VendorIssue(
+                        id: r['id'] ?? '',
+                        tagId: r['tagId'] ?? '',
+                        productName: r['productName'] ?? '',
+                        vendor: r['counterpart'] ?? '',
+                        quantity: (r['qty'] as num?)?.toInt() ?? 1,
+                        issueType: r['issueReason'] ?? '',
+                        actionTaken: r['actionTaken'] ?? 'Pending',
+                        dateReported: r['_dt'] as DateTime? ?? DateTime.now(),
+                        notes: '',
+                        refundAmount: (r['refundAmount'] as num?)?.toDouble() ?? 0.0,
+                      );
+                      await ExcelGenerator.downloadVendorIssueBillExcel(issue: issue);
+                      if (mounted) {
+                        BoutiqueToast.showSuccess(context, 'Issue Bill (.xlsx) downloaded!');
+                      }
+                    },
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.edit, size: 16, color: BoutiqueColors.accent),
+                    tooltip: 'Update action',
+                    onPressed: () => _updateVendorAction(r['id'], r['tagId'], r['actionTaken']),
+                  ),
+                ] else ...[
+                  IconButton(
+                    icon: const Icon(Icons.print_rounded, size: 16, color: BoutiqueColors.accent),
+                    tooltip: 'Print Return Bill',
+                    onPressed: () async {
+                       final bill = r['_bill'];
+                       if (bill != null) {
+                         try {
+                            await BoutiquePdfGenerator.generateInvoicePdf(bill);
+                         } catch(e) {
+                            if (mounted) BoutiqueToast.showError(context, 'Error generating PDF: $e');
+                         }
+                       } else {
+                          BoutiqueToast.showError(context, 'Bill data missing');
+                       }
+                    },
+                  ),
+                ],
+              ],
+            ),
           ),
         ],
       ),

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import 'package:printing/printing.dart';
@@ -173,16 +174,16 @@ class _BillHistoryScreenState extends State<BillHistoryScreen> {
         return tb.compareTo(ta);
       });
 
+      if (!mounted) return;
       setState(() {
         _bills = list;
         _loading = false;
       });
       _applyFilters();
     } catch (e) {
+      if (!mounted) return;
       setState(() => _loading = false);
-      if (mounted) {
-        BoutiqueToast.showError(context, 'Error loading bills: $e');
-      }
+      BoutiqueToast.showError(context, 'Error loading bills: $e');
     }
   }
 
@@ -987,13 +988,22 @@ class _BillDetailDialogState extends State<_BillDetailDialog> {
             final newMobile = mobileCtrl.text.trim();
             final newAddr = addressCtrl.text.trim();
             
+            if (newMobile.isNotEmpty && (newMobile.length != 10 || int.tryParse(newMobile) == null)) {
+               if (ctx.mounted) BoutiqueToast.showError(ctx, 'Mobile number must be exactly 10 digits');
+               return;
+            }
+
             final docId = widget.bill['docId'] ?? widget.bill['_id'];
             if (docId == null) throw Exception('No document ID found');
 
+            // Send both camelCase and snake_case to ensure backend catches it
             await ApiService().updateBill(docId.toString(), {
               'customerName': newName,
               'customerMobile': newMobile,
               'customerAddress': newAddr,
+              'customer_name': newName,
+              'customer_mobile': newMobile,
+              'customer_address': newAddr,
             });
             
             setState(() {
@@ -1025,6 +1035,11 @@ class _BillDetailDialogState extends State<_BillDetailDialog> {
               TextField(
                 controller: mobileCtrl, 
                 textInputAction: TextInputAction.next,
+                keyboardType: TextInputType.phone,
+                inputFormatters: [
+                  FilteringTextInputFormatter.digitsOnly,
+                  LengthLimitingTextInputFormatter(10),
+                ],
                 decoration: const InputDecoration(labelText: 'Mobile Number')
               ),
               const SizedBox(height: 8),

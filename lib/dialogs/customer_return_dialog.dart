@@ -189,6 +189,8 @@ class _CustomerReturnDialogState extends State<CustomerReturnDialog> {
                 Expanded(
                   child: TextFormField(
                     controller: _billNoCtrl,
+                    autofocus: true,
+                    textInputAction: TextInputAction.search,
                     decoration: BoutiqueInputDecoration.field(labelText: 'Original Bill No', hintText: 'e.g. SB-001'),
                     textCapitalization: TextCapitalization.characters,
                     inputFormatters: [UpperCaseTextFormatter()],
@@ -295,6 +297,8 @@ class _CustomerReturnDialogState extends State<CustomerReturnDialog> {
                     flex: 2,
                     child: TextFormField(
                       controller: _reasonCtrl,
+                      textInputAction: TextInputAction.done,
+                      onFieldSubmitted: (_) => _save(),
                       decoration: BoutiqueInputDecoration.field(labelText: 'Return Reason (Optional)', hintText: 'e.g. Size didn\'t fit, Defective...'),
                     ),
                   ),

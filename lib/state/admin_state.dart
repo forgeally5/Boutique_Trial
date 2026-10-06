@@ -437,6 +437,7 @@ class AdminState extends ChangeNotifier {
     final trimmed = newCat.trim();
     if (trimmed.isNotEmpty) {
       _deletedCategories.remove(trimmed);
+      LocalDbService().removeDeletedMaster('categories', trimmed);
       if (!_dynamicCategories.contains(trimmed)) {
         _dynamicCategories.add(trimmed);
         try {
@@ -453,7 +454,9 @@ class AdminState extends ChangeNotifier {
     if (newTrimmed.isEmpty || oldTrimmed == newTrimmed) return;
 
     _deletedCategories.remove(newTrimmed);
+    LocalDbService().removeDeletedMaster('categories', newTrimmed);
     _deletedCategories.add(oldTrimmed);
+    LocalDbService().saveDeletedMaster('categories', oldTrimmed);
     _dynamicCategories.remove(oldTrimmed);
     if (!_dynamicCategories.contains(newTrimmed)) {
       _dynamicCategories.add(newTrimmed);
@@ -468,6 +471,7 @@ class AdminState extends ChangeNotifier {
     final trimmed = cat.trim();
     _dynamicCategories.remove(trimmed);
     _deletedCategories.add(trimmed);
+    LocalDbService().saveDeletedMaster('categories', trimmed);
     notifyListeners();
     try { await ApiService().deleteMasterItem('categories', trimmed); } catch (_) {}
   }
