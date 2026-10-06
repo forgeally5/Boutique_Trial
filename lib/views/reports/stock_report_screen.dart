@@ -568,6 +568,7 @@ class _StockReportScreenState extends State<StockReportScreen> {
                 flex: 3,
                 child: TextField(
                   controller: _searchCtrl,
+                  autofocus: true,
                   style: const TextStyle(fontSize: 13),
                   decoration: BoutiqueInputDecoration.field(
                     hintText: 'Search tag ID or product name…',
@@ -736,6 +737,7 @@ class _StockReportScreenState extends State<StockReportScreen> {
                 flex: 4,
                 child: TextField(
                   controller: _catSearchCtrl,
+                  autofocus: true,
                   style: const TextStyle(fontSize: 13),
                   decoration: BoutiqueInputDecoration.field(
                     hintText: 'Search category name…',

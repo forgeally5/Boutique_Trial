@@ -33,20 +33,23 @@ class TrilokAdminApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'RituMita Boutique',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        useMaterial3: true,
-        fontFamily: 'sans-serif',
-        scaffoldBackgroundColor: BoutiqueColors.bgMain,
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: BoutiqueColors.accent,
-          primary: BoutiqueColors.accent,
-          surface: BoutiqueColors.bgCard,
+    return FocusTraversalGroup(
+      policy: WidgetOrderTraversalPolicy(),
+      child: MaterialApp(
+        title: 'RituMita Boutique',
+        debugShowCheckedModeBanner: false,
+        theme: ThemeData(
+          useMaterial3: true,
+          fontFamily: 'sans-serif',
+          scaffoldBackgroundColor: BoutiqueColors.bgMain,
+          colorScheme: ColorScheme.fromSeed(
+            seedColor: BoutiqueColors.accent,
+            primary: BoutiqueColors.accent,
+            surface: BoutiqueColors.bgCard,
+          ),
         ),
+        home: const AuthGate(),
       ),
-      home: const AuthGate(),
     );
   }
 }

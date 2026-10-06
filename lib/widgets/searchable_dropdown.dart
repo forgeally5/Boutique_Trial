@@ -54,9 +54,13 @@ class SearchableDropdownField extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 5),
-        GestureDetector(
+        InkWell(
           onTap: () => _showSearchableDropdownDialog(context, displayValue),
+          focusColor: _brown.withValues(alpha: 0.1),
+          hoverColor: _brown.withValues(alpha: 0.05),
+          borderRadius: BorderRadius.circular(8),
           child: InputDecorator(
+            isFocused: false, // The InkWell shows focus
             decoration: InputDecoration(
               filled: true,
               fillColor: Colors.white,

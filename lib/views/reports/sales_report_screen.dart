@@ -318,6 +318,7 @@ class _IndividualSalesTabState extends State<_IndividualSalesTab> {
                   flex: 3,
                   child: TextField(
                     controller: _searchCtrl,
+                    autofocus: true,
                     style: const TextStyle(fontSize: 13),
                     decoration: BoutiqueInputDecoration.field(
                       hintText: 'Search bill no, customer, tag ID…',
@@ -824,6 +825,7 @@ class _TotalSalesTabState extends State<_TotalSalesTab> {
                   flex: 3,
                   child: TextField(
                     controller: _searchCtrl,
+                    autofocus: true,
                     style: const TextStyle(fontSize: 13),
                     decoration: BoutiqueInputDecoration.field(
                       hintText: 'Search bill no, customer, mobile…',

@@ -8,6 +8,7 @@ import '../auth/viewmodels/auth_viewmodel.dart';
 import '../utils/boutique_theme.dart';
 import '../utils/excel_generator.dart';
 import '../utils/qr_pdf_generator.dart';
+import '../dialogs/bulk_upload_dialog.dart';
 import '../widgets/searchable_dropdown.dart';
 
 class InventoryView extends StatefulWidget {
@@ -284,7 +285,25 @@ class _InventoryViewState extends State<InventoryView> {
                                   label: const Text('Inward Bill (Excel)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                                 ),
                                 const SizedBox(width: 12),
+                                OutlinedButton.icon(
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: BoutiqueColors.accent,
+                                    side: const BorderSide(color: BoutiqueColors.accent),
+                                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                  ),
+                                  onPressed: () {
+                                    showDialog(
+                                      context: context,
+                                      builder: (ctx) => const BulkUploadDialog(),
+                                    );
+                                  },
+                                  icon: const Icon(Icons.upload_file_rounded, size: 18),
+                                  label: const Text('Import CSV', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                                ),
+                                const SizedBox(width: 12),
                                 ElevatedButton.icon(
+                                  autofocus: true,
                                   style: ElevatedButton.styleFrom(
                                     backgroundColor: BoutiqueColors.accent,
                                     foregroundColor: Colors.white,
@@ -387,7 +406,6 @@ class _InventoryViewState extends State<InventoryView> {
                         flex: 3,
                         child: TextField(
                           controller: _searchCtrl,
-                          autofocus: true,
                           textInputAction: TextInputAction.next,
                           style: const TextStyle(fontSize: 13),
                           decoration: BoutiqueInputDecoration.field(

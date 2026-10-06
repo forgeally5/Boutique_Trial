@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../utils/boutique_pdf_generator.dart';
 import '../../services/api_service.dart';
 import 'package:intl/intl.dart';
 import 'package:printing/printing.dart';
@@ -11,6 +12,7 @@ import '../../state/admin_state.dart';
 import '../../utils/boutique_theme.dart';
 import '../../utils/excel_generator.dart';
 import '../../widgets/report_export_dialog.dart';
+import '../../widgets/searchable_dropdown.dart';
 
 class IssueReportScreen extends StatefulWidget {
   const IssueReportScreen({super.key});
@@ -397,6 +399,7 @@ class _IssueReportScreenState extends State<IssueReportScreen> {
             flex: 3,
             child: TextField(
               controller: _searchCtrl,
+              autofocus: true,
               style: const TextStyle(fontSize: 13),
               decoration: BoutiqueInputDecoration.field(
                 hintText: 'Search product, customer, vendor, bill no…',
@@ -418,15 +421,10 @@ class _IssueReportScreenState extends State<IssueReportScreen> {
           // Type filter
           Expanded(
             flex: 2,
-            child: DropdownButtonFormField<String>(
-              initialValue: _typeFilter,
-              style: const TextStyle(
-                  fontSize: 13, color: BoutiqueColors.textPrimary),
-              decoration:
-                  BoutiqueInputDecoration.field(hintText: 'Issue Type'),
-              items: _typeOptions
-                  .map((s) => DropdownMenuItem(value: s, child: Text(s)))
-                  .toList(),
+            child: SearchableDropdownField(
+              label: 'Issue Type',
+              value: _typeFilter,
+              items: _typeOptions,
               onChanged: (v) {
                 if (v != null) {
                   setState(() => _typeFilter = v);
@@ -453,6 +451,15 @@ class _IssueReportScreenState extends State<IssueReportScreen> {
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                   elevation: 0,
+                ).copyWith(
+                  overlayColor: MaterialStateProperty.resolveWith<Color?>(
+                    (Set<MaterialState> states) {
+                      if (states.contains(MaterialState.focused)) {
+                        return Colors.white.withOpacity(0.3); // High contrast focus
+                      }
+                      return null;
+                    },
+                  ),
                 ),
                 icon: const Icon(Icons.add, size: 18),
                 label: const Text('Log Issue / Return', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
@@ -694,7 +701,8 @@ class _IssueReportScreenState extends State<IssueReportScreen> {
                        final bill = r['_bill'];
                        if (bill != null) {
                          try {
-                            await BoutiquePdfGenerator.generateInvoicePdf(bill);
+                            final bytes = await BoutiquePdfGenerator.generate(bill);
+                            await Printing.layoutPdf(onLayout: (_) async => bytes);
                          } catch(e) {
                             if (mounted) BoutiqueToast.showError(context, 'Error generating PDF: $e');
                          }
