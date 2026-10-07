@@ -181,9 +181,11 @@ class _InventoryViewState extends State<InventoryView> {
         final List<Product> allProducts = state.products;
         final filteredList = _getFilteredList(allProducts);
 
-        return Stack(
-          children: [
-            Column(
+        return FocusTraversalGroup(
+          policy: OrderedTraversalPolicy(),
+          child: Stack(
+            children: [
+              Column(
               children: [
                 // Top Header Section
                 Container(
@@ -265,55 +267,68 @@ class _InventoryViewState extends State<InventoryView> {
                               ),
                               if (perms.addTags) ...[
                                 const SizedBox(width: 16),
-                                OutlinedButton.icon(
-                                  style: OutlinedButton.styleFrom(
-                                    foregroundColor: const Color(0xFF1E7E34),
-                                    side: const BorderSide(color: Color(0xFF1E7E34)),
-                                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                FocusTraversalOrder(
+                                  order: const NumericFocusOrder(1),
+                                  child: OutlinedButton.icon(
+                                    style: OutlinedButton.styleFrom(
+                                      foregroundColor: const Color(0xFF1E7E34),
+                                      side: const BorderSide(color: Color(0xFF1E7E34)),
+                                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                    ),
+                                    onPressed: () async {
+                                      final products = _getFilteredList(state.products);
+                                      if (products.isEmpty) {
+                                        BoutiqueToast.showError(context, 'No products to export.');
+                                        return;
+                                      }
+                                      // ignore: use_build_context_synchronously
+                                      if (mounted) BoutiqueToast.showSuccess(context, 'Inward Bill Excel downloaded!');
+                                    },
+                                    icon: const Icon(Icons.table_view_rounded, size: 18),
+                                    label: const Text('Inward Bill (Excel)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                                   ),
-                                  onPressed: () async {
-                                    final products = _getFilteredList(state.products);
-                                    if (products.isEmpty) {
-                                      BoutiqueToast.showError(context, 'No products to export.');
-                                      return;
-                                    }
-                                    // ignore: use_build_context_synchronously
-                                    if (mounted) BoutiqueToast.showSuccess(context, 'Inward Bill Excel downloaded!');
-                                  },
-                                  icon: const Icon(Icons.table_view_rounded, size: 18),
-                                  label: const Text('Inward Bill (Excel)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                                 ),
                                 const SizedBox(width: 12),
-                                OutlinedButton.icon(
-                                  style: OutlinedButton.styleFrom(
-                                    foregroundColor: BoutiqueColors.accent,
-                                    side: const BorderSide(color: BoutiqueColors.accent),
-                                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                FocusTraversalOrder(
+                                  order: const NumericFocusOrder(2),
+                                  child: OutlinedButton.icon(
+                                    style: OutlinedButton.styleFrom(
+                                      foregroundColor: BoutiqueColors.accent,
+                                      side: const BorderSide(color: BoutiqueColors.accent),
+                                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                    ),
+                                    onPressed: () {
+                                      final adminState = context.read<AdminState>();
+                                      showDialog(
+                                        context: context,
+                                        builder: (ctx) => ChangeNotifierProvider.value(
+                                          value: adminState,
+                                          child: const BulkUploadDialog(),
+                                        ),
+                                      );
+                                    },
+                                    icon: const Icon(Icons.upload_file_rounded, size: 18),
+                                    label: const Text('Import CSV', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                                   ),
-                                  onPressed: () {
-                                    showDialog(
-                                      context: context,
-                                      builder: (ctx) => const BulkUploadDialog(),
-                                    );
-                                  },
-                                  icon: const Icon(Icons.upload_file_rounded, size: 18),
-                                  label: const Text('Import CSV', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                                 ),
                                 const SizedBox(width: 12),
-                                ElevatedButton.icon(
-                                  autofocus: true,
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: BoutiqueColors.accent,
-                                    foregroundColor: Colors.white,
-                                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                                    elevation: 0,
+                                FocusTraversalOrder(
+                                  order: const NumericFocusOrder(3),
+                                  child: ElevatedButton.icon(
+                                    autofocus: true,
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: BoutiqueColors.accent,
+                                      foregroundColor: Colors.white,
+                                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                      elevation: 0,
+                                    ),
+                                    onPressed: () => _showAddItemDialog(context),
+                                    icon: const Icon(Icons.add_rounded, size: 18),
+                                    label: const Text('Add Product', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                                   ),
-                                  onPressed: () => _showAddItemDialog(context),
-                                  icon: const Icon(Icons.add_rounded, size: 18),
-                                  label: const Text('Add Product', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                                 ),
                               ],
                             ],
@@ -404,104 +419,116 @@ class _InventoryViewState extends State<InventoryView> {
                       // Search Input
                       Expanded(
                         flex: 3,
-                        child: TextField(
-                          controller: _searchCtrl,
-                          textInputAction: TextInputAction.next,
-                          style: const TextStyle(fontSize: 13),
-                          decoration: BoutiqueInputDecoration.field(
-                            hintText: 'Search product name or tag ID...',
-                            prefixIcon: const Icon(Icons.search_rounded, size: 18, color: BoutiqueColors.textSecondary),
+                        child: FocusTraversalOrder(
+                          order: const NumericFocusOrder(4),
+                          child: TextField(
+                            controller: _searchCtrl,
+                            textInputAction: TextInputAction.next,
+                            style: const TextStyle(fontSize: 13),
+                            decoration: BoutiqueInputDecoration.field(
+                              hintText: 'Search product name or tag ID...',
+                              prefixIcon: const Icon(Icons.search_rounded, size: 18, color: BoutiqueColors.textSecondary),
+                            ),
+                            onChanged: (val) {
+                              setState(() => _searchQuery = val.toLowerCase());
+                              // Sync back to global search
+                              if (widget.globalSearchCtrl != null &&
+                                  widget.globalSearchCtrl!.text != val) {
+                                widget.globalSearchCtrl!.text = val;
+                              }
+                            },
                           ),
-                          onChanged: (val) {
-                            setState(() => _searchQuery = val.toLowerCase());
-                            // Sync back to global search
-                            if (widget.globalSearchCtrl != null &&
-                                widget.globalSearchCtrl!.text != val) {
-                              widget.globalSearchCtrl!.text = val;
-                            }
-                          },
                         ),
                       ),
                       const SizedBox(width: 16),
                       // Category Filter
                       Expanded(
                         flex: 2,
-                        child: SearchableDropdownField(
-                          label: 'Category',
-                          value: state.categories.contains(_selectedCategory) ? _selectedCategory : 'All Categories',
-                          items: state.categories,
-                          onChanged: (val) {
-                            if (val != null) setState(() => _selectedCategory = val);
-                          },
+                        child: FocusTraversalOrder(
+                          order: const NumericFocusOrder(5),
+                          child: SearchableDropdownField(
+                            label: 'Category',
+                            value: state.categories.contains(_selectedCategory) ? _selectedCategory : 'All Categories',
+                            items: state.categories,
+                            onChanged: (val) {
+                              if (val != null) setState(() => _selectedCategory = val);
+                            },
+                          ),
                         ),
                       ),
                       const SizedBox(width: 16),
                       // Status Filter
                       Expanded(
                         flex: 2,
-                        child: SearchableDropdownField(
-                          label: 'Status',
-                          value: _selectedStatus,
-                          items: _statuses,
-                          onChanged: (val) {
-                            if (val != null) setState(() => _selectedStatus = val);
-                          },
+                        child: FocusTraversalOrder(
+                          order: const NumericFocusOrder(6),
+                          child: SearchableDropdownField(
+                            label: 'Status',
+                            value: _selectedStatus,
+                            items: _statuses,
+                            onChanged: (val) {
+                              if (val != null) setState(() => _selectedStatus = val);
+                            },
+                          ),
                         ),
                       ),
                       const SizedBox(width: 16),
                       // Date Filter
                       Expanded(
                         flex: 2,
-                        child: InkWell(
-                          onTap: () async {
-                            final picked = await showDateRangePicker(
-                              context: context,
-                              firstDate: DateTime(2020),
-                              lastDate: DateTime.now(),
-                              initialDateRange: _selectedDateRange,
-                              builder: (context, child) {
-                                return Theme(
-                                  data: Theme.of(context).copyWith(
-                                    colorScheme: const ColorScheme.light(
-                                      primary: BoutiqueColors.accent,
+                        child: FocusTraversalOrder(
+                          order: const NumericFocusOrder(7),
+                          child: InkWell(
+                            onTap: () async {
+                              final picked = await showDateRangePicker(
+                                context: context,
+                                firstDate: DateTime(2020),
+                                lastDate: DateTime.now(),
+                                initialDateRange: _selectedDateRange,
+                                builder: (context, child) {
+                                  return Theme(
+                                    data: Theme.of(context).copyWith(
+                                      colorScheme: const ColorScheme.light(
+                                        primary: BoutiqueColors.accent,
+                                      ),
+                                    ),
+                                    child: child!,
+                                  );
+                                },
+                              );
+                              if (picked != null) {
+                                setState(() => _selectedDateRange = picked);
+                              }
+                            },
+                            child: Container(
+                              height: 48,
+                              padding: const EdgeInsets.symmetric(horizontal: 12),
+                              decoration: BoxDecoration(
+                                border: Border.all(color: BoutiqueColors.border),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.calendar_today_rounded, size: 18, color: BoutiqueColors.textSecondary),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      _selectedDateRange == null
+                                          ? 'Filter by Date Added'
+                                          : '${_selectedDateRange!.start.day}/${_selectedDateRange!.start.month} - ${_selectedDateRange!.end.day}/${_selectedDateRange!.end.month}',
+                                      style: const TextStyle(fontSize: 13, color: BoutiqueColors.textPrimary),
+                                      overflow: TextOverflow.ellipsis,
                                     ),
                                   ),
-                                  child: child!,
-                                );
-                              },
-                            );
-                            if (picked != null) {
-                              setState(() => _selectedDateRange = picked);
-                            }
-                          },
-                          child: Container(
-                            height: 48,
-                            padding: const EdgeInsets.symmetric(horizontal: 12),
-                            decoration: BoxDecoration(
-                              border: Border.all(color: BoutiqueColors.border),
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: Row(
-                              children: [
-                                const Icon(Icons.calendar_today_rounded, size: 18, color: BoutiqueColors.textSecondary),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: Text(
-                                    _selectedDateRange == null
-                                        ? 'Filter by Date Added'
-                                        : '${_selectedDateRange!.start.day}/${_selectedDateRange!.start.month} - ${_selectedDateRange!.end.day}/${_selectedDateRange!.end.month}',
-                                    style: const TextStyle(fontSize: 13, color: BoutiqueColors.textPrimary),
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                                if (_selectedDateRange != null)
-                                  IconButton(
-                                    icon: const Icon(Icons.close, size: 16),
-                                    onPressed: () => setState(() => _selectedDateRange = null),
-                                    padding: EdgeInsets.zero,
-                                    constraints: const BoxConstraints(),
-                                  ),
-                              ],
+                                  if (_selectedDateRange != null)
+                                    IconButton(
+                                      icon: const Icon(Icons.close, size: 16),
+                                      onPressed: () => setState(() => _selectedDateRange = null),
+                                      padding: EdgeInsets.zero,
+                                      constraints: const BoxConstraints(),
+                                    ),
+                                ],
+                              ),
                             ),
                           ),
                         ),
@@ -540,7 +567,10 @@ class _InventoryViewState extends State<InventoryView> {
                                 itemCount: filteredList.length,
                                 itemBuilder: (context, index) {
                                   final p = filteredList[index];
-                                  return _buildGridCard(p);
+                                  return FocusTraversalOrder(
+                                    order: NumericFocusOrder(8.0 + index),
+                                    child: _buildGridCard(p),
+                                  );
                                 },
                               )
                             : ListView.separated(
@@ -549,7 +579,10 @@ class _InventoryViewState extends State<InventoryView> {
                                 separatorBuilder: (_, _) => const Divider(height: 1, color: BoutiqueColors.borderLight),
                                 itemBuilder: (context, index) {
                                   final p = filteredList[index];
-                                  return _buildTableRow(p);
+                                  return FocusTraversalOrder(
+                                    order: NumericFocusOrder(8.0 + index),
+                                    child: _buildTableRow(p),
+                                  );
                                 },
                               )),
                   ),
@@ -575,6 +608,7 @@ class _InventoryViewState extends State<InventoryView> {
                 ),
               ),
           ],
+        ),
         );
       },
     );

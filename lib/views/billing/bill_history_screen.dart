@@ -989,7 +989,22 @@ class _BillDetailDialogState extends State<_BillDetailDialog> {
             final newAddr = addressCtrl.text.trim();
             
             if (newMobile.isNotEmpty && (newMobile.length != 10 || int.tryParse(newMobile) == null)) {
-               if (ctx.mounted) BoutiqueToast.showError(ctx, 'Mobile number must be exactly 10 digits');
+               if (ctx.mounted) {
+                 showDialog(
+                   context: ctx,
+                   builder: (context) => AlertDialog(
+                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                     title: const Text('Invalid Mobile Number', style: TextStyle(color: Color(0xFFC62828))),
+                     content: const Text('Please enter exactly 10 digits for the mobile number.'),
+                     actions: [
+                       TextButton(
+                         onPressed: () => Navigator.pop(context),
+                         child: const Text('Okay'),
+                       ),
+                     ],
+                   ),
+                 );
+               }
                return;
             }
 
@@ -1993,12 +2008,46 @@ class _SettleBalanceDialogState extends State<_SettleBalanceDialog> {
         BoutiqueToast.showError(context, 'Please enter a valid payment amount greater than 0');
         return;
       }
-      payNow = inputVal;
+      if (inputVal > currPending) {
+        final change = inputVal - currPending;
+        final confirm = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: const Text('Excess Payment', style: TextStyle(fontFamily: 'serif', fontWeight: FontWeight.bold, color: Color(0xFFC62828))),
+            content: Text(
+              'The entered amount (₹${inputVal.toStringAsFixed(2)}) exceeds the pending due (₹${currPending.toStringAsFixed(2)}).\n\n'
+              'Please return the change of ₹${change.toStringAsFixed(2)} to the customer.\n\n'
+              'Do you want to record the due as fully paid?',
+              style: const TextStyle(fontSize: 14, height: 1.4),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancel', style: TextStyle(color: BoutiqueColors.textSecondary)),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1E7E34)),
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Return Change & Save', style: TextStyle(color: Colors.white)),
+              ),
+            ],
+          ),
+        );
+        if (confirm != true) return;
+        payNow = currPending; // Cap to pending amount
+      } else {
+        payNow = inputVal;
+      }
       newAmountReceived = currReceived + payNow;
       newPendingBalance = (total - newAmountReceived).clamp(0.0, double.infinity);
     } else {
       if (inputVal < 0) {
         BoutiqueToast.showError(context, 'Amount cannot be negative');
+        return;
+      }
+      if (inputVal > total) {
+        BoutiqueToast.showError(context, 'Total received amount cannot exceed the total bill of ₹${total.toStringAsFixed(2)}');
         return;
       }
       newAmountReceived = inputVal;
@@ -2173,7 +2222,7 @@ class _SettleBalanceDialogState extends State<_SettleBalanceDialog> {
         ? _splitTotal
         : (double.tryParse(_amountCtrl.text.trim()) ?? 0.0);
     final previewReceived = _modeTab == 0 ? (received + inputVal) : inputVal;
-    final previewPending = (total - previewReceived).clamp(0.0, double.infinity);
+    final previewPending = (total - previewReceived);
 
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -2512,9 +2561,14 @@ class _SettleBalanceDialogState extends State<_SettleBalanceDialog> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                 decoration: BoxDecoration(
-                  color: previewPending <= 0 ? const Color(0xFFE8F5E9) : const Color(0xFFFFF8E1),
+                  color: previewPending < 0 
+                      ? const Color(0xFFFFEBEE) 
+                      : (previewPending == 0 ? const Color(0xFFE8F5E9) : const Color(0xFFFFF8E1)),
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: previewPending <= 0 ? const Color(0xFFA5D6A7) : const Color(0xFFFFE082)),
+                  border: Border.all(
+                      color: previewPending < 0 
+                          ? const Color(0xFFEF9A9A) 
+                          : (previewPending == 0 ? const Color(0xFFA5D6A7) : const Color(0xFFFFE082))),
                 ),
                 child: Wrap(
                   alignment: WrapAlignment.spaceBetween,
@@ -2527,11 +2581,17 @@ class _SettleBalanceDialogState extends State<_SettleBalanceDialog> {
                       style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: BoutiqueColors.textPrimary),
                     ),
                     Text(
-                      previewPending <= 0 ? 'Remaining Due: ₹0.00 (Fully Paid ✓)' : 'Remaining Due: ₹${previewPending.toStringAsFixed(2)}',
+                      previewPending < 0 
+                          ? 'Excess / Change to Return: ₹${(-previewPending).toStringAsFixed(2)} (Error)' 
+                          : (previewPending == 0 
+                              ? 'Remaining Due: ₹0.00 (Fully Paid ✓)' 
+                              : 'Remaining Due: ₹${previewPending.toStringAsFixed(2)}'),
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.bold,
-                        color: previewPending <= 0 ? const Color(0xFF2E7D32) : const Color(0xFFD32F2F),
+                        color: previewPending < 0 
+                            ? const Color(0xFFC62828) 
+                            : (previewPending == 0 ? const Color(0xFF2E7D32) : const Color(0xFFD32F2F)),
                       ),
                     ),
                   ],
@@ -2555,7 +2615,7 @@ class _SettleBalanceDialogState extends State<_SettleBalanceDialog> {
                   const SizedBox(width: 12),
                   ElevatedButton(
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: previewPending <= 0 ? const Color(0xFF1E7E34) : BoutiqueColors.accent,
+                      backgroundColor: previewPending < 0 ? const Color(0xFFC62828) : (previewPending == 0 ? const Color(0xFF1E7E34) : BoutiqueColors.accent),
                       padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 12),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                     ),
@@ -2563,7 +2623,7 @@ class _SettleBalanceDialogState extends State<_SettleBalanceDialog> {
                     child: _saving
                         ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
                         : Text(
-                            previewPending <= 0 ? 'Save & Mark Fully Paid ✓' : 'Record Payment (₹${inputVal.toStringAsFixed(2)})',
+                            previewPending < 0 ? 'Return Change & Save ✓' : (previewPending == 0 ? 'Save & Mark Fully Paid ✓' : 'Record Payment (₹${inputVal.toStringAsFixed(2)})'),
                             style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
                           ),
                   ),

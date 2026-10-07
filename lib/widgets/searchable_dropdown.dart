@@ -13,7 +13,7 @@ import 'package:flutter/services.dart';
 ///   onChanged: (val) => setState(() => selectedCategory = val!),
 /// )
 /// ```
-class SearchableDropdownField extends StatelessWidget {
+class SearchableDropdownField extends StatefulWidget {
   final String label;
   final String value;
   final List<String> items;
@@ -37,80 +37,88 @@ class SearchableDropdownField extends StatelessWidget {
   });
 
   @override
+  State<SearchableDropdownField> createState() => _SearchableDropdownFieldState();
+}
+
+class _SearchableDropdownFieldState extends State<SearchableDropdownField> {
+  bool _isFocused = false;
+
+  void _showSearchableDropdownDialog(BuildContext context, String displayValue) {
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return _SearchableDropdownDialog(
+          label: widget.label,
+          currentValue: displayValue,
+          items: widget.items,
+          onSelected: (val) {
+            widget.onChanged(val);
+            Navigator.pop(ctx);
+          },
+        );
+      },
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final displayValue = items.contains(value)
-        ? value
-        : (items.isNotEmpty ? items.first : '');
+    final displayValue = widget.items.contains(widget.value)
+        ? widget.value
+        : (widget.items.isNotEmpty ? widget.items.first : '');
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          label,
+          widget.label,
           style: const TextStyle(
             fontSize: 12,
             fontWeight: FontWeight.w600,
-            color: _lightBrown,
+            color: SearchableDropdownField._lightBrown,
           ),
         ),
         const SizedBox(height: 5),
-        InkWell(
-          onTap: () => _showSearchableDropdownDialog(context, displayValue),
-          focusColor: _brown.withValues(alpha: 0.1),
-          hoverColor: _brown.withValues(alpha: 0.05),
+        Material(
+          color: Colors.white,
           borderRadius: BorderRadius.circular(8),
-          child: InputDecorator(
-            isFocused: false, // The InkWell shows focus
-            decoration: InputDecoration(
-              filled: true,
-              fillColor: Colors.white,
-              contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
-                borderSide: BorderSide(
-                    color: error != null ? _errorColor : _border),
+          child: InkWell(
+            onTap: () => _showSearchableDropdownDialog(context, displayValue),
+            onFocusChange: (focused) => setState(() => _isFocused = focused),
+            focusColor: SearchableDropdownField._brown.withValues(alpha: 0.1),
+            hoverColor: SearchableDropdownField._brown.withValues(alpha: 0.05),
+            borderRadius: BorderRadius.circular(8),
+            child: InputDecorator(
+              isFocused: _isFocused,
+              decoration: InputDecoration(
+                filled: false,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide(
+                      color: widget.error != null ? SearchableDropdownField._errorColor : SearchableDropdownField._border),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide(
+                      color: widget.error != null ? SearchableDropdownField._errorColor : SearchableDropdownField._brown, width: 1.5),
+                ),
+                suffixIcon: const Icon(Icons.arrow_drop_down, color: SearchableDropdownField._lightBrown),
               ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
-                borderSide: BorderSide(
-                    color: error != null ? _errorColor : _brown, width: 1.5),
+              child: Text(
+                displayValue,
+                style: const TextStyle(color: SearchableDropdownField._brown, fontSize: 14),
+                overflow: TextOverflow.ellipsis,
               ),
-              suffixIcon:
-                  const Icon(Icons.arrow_drop_down, color: _lightBrown),
-            ),
-            child: Text(
-              displayValue,
-              style: const TextStyle(color: _brown, fontSize: 14),
-              overflow: TextOverflow.ellipsis,
             ),
           ),
         ),
-        if (error != null)
+        if (widget.error != null)
           Padding(
             padding: const EdgeInsets.only(top: 4, left: 2),
-            child: Text(error!,
-                style: const TextStyle(fontSize: 11, color: _errorColor)),
+            child: Text(widget.error!,
+                style: const TextStyle(fontSize: 11, color: SearchableDropdownField._errorColor)),
           ),
       ],
-    );
-  }
-
-  void _showSearchableDropdownDialog(
-      BuildContext context, String displayValue) {
-    showDialog(
-      context: context,
-      builder: (ctx) {
-        return _SearchableDropdownDialog(
-          label: label,
-          currentValue: displayValue,
-          items: items,
-          onSelected: (val) {
-            onChanged(val);
-            Navigator.pop(ctx);
-          },
-        );
-      },
     );
   }
 }

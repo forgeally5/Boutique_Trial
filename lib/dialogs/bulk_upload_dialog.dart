@@ -40,23 +40,24 @@ class _BulkUploadDialogState extends State<BulkUploadDialog> {
 
   Future<void> _pickAndUploadFile() async {
     final adminState = context.read<AdminState>();
-    final adminEmail = context.read<AuthViewModel>().adminUser?.email ?? 'admin';
 
-    PlatformFile? resultFile;
-    try {
-      resultFile = await FilePicker.pickFile(
-        type: FileType.any,
-      );
-    } catch (e) {
-      setState(() {
-        _status = 'Error picking file: $e';
-        _errorCount = 1;
-      });
-      return;
-    }
+    setState(() {
+      _status = 'Opening file picker...';
+    });
 
-    if (resultFile != null) {
-      if (!resultFile.name.toLowerCase().endsWith('.csv')) {
+    final html.FileUploadInputElement uploadInput = html.FileUploadInputElement();
+    uploadInput.accept = '.csv';
+    uploadInput.style.display = 'none';
+    html.document.body!.append(uploadInput);
+    uploadInput.click();
+
+    uploadInput.onChange.listen((e) async {
+      uploadInput.remove(); // Remove after picking
+      final files = uploadInput.files;
+      if (files == null || files.isEmpty) return;
+
+      final file = files[0];
+      if (!file.name.toLowerCase().endsWith('.csv')) {
         setState(() {
           _status = 'Please select a valid CSV file.';
           _errorCount = 1;
@@ -73,8 +74,11 @@ class _BulkUploadDialogState extends State<BulkUploadDialog> {
       });
 
       try {
-        final bytes = await resultFile.readAsBytes();
-        final csvString = utf8.decode(bytes);
+        final reader = html.FileReader();
+        reader.readAsText(file);
+        await reader.onLoadEnd.first;
+        
+        final csvString = reader.result as String;
         final rows = csv.decode(csvString);
 
         if (rows.isEmpty || rows.length == 1) {
@@ -197,7 +201,7 @@ class _BulkUploadDialogState extends State<BulkUploadDialog> {
           _status = 'Error reading file: $e';
         });
       }
-    }
+    });
   }
 
   @override

@@ -777,11 +777,45 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
               ),
               const SizedBox(width: 16),
               Expanded(
-                child: SearchableDropdownField(
-                  label: 'Bill Type',
-                  value: _billType,
-                  items: const ['Sale', 'Advance Payment'],
-                  onChanged: (v) => setState(() => _billType = v ?? 'Sale'),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Bill Type',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF8D6E63),
+                      ),
+                    ),
+                    const SizedBox(height: 5),
+                    DropdownButtonFormField<String>(
+                      value: _billType,
+                      items: const ['Sale', 'Advance Payment']
+                          .map((e) => DropdownMenuItem(
+                                value: e,
+                                child: Text(e, style: const TextStyle(fontSize: 14, color: Color(0xFF3E2723))),
+                              ))
+                          .toList(),
+                      onChanged: (v) => setState(() => _billType = v ?? 'Sale'),
+                      icon: const Icon(Icons.arrow_drop_down, color: Color(0xFF8D6E63)),
+                      isExpanded: true,
+                      dropdownColor: Colors.white,
+                      decoration: InputDecoration(
+                        filled: true,
+                        fillColor: Colors.white,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          borderSide: const BorderSide(color: Color(0xFFE5DDD0)),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          borderSide: const BorderSide(color: Color(0xFF3E2723), width: 1.5),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
               const SizedBox(width: 16),
