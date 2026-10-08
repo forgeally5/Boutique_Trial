@@ -147,58 +147,6 @@ class _ItemDialogState extends State<ItemDialog> {
     return widget.adminState.vendors;
   }
 
-  void _showEditItemPrompt(
-    BuildContext parentContext,
-    String type,
-    String currentValue,
-    Future<void> Function(String) onSave,
-  ) {
-    final editCtrl = TextEditingController(text: currentValue);
-    showDialog(
-      context: parentContext,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Row(
-          children: [
-            const Icon(Icons.edit_outlined, color: _brown),
-            const SizedBox(width: 8),
-            Text('Edit $type', style: const TextStyle(fontFamily: 'serif', color: _brown, fontWeight: FontWeight.bold)),
-          ],
-        ),
-        content: TextField(
-          controller: editCtrl,
-          autofocus: true,
-          decoration: InputDecoration(
-            labelText: '$type Name',
-            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: _brown,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-            ),
-            onPressed: () async {
-              final val = editCtrl.text.trim();
-              if (val.isNotEmpty && val != currentValue) {
-                Navigator.pop(ctx);
-                await onSave(val);
-              }
-            },
-            child: const Text('Update', style: TextStyle(color: Colors.white)),
-          ),
-        ],
-      ),
-    );
-  }
-
-
   void _showManageMasterListDialog(String type) {
     showDialog(
       context: context,
@@ -1585,7 +1533,6 @@ class _SearchableDropdownDialogState extends State<_SearchableDropdownDialog> {
     if (!_scrollCtrl.hasClients || _highlightIdx < 0) return;
     final itemHeight = 46.0; // Approximate height of each item
     final offset = _highlightIdx * itemHeight;
-    final maxScroll = _scrollCtrl.position.maxScrollExtent;
     final viewportDimension = _scrollCtrl.position.viewportDimension;
     
     if (offset < _scrollCtrl.offset) {
@@ -2195,7 +2142,7 @@ class _MasterListDialogState extends State<_MasterListDialog> {
                   : ListView.separated(
                       controller: _listScrollCtrl,
                       itemCount: filtered.length,
-                      separatorBuilder: (_, __) => const Divider(height: 1),
+                      separatorBuilder: (context, index) => const Divider(height: 1),
                       itemBuilder: (ctx, i) {
                         final item = filtered[i];
                         final isH = clamped == totalChips + i;

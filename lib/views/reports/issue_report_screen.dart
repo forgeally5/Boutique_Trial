@@ -452,10 +452,10 @@ class _IssueReportScreenState extends State<IssueReportScreen> {
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                   elevation: 0,
                 ).copyWith(
-                  overlayColor: MaterialStateProperty.resolveWith<Color?>(
-                    (Set<MaterialState> states) {
-                      if (states.contains(MaterialState.focused)) {
-                        return Colors.white.withOpacity(0.3); // High contrast focus
+                  overlayColor: WidgetStateProperty.resolveWith<Color?>(
+                    (Set<WidgetState> states) {
+                      if (states.contains(WidgetState.focused)) {
+                        return Colors.white.withValues(alpha: 0.3); // High contrast focus
                       }
                       return null;
                     },

@@ -6,7 +6,6 @@ import '../../state/admin_state.dart';
 import '../../models/product.dart';
 import 'bill_row_model.dart';
 import '../../utils/boutique_theme.dart';
-import '../../widgets/searchable_dropdown.dart';
 import '../../utils/boutique_pdf_generator.dart';
 import '../widgets/scanner_dialog.dart';
 import '../widgets/batch_scanner_dialog.dart';
@@ -29,6 +28,10 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
   final _customerNameCtrl = TextEditingController();
   final _customerMobileCtrl = TextEditingController();
   final _customerAddressCtrl = TextEditingController();
+  final _customerNameFocusNode = FocusNode();
+  final _customerMobileFocusNode = FocusNode();
+  final _narrationFocusNode = FocusNode();
+
   bool _showExtraCustomerDetails = false;
   final List<Map<String, TextEditingController>> _customFields = [];
 
@@ -62,7 +65,6 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
   // Cached product list — read from state once, not on every rebuild
   List<Product> _cachedProducts = [];
 
-  List<String> _knownCustomers = [];
   List<Map<String, String>> _knownCustomerData = [];
 
   @override
@@ -84,14 +86,16 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
       
       for (final doc in bills) {
         final name = (doc['customerName'] ?? doc['customer_name'])?.toString().trim();
-        final mobile = (doc['customerMobile'] ?? doc['customer_mobile'])?.toString().trim();
+        final rawMobile = (doc['customerMobile'] ?? doc['customer_mobile'])?.toString().trim() ?? '';
+        final cleanMobile = rawMobile.replaceAll(RegExp(r'\D'), '');
+        final mobile = cleanMobile.length >= 10 ? cleanMobile.substring(cleanMobile.length - 10) : cleanMobile;
         final address = (doc['customerAddress'] ?? doc['customer_address'])?.toString().trim();
         
         if (name != null && name.isNotEmpty && name.toLowerCase() != 'walk-in' && name.toLowerCase() != 'walk-in customer') {
           names.add(name);
         }
         
-        if (mobile != null && mobile.isNotEmpty && mobile.length == 10) {
+        if (mobile.isNotEmpty && mobile.length == 10) {
           if (!custDataMap.containsKey(mobile)) {
              custDataMap[mobile] = {
                'name': name ?? '',
@@ -100,18 +104,25 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
              };
           } else {
              // If we already have this mobile but without address/name, try to fill it
-             if (custDataMap[mobile]!['name']!.isEmpty && name != null) {
+             if ((custDataMap[mobile]!['name'] ?? '').isEmpty && name != null && name.isNotEmpty) {
                custDataMap[mobile]!['name'] = name;
              }
-             if (custDataMap[mobile]!['address']!.isEmpty && address != null) {
+             if ((custDataMap[mobile]!['address'] ?? '').isEmpty && address != null && address.isNotEmpty) {
                custDataMap[mobile]!['address'] = address;
              }
+          }
+        } else if (name != null && name.isNotEmpty && name.toLowerCase() != 'walk-in' && name.toLowerCase() != 'walk-in customer') {
+          if (!custDataMap.containsKey(name)) {
+            custDataMap[name] = {
+              'name': name,
+              'mobile': mobile,
+              'address': address ?? '',
+            };
           }
         }
       }
       if (mounted) {
         setState(() {
-          _knownCustomers = names.toList()..sort();
           _knownCustomerData = custDataMap.values.toList();
         });
       }
@@ -156,6 +167,9 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
     _customerNameCtrl.dispose();
     _customerMobileCtrl.dispose();
     _customerAddressCtrl.dispose();
+    _customerNameFocusNode.dispose();
+    _customerMobileFocusNode.dispose();
+    _narrationFocusNode.dispose();
     for (var f in _customFields) {
       f['key']?.dispose();
       f['value']?.dispose();
@@ -790,7 +804,7 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
                     ),
                     const SizedBox(height: 5),
                     DropdownButtonFormField<String>(
-                      value: _billType,
+                      initialValue: _billType,
                       items: const ['Sale', 'Advance Payment']
                           .map((e) => DropdownMenuItem(
                                 value: e,
@@ -848,19 +862,26 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
             children: [
               // Customer name autocomplete
               Expanded(
-                child: RawAutocomplete<Map<String, String>>(
-                  textEditingController: _customerNameCtrl,
-                  focusNode: FocusNode(),
-                  displayStringForOption: (option) => option['name'] ?? '',
-                  optionsBuilder: (TextEditingValue textEditingValue) {
-                    if (textEditingValue.text.isEmpty) {
-                      return const Iterable<Map<String, String>>.empty();
-                    }
-                    final query = textEditingValue.text.toLowerCase();
+                child: _CustomerAutocompleteField(
+                  controller: _customerNameCtrl,
+                  focusNode: _customerNameFocusNode,
+                  labelText: 'Customer Name',
+                  hintText: 'Walk-in Customer',
+                  autofocus: true,
+                  textInputAction: TextInputAction.next,
+                  nextFocusNode: _customerMobileFocusNode,
+                  optionsBuilder: (query) {
+                    final q = query.trim().toLowerCase();
+                    if (q.isEmpty) return const [];
                     return _knownCustomerData.where((data) =>
-                        (data['name'] ?? '').toLowerCase().contains(query));
+                        (data['name'] ?? '').toLowerCase().contains(q) ||
+                        (data['mobile'] ?? '').contains(q)
+                    ).toList();
                   },
-                  onSelected: (Map<String, String> selection) {
+                  onSelected: (selection) {
+                    if (selection['name'] != null && selection['name']!.isNotEmpty) {
+                      _customerNameCtrl.text = selection['name']!;
+                    }
                     if (selection['mobile'] != null && selection['mobile']!.isNotEmpty) {
                       _customerMobileCtrl.text = selection['mobile']!;
                     }
@@ -869,75 +890,47 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
                       setState(() => _showExtraCustomerDetails = true);
                     }
                   },
-                  fieldViewBuilder: (BuildContext context,
-                      TextEditingController textEditingController,
-                      FocusNode focusNode,
-                      VoidCallback onFieldSubmitted) {
-                    return TextField(
-                      controller: textEditingController,
-                      focusNode: focusNode,
-                      autofocus: true,
-                      textInputAction: TextInputAction.next,
-                      style: const TextStyle(fontSize: 13),
-                      decoration: BoutiqueInputDecoration.field(
-                          hintText: 'Walk-in Customer', labelText: 'Customer Name'),
-                      onSubmitted: (String value) {
-                        onFieldSubmitted();
-                      },
-                    );
-                  },
-                  optionsViewBuilder: (BuildContext context,
-                      AutocompleteOnSelected<Map<String, String>> onSelected,
-                      Iterable<Map<String, String>> options) {
-                    return Align(
-                      alignment: Alignment.topLeft,
-                      child: Material(
-                        elevation: 4.0,
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8)),
-                        child: ConstrainedBox(
-                          constraints: const BoxConstraints(maxHeight: 200, maxWidth: 300),
-                          child: ListView.builder(
-                            padding: EdgeInsets.zero,
-                            shrinkWrap: true,
-                            itemCount: options.length,
-                            itemBuilder: (BuildContext context, int index) {
-                              final option = options.elementAt(index);
-                              return Builder(builder: (context) {
-                                final bool highlight = AutocompleteHighlightedOption.of(context) == index;
-                                return InkWell(
-                                  onTap: () => onSelected(option),
-                                  child: Container(
-                                    color: highlight ? BoutiqueColors.accentSoft : null,
-                                    padding: const EdgeInsets.all(12.0),
-                                    child: Text(option['name'] ?? '', style: const TextStyle(fontSize: 13)),
-                                  ),
-                                );
-                              });
-                            },
-                          ),
-                        ),
+                  itemBuilder: (context, option, isHighlighted) {
+                    return Container(
+                      color: isHighlighted ? BoutiqueColors.accentSoft : null,
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(option['name'] ?? '', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: BoutiqueColors.textPrimary)),
+                          if (option['mobile'] != null && option['mobile']!.isNotEmpty)
+                            Text(option['mobile']!, style: const TextStyle(fontSize: 11, color: BoutiqueColors.textSecondary)),
+                        ],
                       ),
                     );
                   },
                 ),
               ),
               const SizedBox(width: 16),
-              // Mobile field — error shown only after save attempt, not on every keystroke
+              // Mobile field
               Expanded(
-                child: RawAutocomplete<Map<String, String>>(
-                  textEditingController: _customerMobileCtrl,
-                  focusNode: FocusNode(),
-                  displayStringForOption: (option) => option['mobile'] ?? '',
-                  optionsBuilder: (TextEditingValue textEditingValue) {
-                    if (textEditingValue.text.isEmpty) {
-                      return const Iterable<Map<String, String>>.empty();
-                    }
-                    final query = textEditingValue.text.toLowerCase();
+                child: _CustomerAutocompleteField(
+                  controller: _customerMobileCtrl,
+                  focusNode: _customerMobileFocusNode,
+                  labelText: 'Mobile Number',
+                  hintText: '10-digit mobile',
+                  errorText: _mobileError(),
+                  keyboardType: TextInputType.phone,
+                  textInputAction: TextInputAction.next,
+                  nextFocusNode: _narrationFocusNode,
+                  inputFormatters: [LengthLimitingTextInputFormatter(10), FilteringTextInputFormatter.digitsOnly],
+                  optionsBuilder: (query) {
+                    final q = query.trim().toLowerCase();
+                    if (q.isEmpty) return const [];
                     return _knownCustomerData.where((data) =>
-                        (data['mobile'] ?? '').contains(query));
+                        (data['mobile'] ?? '').contains(q) ||
+                        (data['name'] ?? '').toLowerCase().contains(q)
+                    ).toList();
                   },
-                  onSelected: (Map<String, String> selection) {
+                  onSelected: (selection) {
+                    if (selection['mobile'] != null && selection['mobile']!.isNotEmpty) {
+                      _customerMobileCtrl.text = selection['mobile']!;
+                    }
                     if (selection['name'] != null && selection['name']!.isNotEmpty) {
                       _customerNameCtrl.text = selection['name']!;
                     }
@@ -946,69 +939,24 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
                       setState(() => _showExtraCustomerDetails = true);
                     }
                   },
-                  fieldViewBuilder: (BuildContext context,
-                      TextEditingController textEditingController,
-                      FocusNode focusNode,
-                      VoidCallback onFieldSubmitted) {
-                    return TextField(
-                      controller: textEditingController,
-                      focusNode: focusNode,
-                      keyboardType: TextInputType.phone,
-                      textInputAction: TextInputAction.next,
-                      inputFormatters: [LengthLimitingTextInputFormatter(10), FilteringTextInputFormatter.digitsOnly],
-                      style: const TextStyle(fontSize: 13),
-                      decoration: BoutiqueInputDecoration.field(
-                        hintText: '10-digit mobile',
-                        labelText: 'Mobile Number',
-                        errorText: _mobileError(),
-                      ),
-                      onSubmitted: (String value) {
-                        final m = value.trim();
-                        if (m.isNotEmpty && !RegExp(r'^\d{10}$').hasMatch(m)) {
-                          _showMobileErrorDialog();
-                        }
-                        onFieldSubmitted();
-                      },
-                    );
+                  onSubmitted: (value) {
+                    final m = value.trim();
+                    if (m.isNotEmpty && !RegExp(r'^\d{10}$').hasMatch(m)) {
+                      _showMobileErrorDialog();
+                    }
+                    _narrationFocusNode.requestFocus();
                   },
-                  optionsViewBuilder: (BuildContext context,
-                      AutocompleteOnSelected<Map<String, String>> onSelected,
-                      Iterable<Map<String, String>> options) {
-                    return Align(
-                      alignment: Alignment.topLeft,
-                      child: Material(
-                        elevation: 4.0,
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8)),
-                        child: ConstrainedBox(
-                          constraints: const BoxConstraints(maxHeight: 200, maxWidth: 300),
-                          child: ListView.builder(
-                            padding: EdgeInsets.zero,
-                            shrinkWrap: true,
-                            itemCount: options.length,
-                            itemBuilder: (BuildContext context, int index) {
-                              final option = options.elementAt(index);
-                              return Builder(builder: (context) {
-                                final bool highlight = AutocompleteHighlightedOption.of(context) == index;
-                                return InkWell(
-                                  onTap: () => onSelected(option),
-                                  child: Container(
-                                    color: highlight ? BoutiqueColors.accentSoft : null,
-                                    padding: const EdgeInsets.all(12.0),
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Text(option['mobile'] ?? '', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
-                                        if (option['name'] != null && option['name']!.isNotEmpty)
-                                          Text(option['name']!, style: const TextStyle(fontSize: 11, color: BoutiqueColors.textSecondary)),
-                                      ],
-                                    ),
-                                  ),
-                                );
-                              });
-                            },
-                          ),
-                        ),
+                  itemBuilder: (context, option, isHighlighted) {
+                    return Container(
+                      color: isHighlighted ? BoutiqueColors.accentSoft : null,
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(option['mobile'] ?? '', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: BoutiqueColors.textPrimary)),
+                          if (option['name'] != null && option['name']!.isNotEmpty)
+                            Text(option['name']!, style: const TextStyle(fontSize: 11, color: BoutiqueColors.textSecondary)),
+                        ],
                       ),
                     );
                   },
@@ -1019,6 +967,7 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
           const SizedBox(height: 16),
           TextField(
             controller: _narrationCtrl,
+            focusNode: _narrationFocusNode,
             textInputAction: TextInputAction.next,
             style: const TextStyle(fontSize: 13, color: BoutiqueColors.textPrimary),
             decoration: BoutiqueInputDecoration.field(hintText: 'Narration / Remarks', labelText: 'Narration'),
@@ -2668,6 +2617,269 @@ class _BillSummaryPanelState extends State<_BillSummaryPanel> {
         Text(label, style: const TextStyle(fontSize: 13, color: BoutiqueColors.textSecondary)),
         Text(value, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: BoutiqueColors.textPrimary)),
       ],
+    );
+  }
+}
+
+// ── Customer Autocomplete Field ──────────────────────────────────────────────
+class _CustomerAutocompleteField extends StatefulWidget {
+  final TextEditingController controller;
+  final FocusNode focusNode;
+  final String labelText;
+  final String hintText;
+  final String? errorText;
+  final TextInputType keyboardType;
+  final TextInputAction textInputAction;
+  final List<TextInputFormatter>? inputFormatters;
+  final bool autofocus;
+  final List<Map<String, String>> Function(String query) optionsBuilder;
+  final ValueChanged<Map<String, String>> onSelected;
+  final Widget Function(BuildContext context, Map<String, String> option, bool isHighlighted) itemBuilder;
+  final ValueChanged<String>? onSubmitted;
+  final FocusNode? nextFocusNode;
+
+  const _CustomerAutocompleteField({
+    required this.controller,
+    required this.focusNode,
+    required this.labelText,
+    required this.hintText,
+    this.errorText,
+    this.keyboardType = TextInputType.text,
+    this.textInputAction = TextInputAction.next,
+    this.inputFormatters,
+    this.autofocus = false,
+    required this.optionsBuilder,
+    required this.onSelected,
+    required this.itemBuilder,
+    this.onSubmitted,
+    this.nextFocusNode,
+  });
+
+  @override
+  State<_CustomerAutocompleteField> createState() => _CustomerAutocompleteFieldState();
+}
+
+class _CustomerAutocompleteFieldState extends State<_CustomerAutocompleteField> {
+  final LayerLink _layerLink = LayerLink();
+  OverlayEntry? _overlayEntry;
+  List<Map<String, String>> _currentOptions = [];
+  int _highlightIndex = -1;
+  final ScrollController _scrollController = ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    widget.focusNode.addListener(_onFocusChanged);
+    widget.controller.addListener(_onTextChanged);
+    widget.focusNode.onKeyEvent = _handleKeyEvent;
+  }
+
+  @override
+  void didUpdateWidget(covariant _CustomerAutocompleteField oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.focusNode != widget.focusNode) {
+      oldWidget.focusNode.removeListener(_onFocusChanged);
+      widget.focusNode.addListener(_onFocusChanged);
+      widget.focusNode.onKeyEvent = _handleKeyEvent;
+    }
+    if (oldWidget.controller != widget.controller) {
+      oldWidget.controller.removeListener(_onTextChanged);
+      widget.controller.addListener(_onTextChanged);
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.focusNode.removeListener(_onFocusChanged);
+    widget.controller.removeListener(_onTextChanged);
+    _removeOverlay();
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _onFocusChanged() {
+    if (widget.focusNode.hasFocus) {
+      _updateOptionsAndShow();
+    } else {
+      _removeOverlay();
+    }
+  }
+
+  void _onTextChanged() {
+    if (widget.focusNode.hasFocus) {
+      _updateOptionsAndShow();
+    }
+  }
+
+  void _updateOptionsAndShow() {
+    final query = widget.controller.text;
+    final options = widget.optionsBuilder(query);
+    if (options.isEmpty) {
+      _currentOptions = [];
+      _highlightIndex = -1;
+      _removeOverlay();
+    } else {
+      _currentOptions = options;
+      if (_highlightIndex < 0 || _highlightIndex >= _currentOptions.length) {
+        _highlightIndex = 0;
+      }
+      _showOrUpdateOverlay();
+    }
+  }
+
+  void _showOrUpdateOverlay() {
+    if (!mounted) return;
+    if (_overlayEntry == null) {
+      final overlay = Overlay.of(context, rootOverlay: true);
+      _overlayEntry = _createOverlayEntry();
+      overlay.insert(_overlayEntry!);
+    } else {
+      _overlayEntry!.markNeedsBuild();
+    }
+  }
+
+  void _removeOverlay() {
+    _overlayEntry?.remove();
+    _overlayEntry = null;
+  }
+
+  void _selectOption(Map<String, String> option) {
+    _removeOverlay();
+    widget.onSelected(option);
+    if (widget.nextFocusNode != null) {
+      widget.nextFocusNode!.requestFocus();
+    }
+  }
+
+  KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
+    if (event is KeyDownEvent) {
+      if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
+        if (_currentOptions.isNotEmpty) {
+          setState(() {
+            _highlightIndex = (_highlightIndex + 1) % _currentOptions.length;
+          });
+          _showOrUpdateOverlay();
+          _scrollToHighlight();
+          return KeyEventResult.handled;
+        }
+      } else if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
+        if (_currentOptions.isNotEmpty) {
+          setState(() {
+            _highlightIndex = (_highlightIndex - 1 + _currentOptions.length) % _currentOptions.length;
+          });
+          _showOrUpdateOverlay();
+          _scrollToHighlight();
+          return KeyEventResult.handled;
+        }
+      } else if (event.logicalKey == LogicalKeyboardKey.enter) {
+        if (_currentOptions.isNotEmpty && _highlightIndex >= 0 && _highlightIndex < _currentOptions.length) {
+          final sel = _currentOptions[_highlightIndex];
+          _selectOption(sel);
+          return KeyEventResult.handled;
+        }
+      } else if (event.logicalKey == LogicalKeyboardKey.escape) {
+        _removeOverlay();
+        return KeyEventResult.handled;
+      }
+    }
+    return KeyEventResult.ignored;
+  }
+
+  void _scrollToHighlight() {
+    if (!_scrollController.hasClients || _highlightIndex < 0) return;
+    const itemHeight = 48.0;
+    final offset = _highlightIndex * itemHeight;
+    final viewportDimension = _scrollController.position.viewportDimension;
+    if (offset < _scrollController.offset) {
+      _scrollController.animateTo(offset, duration: const Duration(milliseconds: 80), curve: Curves.easeOut);
+    } else if (offset + itemHeight > _scrollController.offset + viewportDimension) {
+      _scrollController.animateTo(offset + itemHeight - viewportDimension, duration: const Duration(milliseconds: 80), curve: Curves.easeOut);
+    }
+  }
+
+  OverlayEntry _createOverlayEntry() {
+    final renderBox = context.findRenderObject() as RenderBox?;
+    final size = renderBox?.size ?? const Size(300, 48);
+
+    return OverlayEntry(
+      builder: (context) {
+        return Stack(
+          children: [
+            Positioned.fill(
+              child: GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                onTap: () {
+                  _removeOverlay();
+                },
+              ),
+            ),
+            Positioned(
+              width: size.width.clamp(280.0, 420.0),
+              child: CompositedTransformFollower(
+                link: _layerLink,
+                showWhenUnlinked: false,
+                targetAnchor: Alignment.bottomLeft,
+                followerAnchor: Alignment.topLeft,
+                offset: const Offset(0, 6),
+                child: Material(
+                  elevation: 6.0,
+                  shadowColor: Colors.black26,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    side: BorderSide(color: BoutiqueColors.border.withValues(alpha: 0.8)),
+                  ),
+                  color: Colors.white,
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxHeight: 220),
+                    child: ListView.builder(
+                      controller: _scrollController,
+                      padding: EdgeInsets.zero,
+                      shrinkWrap: true,
+                      itemCount: _currentOptions.length,
+                      itemBuilder: (context, index) {
+                        final option = _currentOptions[index];
+                        final isHighlighted = _highlightIndex == index;
+                        return InkWell(
+                          onTap: () => _selectOption(option),
+                          child: widget.itemBuilder(context, option, isHighlighted),
+                        );
+                      },
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return CompositedTransformTarget(
+      link: _layerLink,
+      child: TextField(
+        controller: widget.controller,
+        focusNode: widget.focusNode,
+        keyboardType: widget.keyboardType,
+        textInputAction: widget.textInputAction,
+        inputFormatters: widget.inputFormatters,
+        autofocus: widget.autofocus,
+        style: const TextStyle(fontSize: 13),
+        decoration: BoutiqueInputDecoration.field(
+          hintText: widget.hintText,
+          labelText: widget.labelText,
+          errorText: widget.errorText,
+        ),
+        onSubmitted: (val) {
+          if (widget.onSubmitted != null) {
+            widget.onSubmitted!(val);
+          } else if (widget.nextFocusNode != null) {
+            widget.nextFocusNode!.requestFocus();
+          }
+        },
+      ),
     );
   }
 }

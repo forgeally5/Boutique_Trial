@@ -59,6 +59,11 @@ class _CustomerLedgerScreenState extends State<CustomerLedgerScreen> {
         b['paymentHistory'] ?? [],
       );
       for (final h in history) {
+        final type = (h['type']?.toString() ?? '').toLowerCase();
+        final note = (h['note']?.toString() ?? h['notes']?.toString() ?? '').toLowerCase();
+        if (type == 'initial payment' || note == 'initial payment' || note == 'initial bill payment') {
+          continue;
+        }
         final rNo = h['receiptNo']?.toString() ?? '';
         if (rNo.startsWith('DR-')) {
           final match = RegExp(r'\d+').firstMatch(rNo);
@@ -84,9 +89,12 @@ class _CustomerLedgerScreenState extends State<CustomerLedgerScreen> {
     int fallbackIdx = 1;
 
     for (final h in history) {
-      final note = (h['note']?.toString() ?? '').toLowerCase();
-      // Skip initial bill creation entry if marked as 'initial payment'
-      if (note == 'initial payment') continue;
+      final type = (h['type']?.toString() ?? '').toLowerCase();
+      final note = (h['note']?.toString() ?? h['notes']?.toString() ?? '').toLowerCase();
+      // Skip initial bill creation entry if marked as 'initial payment' or 'initial bill payment'
+      if (type == 'initial payment' || note == 'initial payment' || note == 'initial bill payment') {
+        continue;
+      }
 
       final amt = (h['amount'] as num?)?.toDouble() ?? 0.0;
       if (amt <= 0) continue;

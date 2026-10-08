@@ -209,7 +209,6 @@ class _SearchableDropdownDialogState extends State<_SearchableDropdownDialog> {
     if (!_scrollCtrl.hasClients || _highlightIdx < 0) return;
     final itemHeight = 46.0; // Approximate height of each item
     final offset = _highlightIdx * itemHeight;
-    final maxScroll = _scrollCtrl.position.maxScrollExtent;
     final viewportDimension = _scrollCtrl.position.viewportDimension;
     
     if (offset < _scrollCtrl.offset) {

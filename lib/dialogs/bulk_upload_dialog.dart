@@ -1,14 +1,12 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:file_picker/file_picker.dart';
 import 'package:csv/csv.dart';
 import 'package:provider/provider.dart';
-import '../services/api_service.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:printing/printing.dart';
 import '../state/admin_state.dart';
 import '../models/product.dart';
 import '../utils/boutique_theme.dart';
-import '../auth/viewmodels/auth_viewmodel.dart';
-import 'dart:html' as html;
 
 class BulkUploadDialog extends StatefulWidget {
   const BulkUploadDialog({super.key});
@@ -24,18 +22,13 @@ class _BulkUploadDialogState extends State<BulkUploadDialog> {
   int _errorCount = 0;
   final List<String> _errorLog = [];
 
-  void _downloadTemplate() {
+  Future<void> _downloadTemplate() async {
     final csvData = [
       ['Tag ID', 'Name', 'Category', 'Pricing Type (Quantity-Based/Weight-Based)', 'Quantity', 'MRP', 'Selling Price', 'Vendor', 'Material', 'Notes']
     ];
     String csvStr = csv.encode(csvData);
     final bytes = utf8.encode(csvStr);
-    final blob = html.Blob([bytes]);
-    final url = html.Url.createObjectUrlFromBlob(blob);
-    final anchor = html.AnchorElement(href: url)
-      ..setAttribute('download', 'Product_Upload_Template.csv')
-      ..click();
-    html.Url.revokeObjectUrl(url);
+    await Printing.sharePdf(bytes: bytes, filename: 'Product_Upload_Template.csv');
   }
 
   Future<void> _pickAndUploadFile() async {
@@ -45,41 +38,39 @@ class _BulkUploadDialogState extends State<BulkUploadDialog> {
       _status = 'Opening file picker...';
     });
 
-    final html.FileUploadInputElement uploadInput = html.FileUploadInputElement();
-    uploadInput.accept = '.csv';
-    uploadInput.style.display = 'none';
-    html.document.body!.append(uploadInput);
-    uploadInput.click();
+    final files = await FilePicker.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['csv'],
+    );
 
-    uploadInput.onChange.listen((e) async {
-      uploadInput.remove(); // Remove after picking
-      final files = uploadInput.files;
-      if (files == null || files.isEmpty) return;
-
-      final file = files[0];
-      if (!file.name.toLowerCase().endsWith('.csv')) {
-        setState(() {
-          _status = 'Please select a valid CSV file.';
-          _errorCount = 1;
-        });
-        return;
-      }
-
+    if (files.isEmpty) {
       setState(() {
-        _isUploading = true;
-        _status = 'Parsing file...';
-        _successCount = 0;
-        _errorCount = 0;
-        _errorLog.clear();
+        _status = '';
       });
+      return;
+    }
 
-      try {
-        final reader = html.FileReader();
-        reader.readAsText(file);
-        await reader.onLoadEnd.first;
-        
-        final csvString = reader.result as String;
-        final rows = csv.decode(csvString);
+    final file = files.first;
+    final bytes = await file.readAsBytes();
+    if (bytes.isEmpty) {
+      setState(() {
+        _status = 'Selected file is empty or could not be read.';
+        _errorCount = 1;
+      });
+      return;
+    }
+
+    setState(() {
+      _isUploading = true;
+      _status = 'Parsing file...';
+      _successCount = 0;
+      _errorCount = 0;
+      _errorLog.clear();
+    });
+
+    try {
+      final csvString = utf8.decode(bytes);
+      final rows = csv.decode(csvString);
 
         if (rows.isEmpty || rows.length == 1) {
           setState(() {
@@ -90,7 +81,6 @@ class _BulkUploadDialogState extends State<BulkUploadDialog> {
         }
 
         final headers = rows.first.map((e) => e.toString().trim().toLowerCase()).toList();
-        final expectedHeaders = ['tag id', 'name', 'category', 'pricing type', 'quantity', 'mrp', 'selling price', 'vendor', 'material', 'notes'];
         
         bool hasRequired = true;
         for (var req in ['tag id', 'name', 'quantity']) {
@@ -139,13 +129,13 @@ class _BulkUploadDialogState extends State<BulkUploadDialog> {
           }
 
           try {
-            double _parseDouble(dynamic val) {
+            double parseDouble(dynamic val) {
               if (val == null) return 0.0;
               if (val is num) return val.toDouble();
               return double.tryParse(val.toString()) ?? 0.0;
             }
 
-            int _parseInt(dynamic val) {
+            int parseInt(dynamic val) {
               if (val == null) return 0;
               if (val is num) return val.toInt();
               return int.tryParse(val.toString()) ?? 0;
@@ -159,9 +149,9 @@ class _BulkUploadDialogState extends State<BulkUploadDialog> {
               name: name,
               category: rowData['category']?.toString().trim() ?? 'Uncategorized',
               pricingType: isWeight ? 'Weight-Based' : 'Quantity-Based',
-              quantity: _parseInt(rowData['quantity']),
-              mrp: _parseDouble(rowData['mrp']),
-              sellingPrice: _parseDouble(rowData['selling price']),
+              quantity: parseInt(rowData['quantity']),
+              mrp: parseDouble(rowData['mrp']),
+              sellingPrice: parseDouble(rowData['selling price']),
               vendor: rowData['vendor']?.toString().trim() ?? '',
               material: rowData['material']?.toString().trim() ?? '',
               notes: rowData['notes']?.toString().trim() ?? '',
@@ -176,7 +166,7 @@ class _BulkUploadDialogState extends State<BulkUploadDialog> {
               weightUnit: 'g',
               issueQuantity: 0,
               reservedQuantity: 0,
-              finalPrice: _parseDouble(rowData['selling price']),
+              finalPrice: parseDouble(rowData['selling price']),
               discountValue: 0.0,
               discountType: '%',
             );
@@ -201,7 +191,6 @@ class _BulkUploadDialogState extends State<BulkUploadDialog> {
           _status = 'Error reading file: $e';
         });
       }
-    });
   }
 
   @override
@@ -269,8 +258,8 @@ class _BulkUploadDialogState extends State<BulkUploadDialog> {
                   width: double.infinity,
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: Colors.red.withOpacity(0.05),
-                    border: Border.all(color: Colors.red.withOpacity(0.3)),
+                    color: Colors.red.withValues(alpha: 0.05),
+                    border: Border.all(color: Colors.red.withValues(alpha: 0.3)),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: ListView.builder(
