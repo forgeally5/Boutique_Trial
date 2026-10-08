@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 import 'package:provider/provider.dart';
 import 'auth/viewmodels/auth_viewmodel.dart';
 import 'utils/boutique_theme.dart';
@@ -14,6 +16,17 @@ class LoginPage extends StatefulWidget {
 class _LoginPageState extends State<LoginPage> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _emailFocusNode = FocusNode();
+  final _passwordFocusNode = FocusNode();
+
+  bool _showPasswordField = false;
+  bool _obscurePassword = true;
+  String? _errorMessage;
+
+  int _failedAttempts = 0;
+  DateTime? _lockoutEndTime;
+  Timer? _lockoutCountdownTimer;
+  String _lockoutCountdownStr = '';
   
   static const Color inkColor = Color(0xFF262220);
   static const Color inkSoftColor = Color(0xFF8A8078);
@@ -22,30 +35,228 @@ class _LoginPageState extends State<LoginPage> {
   static const Color placeholderColor = Color(0xFFBDB2A2);
 
   @override
+  void initState() {
+    super.initState();
+    _checkLockoutStatus();
+  }
+
+  @override
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
+    _emailFocusNode.dispose();
+    _passwordFocusNode.dispose();
+    _lockoutCountdownTimer?.cancel();
     super.dispose();
   }
 
-  Future<void> _handleLogin() async {
-    final email = _emailController.text.trim();
-    final password = _passwordController.text;
+  Future<void> _checkLockoutStatus() async {
+    try {
+      if (!Hive.isBoxOpen('user_session_box')) {
+        await Hive.openBox('user_session_box');
+      }
+      final box = Hive.box('user_session_box');
+      final lockoutMillis = box.get('login_lockout_until') as int?;
+      final storedAttempts = box.get('login_failed_attempts') as int? ?? 0;
+      _failedAttempts = storedAttempts;
 
-    if (email.isEmpty || password.isEmpty) {
-      BoutiqueToast.showError(context, 'Please enter email and password.');
+      if (lockoutMillis != null) {
+        final lockoutEnd = DateTime.fromMillisecondsSinceEpoch(lockoutMillis);
+        if (lockoutEnd.isAfter(DateTime.now())) {
+          _lockoutEndTime = lockoutEnd;
+          _startLockoutCountdown();
+        } else {
+          await box.delete('login_lockout_until');
+          await box.put('login_failed_attempts', 0);
+          _failedAttempts = 0;
+        }
+      }
+    } catch (e) {
+      debugPrint('Lockout status check: $e');
+    }
+  }
+
+  void _startLockoutCountdown() {
+    _lockoutCountdownTimer?.cancel();
+    _updateLockoutMessage();
+    _lockoutCountdownTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      if (_lockoutEndTime == null || DateTime.now().isAfter(_lockoutEndTime!)) {
+        _lockoutCountdownTimer?.cancel();
+        _lockoutCountdownTimer = null;
+        setState(() {
+          _lockoutEndTime = null;
+          _failedAttempts = 0;
+          _errorMessage = null;
+          _lockoutCountdownStr = '';
+        });
+        try {
+          if (Hive.isBoxOpen('user_session_box')) {
+            final box = Hive.box('user_session_box');
+            box.delete('login_lockout_until');
+            box.put('login_failed_attempts', 0);
+          }
+        } catch (_) {}
+      } else {
+        _updateLockoutMessage();
+      }
+    });
+  }
+
+  void _updateLockoutMessage() {
+    if (_lockoutEndTime == null) return;
+    final remaining = _lockoutEndTime!.difference(DateTime.now());
+    if (remaining.isNegative) return;
+    final mins = remaining.inMinutes;
+    final secs = (remaining.inSeconds % 60).toString().padLeft(2, '0');
+    final formattedTime = mins > 0 ? '$mins min $secs sec' : '$secs sec';
+    final shortTime = mins > 0 ? '${mins}m ${secs}s' : '${secs}s';
+    
+    setState(() {
+      _lockoutCountdownStr = shortTime;
+      _errorMessage = 'Too many failed login attempts. Please try again after $formattedTime.';
+    });
+  }
+
+  void _recordFailedAttempt({bool forceLockout = false, int lockoutMinutes = 15}) {
+    _failedAttempts++;
+    final remaining = 5 - _failedAttempts;
+
+    if (forceLockout || _failedAttempts >= 5) {
+      final lockEnd = DateTime.now().add(Duration(minutes: lockoutMinutes));
+      _lockoutEndTime = lockEnd;
+      _startLockoutCountdown();
+    } else {
+      if (remaining <= 2) {
+        _errorMessage = 'Your email or password is incorrect. ($remaining attempt${remaining == 1 ? '' : 's'} remaining before 15-min lockout)';
+      } else {
+        _errorMessage = 'Your email or password is incorrect.';
+      }
+      if (mounted) {
+        BoutiqueToast.showError(context, _errorMessage!);
+      }
+    }
+    setState(() {});
+
+    // Save to Hive asynchronously without blocking UI
+    try {
+      if (Hive.isBoxOpen('user_session_box')) {
+        final box = Hive.box('user_session_box');
+        box.put('login_failed_attempts', _failedAttempts);
+        if (_lockoutEndTime != null) {
+          box.put('login_lockout_until', _lockoutEndTime!.millisecondsSinceEpoch);
+        }
+      }
+    } catch (e) {
+      debugPrint('Failed attempt recording to Hive: $e');
+    }
+  }
+
+  Future<void> _clearFailedAttempts() async {
+    _failedAttempts = 0;
+    _lockoutEndTime = null;
+    _lockoutCountdownTimer?.cancel();
+    setState(() {
+      _errorMessage = null;
+      _lockoutCountdownStr = '';
+    });
+    try {
+      if (Hive.isBoxOpen('user_session_box')) {
+        final box = Hive.box('user_session_box');
+        await box.delete('login_lockout_until');
+        await box.put('login_failed_attempts', 0);
+      }
+    } catch (_) {}
+  }
+
+  void _handleEmailSubmit() {
+    if (_lockoutEndTime != null && DateTime.now().isBefore(_lockoutEndTime!)) {
+      _updateLockoutMessage();
+      BoutiqueToast.showError(context, _errorMessage ?? 'Account is temporarily locked.');
       return;
     }
 
-    final authVM = context.read<AuthViewModel>();
-    await authVM.login(email, password);
+    final email = _emailController.text.trim();
+    if (email.isEmpty) {
+      setState(() {
+        _errorMessage = 'Please enter your email address.';
+      });
+      BoutiqueToast.showError(context, 'Please enter your email address.');
+      _emailFocusNode.requestFocus();
+      return;
+    }
 
-    if (!mounted) return;
-    final status = authVM.status;
-    if (status == AuthStatus.unauthorized) {
-      BoutiqueToast.showError(context, authVM.errorMessage ?? 'Unauthorized access.');
-    } else if (status == AuthStatus.error) {
-      BoutiqueToast.showError(context, authVM.errorMessage ?? 'Invalid credentials.');
+    setState(() {
+      _showPasswordField = true;
+      _errorMessage = null;
+    });
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _passwordFocusNode.requestFocus();
+    });
+  }
+
+  Future<void> _handleLogin() async {
+    if (_lockoutEndTime != null && DateTime.now().isBefore(_lockoutEndTime!)) {
+      _updateLockoutMessage();
+      BoutiqueToast.showError(context, _errorMessage ?? 'Account is temporarily locked.');
+      return;
+    }
+
+    final email = _emailController.text.trim();
+    final password = _passwordController.text;
+
+    if (email.isEmpty) {
+      setState(() {
+        _showPasswordField = false;
+        _errorMessage = 'Please enter your email address.';
+      });
+      BoutiqueToast.showError(context, 'Please enter your email address.');
+      _emailFocusNode.requestFocus();
+      return;
+    }
+
+    if (password.isEmpty) {
+      setState(() {
+        _errorMessage = 'Please enter your password.';
+      });
+      BoutiqueToast.showError(context, 'Please enter your password.');
+      _passwordFocusNode.requestFocus();
+      return;
+    }
+
+    setState(() {
+      _errorMessage = null;
+    });
+
+    try {
+      final authVM = context.read<AuthViewModel>();
+      await authVM.login(email, password);
+
+      if (!mounted) return;
+      final status = authVM.status;
+      if (status == AuthStatus.authenticated) {
+        await _clearFailedAttempts();
+      } else if (status == AuthStatus.unauthorized) {
+        final msg = authVM.errorMessage ?? 'Your account has been deactivated.';
+        setState(() {
+          _errorMessage = msg;
+        });
+        BoutiqueToast.showError(context, msg);
+      } else {
+        final serverMsg = authVM.errorMessage ?? '';
+        if (serverMsg.toLowerCase().contains('too many failed') || serverMsg.toLowerCase().contains('locked')) {
+          _recordFailedAttempt(forceLockout: true, lockoutMinutes: 15);
+          if (mounted && _errorMessage != null) {
+            BoutiqueToast.showError(context, _errorMessage!);
+          }
+        } else {
+          _recordFailedAttempt();
+        }
+      }
+    } catch (e) {
+      if (!mounted) return;
+      _recordFailedAttempt();
     }
   }
 
@@ -218,6 +429,14 @@ class _LoginPageState extends State<LoginPage> {
     final authVM = context.watch<AuthViewModel>();
     final isLoading = authVM.isLoading;
 
+    final isLocked = _lockoutEndTime != null && DateTime.now().isBefore(_lockoutEndTime!);
+    final effectiveError = _errorMessage ??
+        ((authVM.status == AuthStatus.error || authVM.status == AuthStatus.unauthorized)
+            ? (authVM.errorMessage?.isNotEmpty == true
+                ? authVM.errorMessage!
+                : 'Your email or password is incorrect.')
+            : null);
+
     return Scaffold(
       backgroundColor: ivoryColor,
       body: SafeArea(
@@ -279,52 +498,136 @@ class _LoginPageState extends State<LoginPage> {
                         const SizedBox(height: 8),
                         _buildTextField(
                           controller: _emailController,
+                          focusNode: _emailFocusNode,
                           hintText: 'you@boutique.com',
-                          onSubmitted: _handleLogin,
+                          keyboardType: TextInputType.emailAddress,
+                          textInputAction: _showPasswordField ? TextInputAction.next : TextInputAction.done,
+                          onChanged: (_) {
+                            if (_errorMessage != null && !isLocked) {
+                              setState(() => _errorMessage = null);
+                            }
+                          },
+                          onSubmitted: () {
+                            if (!_showPasswordField) {
+                              _handleEmailSubmit();
+                            } else {
+                              _passwordFocusNode.requestFocus();
+                            }
+                          },
                         ),
-                        const SizedBox(height: 22),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          crossAxisAlignment: CrossAxisAlignment.baseline,
-                          textBaseline: TextBaseline.alphabetic,
-                          children: [
-                            Text(
-                              'Password',
-                              style: GoogleFonts.workSans(
-                                fontSize: 12.5,
-                                letterSpacing: 0.04 * 12.5,
-                                color: inkSoftColor,
+                        AnimatedSize(
+                          duration: const Duration(milliseconds: 250),
+                          curve: Curves.easeInOut,
+                          child: _showPasswordField
+                              ? Column(
+                                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                                  children: [
+                                    const SizedBox(height: 22),
+                                    Row(
+                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      crossAxisAlignment: CrossAxisAlignment.baseline,
+                                      textBaseline: TextBaseline.alphabetic,
+                                      children: [
+                                        Text(
+                                          'Password',
+                                          style: GoogleFonts.workSans(
+                                            fontSize: 12.5,
+                                            letterSpacing: 0.04 * 12.5,
+                                            color: inkSoftColor,
+                                          ),
+                                        ),
+                                        GestureDetector(
+                                          onTap: _showForgotPasswordDialog,
+                                          child: Container(
+                                            decoration: const BoxDecoration(
+                                              border: Border(bottom: BorderSide(color: lineColor)),
+                                            ),
+                                            child: Text(
+                                              'Forgot?',
+                                              style: GoogleFonts.workSans(
+                                                fontSize: 12,
+                                                color: inkSoftColor,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 8),
+                                    _buildTextField(
+                                      controller: _passwordController,
+                                      focusNode: _passwordFocusNode,
+                                      hintText: '••••••••',
+                                      obscureText: _obscurePassword,
+                                      textInputAction: TextInputAction.done,
+                                      suffixIcon: IconButton(
+                                        splashRadius: 18,
+                                        icon: Icon(
+                                          _obscurePassword
+                                              ? Icons.visibility_off_outlined
+                                              : Icons.visibility_outlined,
+                                          size: 18,
+                                          color: inkSoftColor,
+                                        ),
+                                        tooltip: _obscurePassword ? 'Show password' : 'Hide password',
+                                        onPressed: () {
+                                          setState(() {
+                                            _obscurePassword = !_obscurePassword;
+                                          });
+                                        },
+                                      ),
+                                      onChanged: (_) {
+                                        if (_errorMessage != null && !isLocked) {
+                                          setState(() => _errorMessage = null);
+                                        }
+                                      },
+                                      onSubmitted: _handleLogin,
+                                    ),
+                                  ],
+                                )
+                              : const SizedBox.shrink(),
+                        ),
+                        if (effectiveError != null) ...[
+                          const SizedBox(height: 16),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                            decoration: BoxDecoration(
+                              color: isLocked ? const Color(0xFFFFF3E0) : const Color(0xFFFFEBEE),
+                              border: Border.all(
+                                color: isLocked ? const Color(0xFFFFB74D) : const Color(0xFFE57373),
                               ),
                             ),
-                            GestureDetector(
-                              onTap: _showForgotPasswordDialog,
-                              child: Container(
-                                decoration: const BoxDecoration(
-                                  border: Border(bottom: BorderSide(color: lineColor)),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Icon(
+                                  isLocked ? Icons.lock_clock_outlined : Icons.error_outline,
+                                  size: 19,
+                                  color: isLocked ? const Color(0xFFE65100) : const Color(0xFFC62828),
                                 ),
-                                child: Text(
-                                  'Forgot?',
-                                  style: GoogleFonts.workSans(
-                                    fontSize: 12,
-                                    color: inkSoftColor,
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Text(
+                                    effectiveError,
+                                    style: GoogleFonts.workSans(
+                                      fontSize: 12.5,
+                                      fontWeight: FontWeight.w500,
+                                      height: 1.35,
+                                      color: isLocked ? const Color(0xFFBF360C) : const Color(0xFFB71C1C),
+                                    ),
                                   ),
                                 ),
-                              ),
+                              ],
                             ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        _buildTextField(
-                          controller: _passwordController,
-                          hintText: '••••••••',
-                          obscureText: true,
-                          onSubmitted: _handleLogin,
-                        ),
+                          ),
+                        ],
                         const SizedBox(height: 24),
                         Material(
-                          color: inkColor,
+                          color: isLocked ? inkSoftColor.withValues(alpha: 0.5) : inkColor,
                           child: InkWell(
-                            onTap: isLoading ? null : _handleLogin,
+                            onTap: (isLoading || isLocked)
+                                ? null
+                                : (_showPasswordField ? _handleLogin : _handleEmailSubmit),
                             child: Container(
                               width: double.infinity,
                               padding: const EdgeInsets.symmetric(vertical: 14),
@@ -339,11 +642,13 @@ class _LoginPageState extends State<LoginPage> {
                                       ),
                                     )
                                   : Text(
-                                      'SIGN IN',
+                                      isLocked
+                                          ? 'LOCKED ($_lockoutCountdownStr)'
+                                          : (_showPasswordField ? 'SIGN IN' : 'CONTINUE'),
                                       style: GoogleFonts.workSans(
                                         fontSize: 13.5,
                                         letterSpacing: 0.06 * 13.5,
-                                        fontWeight: FontWeight.w500,
+                                        fontWeight: FontWeight.w600,
                                         color: ivoryColor,
                                       ),
                                     ),
@@ -421,14 +726,23 @@ class _LoginPageState extends State<LoginPage> {
   Widget _buildTextField({
     required TextEditingController controller,
     required String hintText,
+    FocusNode? focusNode,
     bool obscureText = false,
+    Widget? suffixIcon,
+    TextInputAction? textInputAction,
+    TextInputType? keyboardType,
+    ValueChanged<String>? onChanged,
     VoidCallback? onSubmitted,
   }) {
     return Container(
       color: Colors.white,
       child: TextField(
         controller: controller,
+        focusNode: focusNode,
         obscureText: obscureText,
+        keyboardType: keyboardType,
+        textInputAction: textInputAction,
+        onChanged: onChanged,
         onSubmitted: (_) => onSubmitted?.call(),
         style: GoogleFonts.workSans(
           fontSize: 15,
@@ -439,6 +753,7 @@ class _LoginPageState extends State<LoginPage> {
           hintText: hintText,
           hintStyle: GoogleFonts.workSans(color: placeholderColor),
           contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          suffixIcon: suffixIcon,
           enabledBorder: const OutlineInputBorder(
             borderSide: BorderSide(color: lineColor),
             borderRadius: BorderRadius.zero,

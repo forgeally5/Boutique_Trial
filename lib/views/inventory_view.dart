@@ -106,7 +106,6 @@ class _InventoryViewState extends State<InventoryView> {
     'In Stock',
     'Low Stock',
     'Out of Stock',
-    'Sold Out',
     'Reserved',
   ];
 
@@ -282,8 +281,18 @@ class _InventoryViewState extends State<InventoryView> {
                                         BoutiqueToast.showError(context, 'No products to export.');
                                         return;
                                       }
-                                      // ignore: use_build_context_synchronously
-                                      if (mounted) BoutiqueToast.showSuccess(context, 'Inward Bill Excel downloaded!');
+                                      try {
+                                        await ExcelGenerator.downloadInwardBillExcel(products: products);
+                                        if (mounted) {
+                                          // ignore: use_build_context_synchronously
+                                          BoutiqueToast.showSuccess(context, 'Inward Bill Excel (${products.length} products) downloaded!');
+                                        }
+                                      } catch (e) {
+                                        if (mounted) {
+                                          // ignore: use_build_context_synchronously
+                                          BoutiqueToast.showError(context, 'Failed to generate Inward Bill: $e');
+                                        }
+                                      }
                                     },
                                     icon: const Icon(Icons.table_view_rounded, size: 18),
                                     label: const Text('Inward Bill (Excel)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
@@ -310,7 +319,7 @@ class _InventoryViewState extends State<InventoryView> {
                                       );
                                     },
                                     icon: const Icon(Icons.upload_file_rounded, size: 18),
-                                    label: const Text('Import CSV', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                                    label: const Text('Bulk Import', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                                   ),
                                 ),
                                 const SizedBox(width: 12),
@@ -857,10 +866,15 @@ class _InventoryViewState extends State<InventoryView> {
       );
     }
     
-    final hasDiscount = p.discountValue > 0 && p.finalPrice > 0 && p.finalPrice < p.mrp;
-    if (!hasDiscount) {
+    final effectiveSellingPrice = p.finalPrice > 0
+        ? p.finalPrice
+        : (p.sellingPrice > 0 ? p.sellingPrice : p.mrp);
+
+    final showStrikethrough = p.mrp > 0 && p.mrp > effectiveSellingPrice;
+
+    if (!showStrikethrough) {
       return Text(
-        '₹${p.mrp.toStringAsFixed(p.mrp.truncateToDouble() == p.mrp ? 0 : 2)}',
+        '₹${effectiveSellingPrice.toStringAsFixed(effectiveSellingPrice.truncateToDouble() == effectiveSellingPrice ? 0 : 2)}',
         style: const TextStyle(fontFamily: 'serif', fontSize: 16, fontWeight: FontWeight.bold, color: BoutiqueColors.textPrimary),
       );
     }
@@ -886,10 +900,10 @@ class _InventoryViewState extends State<InventoryView> {
             border: Border.all(color: const Color(0xFF81C784), width: 0.8),
           ),
           child: Text(
-            '₹${p.finalPrice.toStringAsFixed(p.finalPrice.truncateToDouble() == p.finalPrice ? 0 : 2)}',
+            '₹${effectiveSellingPrice.toStringAsFixed(effectiveSellingPrice.truncateToDouble() == effectiveSellingPrice ? 0 : 2)}',
             style: const TextStyle(
               fontFamily: 'serif',
-              fontSize: 15,
+              fontSize: 14,
               fontWeight: FontWeight.bold,
               color: Color(0xFF2E7D32),
             ),
@@ -901,6 +915,10 @@ class _InventoryViewState extends State<InventoryView> {
 
   Widget _buildSideDrawer(Product p) {
     final matStr = p.material.isNotEmpty ? p.material : 'N/A';
+    final effectiveSellingPrice = p.finalPrice > 0
+        ? p.finalPrice
+        : (p.sellingPrice > 0 ? p.sellingPrice : p.mrp);
+
     return Container(
       width: 380,
       height: double.infinity,
@@ -954,7 +972,12 @@ class _InventoryViewState extends State<InventoryView> {
           if (p.pricingType == 'Weight-Based' && p.grossWeight > 0)
             _buildDetailRow('Total Stock', '${p.grossWeight} ${p.weightUnit}'),
           _buildDetailRow(p.pricingType == 'Weight-Based' ? 'Pieces' : 'Stock Quantity', '${p.quantity} ${p.unit}'),
-          _buildDetailRow('MRP Price', '₹${p.mrp}'),
+          if (p.mrp > 0 && p.mrp != effectiveSellingPrice) ...[
+            _buildDetailRow('MRP Price', '₹${p.mrp}'),
+            _buildDetailRow('Selling Price', '₹$effectiveSellingPrice'),
+          ] else ...[
+            _buildDetailRow('Selling Price', '₹$effectiveSellingPrice'),
+          ],
           _buildDetailRow('Status', p.status),
           const Spacer(),
           Row(

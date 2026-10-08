@@ -142,31 +142,44 @@ if ($method === 'POST' && ($action === '' || $action === 'create')) {
 // ─── 3. UPDATE BILL / RECORD PAYMENT / RETURN ──────────────────────────
 if ($method === 'PUT' || ($method === 'POST' && $action === 'update')) {
     $input = getJsonInput();
-    $docId = $input['docId'] ?? $input['doc_id'] ?? '';
-    if (empty($docId)) {
-        sendResponse(false, null, 'docId is required', 400);
+    $idVal = $input['id'] ?? $input['docId'] ?? $input['doc_id'] ?? $input['billNo'] ?? $input['bill_no'] ?? '';
+    if (empty($idVal)) {
+        sendResponse(false, null, 'docId or id or billNo is required', 400);
     }
 
     $fields = [];
     $params = [];
 
     $fieldsToUpdate = [
-        'amountReceived' => 'amount_received',
-        'pendingBalance' => 'pending_balance',
-        'isFullyPaid'    => 'is_fully_paid',
-        'paymentStatus'  => 'payment_status',
-        'balanceReturned'=> 'balance_returned',
-        'narration'      => 'narration',
-        'customerName'   => 'customer_name',
-        'customerMobile' => 'customer_mobile',
-        'customerAddress'=> 'customer_address',
-        'paymentMode'    => 'payment_mode',
-        'lastPaymentDate'=> 'last_payment_date',
-        'lastPaymentMode'=> 'last_payment_mode'
+        'amountReceived'   => 'amount_received',
+        'amount_received'  => 'amount_received',
+        'pendingBalance'   => 'pending_balance',
+        'pending_balance'  => 'pending_balance',
+        'isFullyPaid'      => 'is_fully_paid',
+        'is_fully_paid'    => 'is_fully_paid',
+        'paymentStatus'    => 'payment_status',
+        'payment_status'   => 'payment_status',
+        'balanceReturned'  => 'balance_returned',
+        'balance_returned' => 'balance_returned',
+        'narration'        => 'narration',
+        'customerName'     => 'customer_name',
+        'customer_name'    => 'customer_name',
+        'customerMobile'   => 'customer_mobile',
+        'customer_mobile'  => 'customer_mobile',
+        'customerAddress'  => 'customer_address',
+        'customer_address' => 'customer_address',
+        'paymentMode'      => 'payment_mode',
+        'payment_mode'     => 'payment_mode',
+        'lastPaymentDate'  => 'last_payment_date',
+        'last_payment_date'=> 'last_payment_date',
+        'lastPaymentMode'  => 'last_payment_mode',
+        'last_payment_mode'=> 'last_payment_mode'
     ];
 
+    $seenCols = [];
     foreach ($fieldsToUpdate as $jsonKey => $dbCol) {
-        if (array_key_exists($jsonKey, $input)) {
+        if (array_key_exists($jsonKey, $input) && !isset($seenCols[$dbCol])) {
+            $seenCols[$dbCol] = true;
             $fields[] = "$dbCol = ?";
             $val = $input[$jsonKey];
             if (is_bool($val)) $val = $val ? 1 : 0;
@@ -174,9 +187,9 @@ if ($method === 'PUT' || ($method === 'POST' && $action === 'update')) {
         }
     }
 
-    if (isset($input['paymentHistory'])) {
+    if (isset($input['paymentHistory']) || isset($input['payment_history'])) {
         $fields[] = "payment_history = ?";
-        $params[] = json_encode($input['paymentHistory']);
+        $params[] = json_encode($input['paymentHistory'] ?? $input['payment_history']);
     }
     if (isset($input['items'])) {
         $fields[] = "items = ?";
@@ -187,23 +200,25 @@ if ($method === 'PUT' || ($method === 'POST' && $action === 'update')) {
         sendResponse(false, null, 'No fields to update', 400);
     }
 
-    $params[] = $docId;
-    $sql = "UPDATE bills SET " . implode(', ', $fields) . ", updated_at = NOW() WHERE doc_id = ?";
+    $params[] = $idVal;
+    $params[] = $idVal;
+    $params[] = $idVal;
+    $sql = "UPDATE bills SET " . implode(', ', $fields) . ", updated_at = NOW() WHERE (doc_id = ? AND doc_id IS NOT NULL AND doc_id != '') OR id = ? OR bill_no = ?";
     $stmt = $pdo->prepare($sql);
     $stmt->execute($params);
 
-    sendResponse(true, ['docId' => $docId], 'Bill updated successfully');
+    sendResponse(true, ['id' => $idVal], 'Bill updated successfully');
 }
 
 // ─── 4. DELETE BILL ────────────────────────────────────────────────────
 if ($method === 'DELETE' || ($method === 'POST' && $action === 'delete')) {
-    $docId = $_GET['docId'] ?? (getJsonInput()['docId'] ?? '');
+    $docId = $_GET['docId'] ?? $_GET['id'] ?? (getJsonInput()['docId'] ?? getJsonInput()['id'] ?? '');
     if (empty($docId)) {
         sendResponse(false, null, 'docId is required', 400);
     }
 
-    $stmt = $pdo->prepare("DELETE FROM bills WHERE doc_id = ?");
-    $stmt->execute([$docId]);
+    $stmt = $pdo->prepare("DELETE FROM bills WHERE (doc_id = ? AND doc_id IS NOT NULL AND doc_id != '') OR id = ? OR bill_no = ?");
+    $stmt->execute([$docId, $docId, $docId]);
 
     sendResponse(true, null, 'Bill deleted successfully');
 }

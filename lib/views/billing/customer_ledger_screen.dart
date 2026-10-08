@@ -1792,14 +1792,21 @@ class _CustomerLedgerScreenState extends State<CustomerLedgerScreen> {
                                   ),
                                 ),
                                 Text(
-                                  '+91 98765 43210',
+                                  'www.ritumitasrentaljewels.com',
                                   style: TextStyle(
                                     fontSize: 10,
                                     color: textLight,
                                   ),
                                 ),
                                 Text(
-                                  'www.ritumita.com',
+                                  '33, 7th Street, Tatabad, 100 Feet Road,',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    color: textLight,
+                                  ),
+                                ),
+                                Text(
+                                  'Coimbatore - 641012',
                                   style: TextStyle(
                                     fontSize: 10,
                                     color: textLight,
@@ -2424,7 +2431,7 @@ class _CustomerLedgerScreenState extends State<CustomerLedgerScreen> {
       );
       if (totalRemainingToApply <= 0.001) break;
 
-      final docId = b['docId'] as String;
+      final docId = (b['id'] ?? b['docId'] ?? b['doc_id'] ?? b['billNo'] ?? b['bill_no'] ?? '').toString();
       final refBillNo = b['billNo']?.toString() ?? 'SB';
       final currentPending = _getPendingAmount(b);
       final total = (b['totalPayable'] as num?)?.toDouble() ?? 0.0;

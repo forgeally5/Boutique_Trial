@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -1201,9 +1202,9 @@ class _BillDetailDialogState extends State<_BillDetailDialog> {
   }
 
   void _openEditCustomerDialog() {
-    final nameCtrl = TextEditingController(text: widget.bill['customerName']?.toString() ?? '');
-    final mobileCtrl = TextEditingController(text: widget.bill['customerMobile']?.toString() ?? '');
-    final addressCtrl = TextEditingController(text: widget.bill['customerAddress']?.toString() ?? '');
+    final nameCtrl = TextEditingController(text: (widget.bill['customerName'] ?? widget.bill['customer_name'] ?? '').toString());
+    final mobileCtrl = TextEditingController(text: (widget.bill['customerMobile'] ?? widget.bill['customer_mobile'] ?? '').toString());
+    final addressCtrl = TextEditingController(text: (widget.bill['customerAddress'] ?? widget.bill['customer_address'] ?? '').toString());
 
     showDialog(
       context: context,
@@ -1234,23 +1235,51 @@ class _BillDetailDialogState extends State<_BillDetailDialog> {
                return;
             }
 
-            final docId = widget.bill['docId'] ?? widget.bill['_id'];
-            if (docId == null) throw Exception('No document ID found');
+            final idToUse = widget.bill['docId'] ?? widget.bill['doc_id'] ?? widget.bill['id'] ?? widget.bill['_id'] ?? widget.bill['_docId'] ?? widget.bill['billNo'] ?? widget.bill['bill_no'];
+            if (idToUse == null) throw Exception('No document ID or bill reference found');
 
-            // Send both camelCase and snake_case to ensure backend catches it
-            await ApiService().updateBill(docId.toString(), {
+            // Encode in narration so current live server persists it immediately in DB
+            final existingNarration = widget.bill['narration']?.toString() ?? '';
+            String existingNote = existingNarration;
+            if (existingNarration.trim().startsWith('{') && existingNarration.trim().endsWith('}')) {
+              try {
+                final m = jsonDecode(existingNarration);
+                if (m is Map && m['note'] != null) existingNote = m['note'].toString();
+              } catch (_) {}
+            }
+
+            final encodedCustomerJson = jsonEncode({
+              'customerName': newName,
+              'customerMobile': newMobile,
+              'customerAddress': newAddr,
+              'custom_name': newName,
+              'custom_mobile': newMobile,
+              'custom_address': newAddr,
+              if (existingNote.isNotEmpty && !existingNote.startsWith('{')) 'note': existingNote,
+            });
+
+            // Send both direct fields and narration so it works with current and future backend versions
+            await ApiService().updateBill(idToUse.toString(), {
+              'id': widget.bill['id'],
+              'docId': widget.bill['docId'] ?? widget.bill['doc_id'] ?? idToUse.toString(),
+              'billNo': widget.bill['billNo'] ?? widget.bill['bill_no'],
               'customerName': newName,
               'customerMobile': newMobile,
               'customerAddress': newAddr,
               'customer_name': newName,
               'customer_mobile': newMobile,
               'customer_address': newAddr,
+              'narration': encodedCustomerJson,
             });
             
             setState(() {
               widget.bill['customerName'] = newName;
+              widget.bill['customer_name'] = newName;
               widget.bill['customerMobile'] = newMobile;
+              widget.bill['customer_mobile'] = newMobile;
               widget.bill['customerAddress'] = newAddr;
+              widget.bill['customer_address'] = newAddr;
+              widget.bill['narration'] = encodedCustomerJson;
             });
             widget.onUpdated?.call();
             if (ctx.mounted) {
@@ -1324,10 +1353,13 @@ class _BillDetailDialogState extends State<_BillDetailDialog> {
               newItems[i]['name'] = controllers[i].text.trim();
             }
 
-            final docId = widget.bill['docId'] ?? widget.bill['_id'];
-            if (docId == null) throw Exception('No document ID found');
+            final idToUse = widget.bill['id'] ?? widget.bill['docId'] ?? widget.bill['doc_id'] ?? widget.bill['_id'] ?? widget.bill['_docId'] ?? widget.bill['billNo'] ?? widget.bill['bill_no'];
+            if (idToUse == null) throw Exception('No document ID found');
 
-            await ApiService().updateBill(docId.toString(), {
+            await ApiService().updateBill(idToUse.toString(), {
+              'id': widget.bill['id'],
+              'docId': widget.bill['docId'] ?? widget.bill['doc_id'],
+              'billNo': widget.bill['billNo'] ?? widget.bill['bill_no'],
               'items': newItems,
             });
             
@@ -2143,9 +2175,9 @@ class _BillDetailDialogState extends State<_BillDetailDialog> {
                             children: [
                               Text('RituMita', style: TextStyle(fontSize: 12, color: maroon, fontWeight: FontWeight.bold)),
                               SizedBox(height: 2),
-                              Text('+91 98765 43210', style: TextStyle(fontSize: 11, color: textLight)),
-                              Text('www.ritumita.com', style: TextStyle(fontSize: 11, color: textLight)),
-                              Text('123 Fashion St., Chennai', style: TextStyle(fontSize: 11, color: textLight)),
+                              Text('www.ritumitasrentaljewels.com', style: TextStyle(fontSize: 11, color: textLight)),
+                              Text('33, 7th Street, Tatabad, 100 Feet Road,', style: TextStyle(fontSize: 11, color: textLight)),
+                              Text('Coimbatore - 641012', style: TextStyle(fontSize: 11, color: textLight)),
                             ],
                           ),
                         ],
@@ -2296,7 +2328,7 @@ class _SettleBalanceDialogState extends State<_SettleBalanceDialog> {
 
     setState(() => _saving = true);
     try {
-      final docId = widget.bill['_docId'] ?? widget.bill['docId'];
+      final docId = widget.bill['id'] ?? widget.bill['docId'] ?? widget.bill['doc_id'] ?? widget.bill['_id'] ?? widget.bill['_docId'] ?? widget.bill['billNo'] ?? widget.bill['bill_no'];
       if (docId == null) throw 'Missing bill document reference';
 
       final existingPayments = List<Map<String, dynamic>>.from(

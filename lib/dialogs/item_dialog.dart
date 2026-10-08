@@ -190,11 +190,33 @@ class _ItemDialogState extends State<ItemDialog> {
     _vendorCtrl = TextEditingController(text: p?.vendor ?? '');
     _notesCtrl = TextEditingController(text: p?.notes ?? '');
     _quantityCtrl = TextEditingController(text: p != null ? p.quantity.toString() : '1');
-    _mrpCtrl = TextEditingController(text: p != null && p.mrp > 0 ? p.mrp.toString() : '');
-    _sellingPriceCtrl = TextEditingController(text: p != null && p.sellingPrice > 0 ? p.sellingPrice.toString() : '');
+    double initialMrp = p != null ? p.mrp : 0.0;
+    double initialSellingPrice = p != null ? p.sellingPrice : 0.0;
+    double initialDiscount = p != null ? p.discountValue : 0.0;
+    String initialDiscountType = p != null && p.discountType.isNotEmpty ? p.discountType : '%';
+
+    // If product has MRP > Selling Price and discount is 0, auto-derive the discount & base price
+    if (p != null && initialMrp > 0 && initialSellingPrice > 0 && initialSellingPrice < initialMrp && initialDiscount == 0) {
+      final pct = ((initialMrp - initialSellingPrice) / initialMrp * 100);
+      initialDiscount = double.parse(pct.toStringAsFixed(2));
+      if (initialDiscount == initialDiscount.toInt()) initialDiscount = initialDiscount.toInt().toDouble();
+      initialDiscountType = '%';
+      initialSellingPrice = initialMrp;
+    } else if (p != null && initialMrp == 0 && initialSellingPrice > 0) {
+      initialMrp = initialSellingPrice;
+    }
+
+    _mrpCtrl = TextEditingController(
+      text: initialMrp > 0 ? (initialMrp == initialMrp.toInt() ? initialMrp.toInt().toString() : initialMrp.toString()) : '',
+    );
+    _sellingPriceCtrl = TextEditingController(
+      text: initialSellingPrice > 0 ? (initialSellingPrice == initialSellingPrice.toInt() ? initialSellingPrice.toInt().toString() : initialSellingPrice.toString()) : '',
+    );
     _ratePerGramCtrl = TextEditingController(text: p != null && p.ratePerGram > 0 ? p.ratePerGram.toString() : '');
     _grossWeightCtrl = TextEditingController(text: p != null && p.grossWeight > 0 ? p.grossWeight.toString() : '');
-    _discountCtrl = TextEditingController(text: p != null && p.discountValue > 0 ? p.discountValue.toString() : '');
+    _discountCtrl = TextEditingController(
+      text: initialDiscount > 0 ? (initialDiscount == initialDiscount.toInt() ? initialDiscount.toInt().toString() : initialDiscount.toString()) : '',
+    );
     _gstRateCtrl = TextEditingController(text: p != null && p.gstRate > 0 ? (p.gstRate == p.gstRate.toInt() ? p.gstRate.toInt().toString() : p.gstRate.toString()) : '0');
     _reservedForCtrl = TextEditingController(text: p != null ? p.reservedFor : '');
     _reservedQtyCtrl = TextEditingController(text: p != null && p.reservedQuantity > 0 ? p.reservedQuantity.toString() : '');
@@ -229,7 +251,7 @@ class _ItemDialogState extends State<ItemDialog> {
       _weightUnit = normWeightUnit;
       
       _isReserved = p.isReserved;
-      _discountType = p.discountType.isNotEmpty ? p.discountType : '%';
+      _discountType = initialDiscountType;
       _pricingType = p.pricingType.isNotEmpty ? p.pricingType : 'Quantity-Based';
       _imageUrl = p.imageUrl;
     } else {
@@ -291,8 +313,19 @@ class _ItemDialogState extends State<ItemDialog> {
   }
 
   String? _nameError() {
-    if (!_nameTouched) return null;
-    if (_nameCtrl.text.trim().isEmpty) return 'Item Name is required';
+    final name = _nameCtrl.text.trim().isNotEmpty ? _nameCtrl.text.trim() : _itemName.trim();
+    if (name.isEmpty) {
+      if (_nameTouched) return 'Item Name is required';
+      return null;
+    }
+    final isEdit = widget.initialProduct != null;
+    final currentTagId = widget.initialProduct?.tagId.trim().toUpperCase() ?? '';
+    final isDuplicate = widget.adminState.allProducts
+        .where((p) => isEdit ? p.tagId.trim().toUpperCase() != currentTagId : true)
+        .any((p) => p.name.trim().toLowerCase() == name.toLowerCase());
+    if (isDuplicate) {
+      return 'A product with this name already exists in inventory.';
+    }
     return null;
   }
 
@@ -321,9 +354,11 @@ class _ItemDialogState extends State<ItemDialog> {
   }
 
   bool get _isFormValid {
+    final name = _nameCtrl.text.trim().isNotEmpty ? _nameCtrl.text.trim() : _itemName.trim();
     if (_tagIdCtrl.text.trim().isEmpty) return false;
     if (_tagIdError() != null) return false;
-    if (_nameCtrl.text.trim().isEmpty) return false;
+    if (name.isEmpty) return false;
+    if (_nameError() != null) return false;
     if (_category.isEmpty) return false;
     final q = int.tryParse(_quantityCtrl.text);
     if (q == null || q < 0) return false;
@@ -340,8 +375,25 @@ class _ItemDialogState extends State<ItemDialog> {
       _quantityTouched = true;
     });
 
-    if (!_isFormValid) {
-      BoutiqueToast.showError(context, 'Please fill in all required fields (Tag ID, Name, Category, Quantity).');
+    final resolvedName = _nameCtrl.text.trim().isNotEmpty ? _nameCtrl.text.trim() : _itemName.trim();
+    if (_tagIdCtrl.text.trim().isEmpty || _tagIdError() != null) {
+      BoutiqueToast.showError(context, _tagIdError() ?? 'Tag ID is required');
+      return;
+    }
+    if (resolvedName.isEmpty || _nameError() != null) {
+      BoutiqueToast.showError(context, _nameError() ?? 'Item Name is required');
+      return;
+    }
+    if (_category.isEmpty || _categoryError() != null) {
+      BoutiqueToast.showError(context, _categoryError() ?? 'Category is required');
+      return;
+    }
+    if (_quantityError() != null) {
+      BoutiqueToast.showError(context, _quantityError()!);
+      return;
+    }
+    if (_discountError() != null) {
+      BoutiqueToast.showError(context, _discountError()!);
       return;
     }
 
@@ -361,7 +413,7 @@ class _ItemDialogState extends State<ItemDialog> {
 
     final product = Product(
       tagId: _tagIdCtrl.text.trim().toUpperCase(),
-      name: _nameCtrl.text.trim(),
+      name: resolvedName,
       category: _category,
       deity: _deity,
       material: _material,
@@ -377,7 +429,7 @@ class _ItemDialogState extends State<ItemDialog> {
       makingCharges: 0.0,
       quantity: int.tryParse(_quantityCtrl.text) ?? 0,
       unit: _unit,
-      mrp: _pricingType == 'Weight-Based' ? 0.0 : (double.tryParse(_mrpCtrl.text) ?? 0.0),
+      mrp: _pricingType == 'Weight-Based' ? 0.0 : ((double.tryParse(_mrpCtrl.text) ?? 0.0) > 0 ? double.tryParse(_mrpCtrl.text)! : _sellingPrice),
       sellingPrice: _pricingType == 'Weight-Based' ? 0.0 : _sellingPrice,
       discountValue: _discountAmount,
       discountType: _discountType,
@@ -866,7 +918,9 @@ class _ItemDialogState extends State<ItemDialog> {
                               isNum: true,
                               hint: '0.00',
                               onChanged: (v) {
-                                _mrpCtrl.text = v;
+                                if (_mrpCtrl.text.isEmpty) {
+                                  _mrpCtrl.text = v;
+                                }
                                 setState(() => _sellingPriceTouched = true);
                               },
                             ),
@@ -915,7 +969,12 @@ class _ItemDialogState extends State<ItemDialog> {
                                 ),
                               ],
                             )
-                          : const SizedBox.shrink(), // placeholder for balance in layout
+                          : _field(
+                              label: 'MRP (₹)',
+                              controller: _mrpCtrl,
+                              isNum: true,
+                              hint: '0.00',
+                            ),
                       ),
                     ]),
                     const SizedBox(height: 16),

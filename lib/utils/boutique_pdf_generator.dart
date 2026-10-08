@@ -447,9 +447,9 @@ class BoutiquePdfGenerator {
                       crossAxisAlignment: pw.CrossAxisAlignment.end,
                       children: [
                         pw.Text('RituMita', style: pw.TextStyle(fontSize: 8, color: maroon, fontWeight: pw.FontWeight.bold)),
-                        pw.Text('+91 98765 43210', style: pw.TextStyle(fontSize: 7, color: textLight)),
-                        pw.Text('www.ritumita.com', style: pw.TextStyle(fontSize: 7, color: textLight)),
-                        pw.Text('123 Fashion St., Chennai', style: pw.TextStyle(fontSize: 7, color: textLight)),
+                        pw.Text('www.ritumitasrentaljewels.com', style: pw.TextStyle(fontSize: 7, color: textLight)),
+                        pw.Text('33, 7th Street, Tatabad, 100 Feet Road,', style: pw.TextStyle(fontSize: 7, color: textLight)),
+                        pw.Text('Coimbatore - 641012', style: pw.TextStyle(fontSize: 7, color: textLight)),
                       ],
                     ),
                   ],
@@ -964,15 +964,15 @@ class BoutiquePdfGenerator {
                           ),
                         ),
                         pw.Text(
-                          '+91 98765 43210',
+                          'www.ritumitasrentaljewels.com',
                           style: pw.TextStyle(fontSize: 7, color: textLight),
                         ),
                         pw.Text(
-                          'www.ritumita.com',
+                          '33, 7th Street, Tatabad, 100 Feet Road,',
                           style: pw.TextStyle(fontSize: 7, color: textLight),
                         ),
                         pw.Text(
-                          '123 Fashion St., Chennai',
+                          'Coimbatore - 641012',
                           style: pw.TextStyle(fontSize: 7, color: textLight),
                         ),
                       ],

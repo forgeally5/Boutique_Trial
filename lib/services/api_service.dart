@@ -289,14 +289,36 @@ class ApiService {
     final billNo = map['bill_no']?.toString() ?? map['billNo']?.toString() ?? map['voucherNo']?.toString() ?? '';
     final billType = map['bill_type']?.toString() ?? map['billType']?.toString() ?? 'Sale';
     final billDate = map['bill_date'] ?? map['billDate'] ?? map['voucherDate'] ?? map['createdAt'];
-    final customerName = map['customer_name']?.toString() ?? map['customerName']?.toString() ?? map['acName']?.toString() ?? 'Walk-in Customer';
-    final customerMobile = map['customer_mobile']?.toString() ?? map['customerMobile']?.toString() ?? map['phone']?.toString() ?? '';
-    final customerAddress = map['customer_address']?.toString() ?? map['customerAddress']?.toString() ?? '';
+    String customerName = map['customer_name']?.toString() ?? map['customerName']?.toString() ?? map['acName']?.toString() ?? 'Walk-in Customer';
+    String customerMobile = map['customer_mobile']?.toString() ?? map['customerMobile']?.toString() ?? map['phone']?.toString() ?? '';
+    String customerAddress = map['customer_address']?.toString() ?? map['customerAddress']?.toString() ?? '';
+    String narrationText = map['narration']?.toString() ?? '';
+
+    // Check if narration has encoded customer details
+    final rawNarration = map['narration']?.toString() ?? '';
+    if (rawNarration.trim().startsWith('{') && rawNarration.trim().endsWith('}')) {
+      try {
+        final parsedNarration = jsonDecode(rawNarration);
+        if (parsedNarration is Map) {
+          if (parsedNarration['customerName'] != null || parsedNarration['custom_name'] != null) {
+            customerName = (parsedNarration['customerName'] ?? parsedNarration['custom_name']).toString();
+          }
+          if (parsedNarration['customerMobile'] != null || parsedNarration['custom_mobile'] != null) {
+            customerMobile = (parsedNarration['customerMobile'] ?? parsedNarration['custom_mobile']).toString();
+          }
+          if (parsedNarration['customerAddress'] != null || parsedNarration['custom_address'] != null) {
+            customerAddress = (parsedNarration['customerAddress'] ?? parsedNarration['custom_address']).toString();
+          }
+          narrationText = parsedNarration['note']?.toString() ?? '';
+        }
+      } catch (_) {}
+    }
+
     final paymentMode = map['payment_mode']?.toString() ?? map['paymentMode']?.toString() ?? 'Cash';
     final paymentStatus = map['payment_status']?.toString() ?? map['paymentStatus']?.toString() ?? (pendingBalance <= 0 ? 'Paid' : 'Partial');
     final isFullyPaid = map['is_fully_paid'] == 1 || map['is_fully_paid'] == true || map['isFullyPaid'] == true || pendingBalance <= 0;
 
-    final returnReason = map['return_reason']?.toString() ?? map['returnReason']?.toString() ?? map['narration']?.toString() ?? '';
+    final returnReason = map['return_reason']?.toString() ?? map['returnReason']?.toString() ?? narrationText;
     final returnStatus = map['return_status']?.toString() ?? map['returnStatus']?.toString() ?? 'Processed';
     final originalBillNo = map['original_bill_no']?.toString() ?? map['originalBillNo']?.toString() ?? '';
 
@@ -329,7 +351,7 @@ class ApiService {
       'paymentMode': paymentMode,
       'paymentStatus': paymentStatus,
       'isFullyPaid': isFullyPaid,
-      'narration': map['narration']?.toString() ?? '',
+      'narration': narrationText,
       'returnReason': returnReason,
       'return_reason': returnReason,
       'returnStatus': returnStatus,

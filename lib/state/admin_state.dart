@@ -330,6 +330,7 @@ class AdminState extends ChangeNotifier {
 
   /// Public accessor — applies tombstone filtering so views get clean list.
   List<Product> get products => _products;
+  List<Product> get allProducts => _products;
 
   final List<String> _dynamicCategories = [];
   final List<String> _dynamicMaterials = [];
