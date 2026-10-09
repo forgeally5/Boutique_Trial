@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
@@ -14,7 +15,8 @@ import '../../services/api_service.dart';
 class CreateBillScreen extends StatefulWidget {
   final AdminState state;
   final VoidCallback? onSaved;
-  const CreateBillScreen({super.key, required this.state, this.onSaved});
+  final Map<String, dynamic>? initialBill;
+  const CreateBillScreen({super.key, required this.state, this.onSaved, this.initialBill});
 
   @override
   State<CreateBillScreen> createState() => _CreateBillScreenState();
@@ -71,11 +73,102 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
   void initState() {
     super.initState();
     _cachedProducts = widget.state.products;
-    _fetchNextBillNo();
+    
+    if (widget.initialBill != null) {
+      _loadInitialBill(widget.initialBill!);
+    } else {
+      _fetchNextBillNo();
+    }
+    
     _fetchCustomerNames();
     // Listen to AdminState for product list updates ONLY — no full-form rebuild
     widget.state.addListener(_onStateProductsUpdate);
     _gstCtrl.addListener(_onGstChanged);
+  }
+
+  void _loadInitialBill(Map<String, dynamic> b) {
+    _billNoCtrl.text = b['billNo']?.toString() ?? '';
+    _billType = b['billType']?.toString() ?? 'Sale';
+    
+    final bDate = b['billDate'] ?? b['voucherDate'] ?? b['date'];
+    if (bDate != null) {
+      if (bDate is DateTime) _billDate = bDate;
+      else _billDate = DateTime.tryParse(bDate.toString()) ?? DateTime.now();
+    }
+    
+    _customerNameCtrl.text = b['customerName']?.toString() ?? '';
+    _customerMobileCtrl.text = b['customerMobile']?.toString() ?? '';
+    _customerAddressCtrl.text = b['customerAddress']?.toString() ?? '';
+    _narrationCtrl.text = b['narration']?.toString() ?? '';
+    
+    // Load custom details if any
+    final custom = b['customCustomerDetails'];
+    if (custom is Map) {
+      if (custom.isNotEmpty) _showExtraCustomerDetails = true;
+      for (final entry in custom.entries) {
+        _customFields.add({
+          'key': TextEditingController(text: entry.key.toString()),
+          'value': TextEditingController(text: entry.value?.toString() ?? ''),
+        });
+      }
+    }
+    
+    _extraDiscountType = b['extraDiscountType']?.toString() ?? '₹';
+    final extraDiscVal = b['extraDiscountValue'] ?? b['extraDiscountAmount'] ?? 0;
+    _extraDiscountCtrl.text = extraDiscVal == 0 ? '' : extraDiscVal.toString();
+    
+    final gstPercent = b['gstPercent'] ?? 0;
+    _gstCtrl.text = gstPercent == 0 ? '' : gstPercent.toString();
+    
+    final adjustment = (b['adjustmentAmount'] as num?)?.toDouble() ?? 0.0;
+    if (adjustment != 0) {
+       final total = (b['totalPayable'] as num?)?.toDouble() ?? 0.0;
+       _adjustmentCtrl.text = total.toStringAsFixed(2);
+    }
+    
+    // Helper to safely parse numbers
+    double toDouble(dynamic v) {
+      if (v == null) return 0.0;
+      if (v is num) return v.toDouble();
+      return double.tryParse(v.toString()) ?? 0.0;
+    }
+
+    // Items
+    final rawItems = b['items'];
+    if (rawItems is List) {
+      for (final i in rawItems) {
+         if (i is Map) {
+           final tagId = i['tagId']?.toString() ?? '';
+           Product? p;
+           try {
+             p = _cachedProducts.firstWhere((prod) => prod.tagId == tagId);
+           } catch (_) {
+             // Create a dummy product if not found
+             p = Product(
+               tagId: tagId,
+               name: i['name']?.toString() ?? 'Unknown',
+               pricingType: i['pricingType']?.toString() ?? 'Quantity-Based',
+               sellingPrice: toDouble(i['price']),
+               category: i['category']?.toString() ?? '',
+               unit: i['unit']?.toString() ?? 'Piece',
+               gstRate: toDouble(i['gstRate']),
+             );
+           }
+           
+           _rows.add(BillRow(
+             product: p,
+             qty: toDouble(i['qty']) == 0 ? 1.0 : toDouble(i['qty']),
+             weight: toDouble(i['weight']),
+             price: toDouble(i['price']) == 0 ? p.sellingPrice : toDouble(i['price']),
+             discountValue: toDouble(i['discountValue']),
+             discountType: i['discountType']?.toString() ?? '%',
+             isFromReserve: i['isFromReserve'] == true || i['isFromReserve'] == 1 || i['isFromReserve'] == '1',
+           ));
+         }
+      }
+    }
+    
+    _rowVersion.value++;
   }
 
   Future<void> _fetchCustomerNames() async {
@@ -421,29 +514,82 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
                 }
             ];
 
-      final billData = {
-        'billNo': _billNoCtrl.text.trim(),
-        'billType': _billType,
-        'narration': _narrationCtrl.text.trim(),
-        'billDate': nowTs,
+      final encodedCustomerJson = jsonEncode({
         'customerName': _customerNameCtrl.text.trim(),
         'customerMobile': _customerMobileCtrl.text.trim(),
         'customerAddress': _customerAddressCtrl.text.trim(),
+        'custom_name': _customerNameCtrl.text.trim(),
+        'custom_mobile': _customerMobileCtrl.text.trim(),
+        'custom_address': _customerAddressCtrl.text.trim(),
+        if (_narrationCtrl.text.trim().isNotEmpty && !_narrationCtrl.text.trim().startsWith('{')) 'note': _narrationCtrl.text.trim(),
+        'sub_total': subtotal,
+        'total_payable': totalPayable,
+        'tax_amount': taxAmt,
+        'adjustment_amount': adjustment,
+        'extra_discount_amount': discAmt,
+        'extra_discount_value': double.tryParse(_extraDiscountCtrl.text) ?? 0,
+        'gst_percent': gstPercent,
+        'amount_received': amountReceived,
+        'pending_balance': pendingBalance,
+        'payment_mode': isSplit ? 'Split Payment' : singleMode,
+        'payment_status': pendingBalance <= 0 ? 'Paid' : 'Partial',
+        'payments': formattedPayments,
+        'payment_history': [
+          for (final p in formattedPayments)
+            {
+              'amount': p['amount'],
+              'mode': p['mode'],
+              'date': nowTs,
+              'notes': 'Initial Bill Payment',
+              'recordedAt': DateTime.now().toIso8601String(),
+              'type': 'Initial Payment',
+            }
+        ],
+      });
+
+      final billData = {
+        'billNo': _billNoCtrl.text.trim(),
+        'bill_no': _billNoCtrl.text.trim(),
+        'billType': _billType,
+        'bill_type': _billType,
+        'narration': widget.initialBill != null ? encodedCustomerJson : _narrationCtrl.text.trim(),
+        'billDate': nowTs,
+        'bill_date': nowTs,
+        'customerName': _customerNameCtrl.text.trim(),
+        'customer_name': _customerNameCtrl.text.trim(),
+        'customerMobile': _customerMobileCtrl.text.trim(),
+        'customer_mobile': _customerMobileCtrl.text.trim(),
+        'customerAddress': _customerAddressCtrl.text.trim(),
+        'customer_address': _customerAddressCtrl.text.trim(),
         'customCustomerDetails': {
+          for (var field in _customFields)
+            if (field['key']!.text.trim().isNotEmpty)
+              field['key']!.text.trim(): field['value']!.text.trim()
+        },
+        'custom_customer_details': {
           for (var field in _customFields)
             if (field['key']!.text.trim().isNotEmpty)
               field['key']!.text.trim(): field['value']!.text.trim()
         },
         'items': validRows.map((r) => r.toMap()).toList(),
         'subtotal': subtotal,
+        'sub_total': subtotal,
         'extraDiscountType': _extraDiscountType,
+        'extra_discount_type': _extraDiscountType,
         'extraDiscountValue': double.tryParse(_extraDiscountCtrl.text) ?? 0,
+        'extra_discount_value': double.tryParse(_extraDiscountCtrl.text) ?? 0,
         'extraDiscountAmount': discAmt,
+        'extra_discount_amount': discAmt,
         'gstPercent': gstPercent,
+        'gst_percent': gstPercent,
         'taxAmount': taxAmt,
+        'tax_amount': taxAmt,
         'adjustmentAmount': adjustment,
+        'adjustment_amount': adjustment,
         'totalPayable': totalPayable,
+        'total_payable': totalPayable,
         'paymentMode': isSplit ? 'Split Payment' : singleMode,
+        'payment_mode': isSplit ? 'Split Payment' : singleMode,
         'payments': formattedPayments,
         'paymentHistory': [
           for (final p in formattedPayments)
@@ -456,21 +602,45 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
               'type': 'Initial Payment',
             }
         ],
+        'payment_history': [
+          for (final p in formattedPayments)
+            {
+              'amount': p['amount'],
+              'mode': p['mode'],
+              'date': nowTs,
+              'notes': 'Initial Bill Payment',
+              'recordedAt': DateTime.now().toIso8601String(),
+              'type': 'Initial Payment',
+            }
+        ],
         'amountReceived': amountReceived,
+        'amount_received': amountReceived,
         'pendingBalance': pendingBalance,
+        'pending_balance': pendingBalance,
         'isFullyPaid': pendingBalance <= 0,
+        'is_fully_paid': pendingBalance <= 0,
         'paymentStatus': pendingBalance <= 0 ? 'Paid' : 'Partial',
+        'payment_status': pendingBalance <= 0 ? 'Paid' : 'Partial',
         'balanceReturned': 0.0,
+        'balance_returned': 0.0,
         'createdAt': DateTime.now().toIso8601String(),
+        'created_at': DateTime.now().toIso8601String(),
       };
 
       final createBillFuture = () async {
         try {
           final hostingerBill = Map<String, dynamic>.from(billData);
-          hostingerBill['billDate'] = DateTime.now().toIso8601String();
-          await ApiService().createBill(hostingerBill);
+          if (widget.initialBill != null) {
+            final idToUse = widget.initialBill!['id'] ?? widget.initialBill!['docId'] ?? widget.initialBill!['doc_id'] ?? widget.initialBill!['_id'] ?? widget.initialBill!['billNo'] ?? widget.initialBill!['bill_no'];
+            hostingerBill['id'] = widget.initialBill!['id'] ?? idToUse;
+            hostingerBill['doc_id'] = idToUse;
+            await ApiService().updateBill(idToUse.toString(), hostingerBill);
+          } else {
+            hostingerBill['billDate'] = DateTime.now().toIso8601String();
+            await ApiService().createBill(hostingerBill);
+          }
         } catch (e) {
-          debugPrint('ApiService createBill error: $e');
+          debugPrint('ApiService save bill error: $e');
         }
       }();
 
@@ -496,26 +666,28 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
 
       // Prepare concurrent stock updates
       final stockUpdateFutures = <Future>[];
-      for (final tagId in productMap.keys) {
-        final p = productMap[tagId]!;
-        final regularDeducted = (deductionMap[tagId] ?? 0).toInt();
-        final reservedDeducted = (reservedDeductionMap[tagId] ?? 0).toInt();
-        final totalDeducted = regularDeducted + reservedDeducted;
-        final totalWeightDeducted = weightDeductionMap[tagId] ?? 0.0;
-        
-        final newQty = (p.quantity - totalDeducted).clamp(0, 999999);
-        final newReservedQty = (p.reservedQuantity - reservedDeducted).clamp(0, 999999);
-        final newGrossWeight = (p.grossWeight - totalWeightDeducted).clamp(0.0, double.infinity);
-        
-        final updated = p.copyWith(
-          quantity: newQty,
-          grossWeight: newGrossWeight,
-          reservedQuantity: newReservedQty,
-          isReserved: newReservedQty > 0 ? p.isReserved : false,
-          reservedFor: newReservedQty > 0 ? p.reservedFor : '',
-          status: newQty == 0 ? 'Sold Out' : p.status,
-        );
-        stockUpdateFutures.add(widget.state.updateProduct(updated));
+      if (widget.initialBill == null) {
+        for (final tagId in productMap.keys) {
+          final p = productMap[tagId]!;
+          final regularDeducted = (deductionMap[tagId] ?? 0).toInt();
+          final reservedDeducted = (reservedDeductionMap[tagId] ?? 0).toInt();
+          final totalDeducted = regularDeducted + reservedDeducted;
+          final totalWeightDeducted = weightDeductionMap[tagId] ?? 0.0;
+          
+          final newQty = (p.quantity - totalDeducted).clamp(0, 999999);
+          final newReservedQty = (p.reservedQuantity - reservedDeducted).clamp(0, 999999);
+          final newGrossWeight = (p.grossWeight - totalWeightDeducted).clamp(0.0, double.infinity);
+          
+          final updated = p.copyWith(
+            quantity: newQty,
+            grossWeight: newGrossWeight,
+            reservedQuantity: newReservedQty,
+            isReserved: newReservedQty > 0 ? p.isReserved : false,
+            reservedFor: newReservedQty > 0 ? p.reservedFor : '',
+            status: newQty == 0 ? 'Sold Out' : p.status,
+          );
+          stockUpdateFutures.add(widget.state.updateProduct(updated));
+        }
       }
 
       // Wait for all operations to finish concurrently!
@@ -531,59 +703,7 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
         await showDialog(
           context: context,
           barrierDismissible: true,
-          builder: (ctx) => Dialog(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-            backgroundColor: BoutiqueColors.bgCard,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 36, vertical: 36),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    width: 72,
-                    height: 72,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFE8F5E9),
-                      shape: BoxShape.circle,
-                      border: Border.all(color: const Color(0xFF81C784), width: 2),
-                    ),
-                    child: const Icon(Icons.check_circle_rounded, color: Color(0xFF2E7D32), size: 42),
-                  ),
-                  const SizedBox(height: 20),
-                  const Text(
-                    'Bill Saved!',
-                    style: TextStyle(
-                      fontFamily: 'serif',
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
-                      color: BoutiqueColors.textPrimary,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Bill #$billNo has been saved\nsuccessfully.',
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(fontSize: 14, color: BoutiqueColors.textSecondary, height: 1.5),
-                  ),
-                  const SizedBox(height: 28),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      onPressed: () => Navigator.of(ctx).pop(),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: BoutiqueColors.accent,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                        elevation: 0,
-                      ),
-                      child: const Text('Done', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
+          builder: (ctx) => _SuccessDialog(billNo: billNo),
         );
       }
     } catch (e) {
@@ -609,8 +729,8 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
       _rows.clear();
       _rowVersion.value++;
       _topScanKey++;
-      _extraDiscountCtrl.text = '0';
-      _gstCtrl.text = '0';
+      _extraDiscountCtrl.text = '';
+      _gstCtrl.text = '';
       _gstType = 'No GST';
       _adjustmentCtrl.text = '';
       _billType = 'Sale';
@@ -2879,6 +2999,99 @@ class _CustomerAutocompleteFieldState extends State<_CustomerAutocompleteField> 
             widget.nextFocusNode!.requestFocus();
           }
         },
+      ),
+    );
+  }
+}
+
+class _SuccessDialog extends StatefulWidget {
+  final String billNo;
+  const _SuccessDialog({required this.billNo});
+
+  @override
+  State<_SuccessDialog> createState() => _SuccessDialogState();
+}
+
+class _SuccessDialogState extends State<_SuccessDialog> {
+  @override
+  void initState() {
+    super.initState();
+    HardwareKeyboard.instance.addHandler(_keyHandler);
+  }
+
+  @override
+  void dispose() {
+    HardwareKeyboard.instance.removeHandler(_keyHandler);
+    super.dispose();
+  }
+
+  bool _keyHandler(KeyEvent event) {
+    if (event is KeyDownEvent) {
+      if (event.logicalKey == LogicalKeyboardKey.enter || 
+          event.logicalKey == LogicalKeyboardKey.numpadEnter ||
+          event.logicalKey == LogicalKeyboardKey.space) {
+        if (mounted && Navigator.of(context).canPop()) {
+          Navigator.of(context).pop();
+          return true; // Handled
+        }
+      }
+    }
+    return false;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      backgroundColor: BoutiqueColors.bgCard,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 36, vertical: 36),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 72,
+              height: 72,
+              decoration: BoxDecoration(
+                color: const Color(0xFFE8F5E9),
+                shape: BoxShape.circle,
+                border: Border.all(color: const Color(0xFF81C784), width: 2),
+              ),
+              child: const Icon(Icons.check_circle_rounded, color: Color(0xFF2E7D32), size: 42),
+            ),
+            const SizedBox(height: 20),
+            const Text(
+              'Bill Saved!',
+              style: TextStyle(
+                fontFamily: 'serif',
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+                color: BoutiqueColors.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Bill #${widget.billNo} has been saved\nsuccessfully.',
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 14, color: BoutiqueColors.textSecondary, height: 1.5),
+            ),
+            const SizedBox(height: 28),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: () => Navigator.of(context).pop(),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: BoutiqueColors.accent,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  elevation: 0,
+                ),
+                child: const Text('Done', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

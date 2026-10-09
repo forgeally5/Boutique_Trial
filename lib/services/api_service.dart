@@ -288,20 +288,24 @@ class ApiService {
     }
 
     final items = parseJson(map['items']);
-    final payments = parseJson(map['payments']);
-    final paymentHistory = parseJson(map['payment_history'] ?? map['paymentHistory']);
+    var payments = parseJson(map['payments']);
+    var paymentHistory = parseJson(map['payment_history'] ?? map['paymentHistory']);
     final customCustomerDetails = parseJson(map['custom_customer_details'] ?? map['customCustomerDetails']);
 
-    final totalPayable = _toDouble(map['total_payable'] ?? map['totalPayable']);
-    final amountReceived = _toDouble(map['amount_received'] ?? map['amountReceived']);
-    final pendingBalance = _toDouble(map['pending_balance'] ?? map['pendingBalance']);
-    final subtotal = _toDouble(map['subtotal']);
-    final taxAmount = _toDouble(map['tax_amount'] ?? map['taxAmount']);
-    final adjustmentAmount = _toDouble(map['adjustment_amount'] ?? map['adjustmentAmount']);
-    final extraDiscountAmount = _toDouble(map['extra_discount_amount'] ?? map['extraDiscountAmount']);
-    final extraDiscountValue = _toDouble(map['extra_discount_value'] ?? map['extraDiscountValue']);
-    final gstPercent = _toDouble(map['gst_percent'] ?? map['gstPercent']);
-    final balanceReturned = _toDouble(map['balance_returned'] ?? map['balanceReturned']);
+    var totalPayable = _toDouble(map['total_payable'] ?? map['totalPayable']);
+    var amountReceived = _toDouble(map['amount_received'] ?? map['amountReceived']);
+    var pendingBalance = _toDouble(map['pending_balance'] ?? map['pendingBalance']);
+    var subtotal = _toDouble(map['subtotal'] ?? map['sub_total']);
+    var taxAmount = _toDouble(map['tax_amount'] ?? map['taxAmount']);
+    var adjustmentAmount = _toDouble(map['adjustment_amount'] ?? map['adjustmentAmount']);
+    var extraDiscountAmount = _toDouble(map['extra_discount_amount'] ?? map['extraDiscountAmount']);
+    var extraDiscountValue = _toDouble(map['extra_discount_value'] ?? map['extraDiscountValue']);
+    var gstPercent = _toDouble(map['gst_percent'] ?? map['gstPercent']);
+    var balanceReturned = _toDouble(map['balance_returned'] ?? map['balanceReturned']);
+    
+    var paymentMode = map['payment_mode']?.toString() ?? map['paymentMode']?.toString() ?? 'Cash';
+    var paymentStatus = map['payment_status']?.toString() ?? map['paymentStatus']?.toString() ?? (pendingBalance <= 0 ? 'Paid' : 'Partial');
+    var isFullyPaid = map['is_fully_paid'] == 1 || map['is_fully_paid'] == true || map['isFullyPaid'] == true || pendingBalance <= 0;
 
     final docId = map['doc_id']?.toString() ?? map['docId']?.toString() ?? map['id']?.toString() ?? '';
     final billNo = map['bill_no']?.toString() ?? map['billNo']?.toString() ?? map['voucherNo']?.toString() ?? '';
@@ -328,13 +332,25 @@ class ApiService {
             customerAddress = (parsedNarration['customerAddress'] ?? parsedNarration['custom_address']).toString();
           }
           narrationText = parsedNarration['note']?.toString() ?? '';
+          
+          if (parsedNarration['sub_total'] != null || parsedNarration['subtotal'] != null) subtotal = _toDouble(parsedNarration['sub_total'] ?? parsedNarration['subtotal']);
+          if (parsedNarration['total_payable'] != null || parsedNarration['totalPayable'] != null) totalPayable = _toDouble(parsedNarration['total_payable'] ?? parsedNarration['totalPayable']);
+          if (parsedNarration['tax_amount'] != null || parsedNarration['taxAmount'] != null) taxAmount = _toDouble(parsedNarration['tax_amount'] ?? parsedNarration['taxAmount']);
+          if (parsedNarration['extra_discount_amount'] != null || parsedNarration['extraDiscountAmount'] != null) extraDiscountAmount = _toDouble(parsedNarration['extra_discount_amount'] ?? parsedNarration['extraDiscountAmount']);
+          if (parsedNarration['extra_discount_value'] != null || parsedNarration['extraDiscountValue'] != null) extraDiscountValue = _toDouble(parsedNarration['extra_discount_value'] ?? parsedNarration['extraDiscountValue']);
+          if (parsedNarration['adjustment_amount'] != null || parsedNarration['adjustmentAmount'] != null) adjustmentAmount = _toDouble(parsedNarration['adjustment_amount'] ?? parsedNarration['adjustmentAmount']);
+          if (parsedNarration['gst_percent'] != null || parsedNarration['gstPercent'] != null) gstPercent = _toDouble(parsedNarration['gst_percent'] ?? parsedNarration['gstPercent']);
+          if (parsedNarration['amount_received'] != null || parsedNarration['amountReceived'] != null) amountReceived = _toDouble(parsedNarration['amount_received'] ?? parsedNarration['amountReceived']);
+          if (parsedNarration['pending_balance'] != null || parsedNarration['pendingBalance'] != null) pendingBalance = _toDouble(parsedNarration['pending_balance'] ?? parsedNarration['pendingBalance']);
+          
+          if (parsedNarration['payment_mode'] != null || parsedNarration['paymentMode'] != null) paymentMode = (parsedNarration['payment_mode'] ?? parsedNarration['paymentMode']).toString();
+          if (parsedNarration['payment_status'] != null || parsedNarration['paymentStatus'] != null) paymentStatus = (parsedNarration['payment_status'] ?? parsedNarration['paymentStatus']).toString();
+          if (parsedNarration['payments'] != null) payments = parseJson(parsedNarration['payments']);
+          if (parsedNarration['payment_history'] != null || parsedNarration['paymentHistory'] != null) paymentHistory = parseJson(parsedNarration['payment_history'] ?? parsedNarration['paymentHistory']);
+          isFullyPaid = pendingBalance <= 0;
         }
       } catch (_) {}
     }
-
-    final paymentMode = map['payment_mode']?.toString() ?? map['paymentMode']?.toString() ?? 'Cash';
-    final paymentStatus = map['payment_status']?.toString() ?? map['paymentStatus']?.toString() ?? (pendingBalance <= 0 ? 'Paid' : 'Partial');
-    final isFullyPaid = map['is_fully_paid'] == 1 || map['is_fully_paid'] == true || map['isFullyPaid'] == true || pendingBalance <= 0;
 
     final returnReason = map['return_reason']?.toString() ?? map['returnReason']?.toString() ?? narrationText;
     final returnStatus = map['return_status']?.toString() ?? map['returnStatus']?.toString() ?? 'Processed';

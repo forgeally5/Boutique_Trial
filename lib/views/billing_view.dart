@@ -30,6 +30,7 @@ class BillingView extends StatefulWidget {
 class _BillingViewState extends State<BillingView> {
   // 0 = Create Bill, 1 = Bill History, 2 = Customer Ledger
   int _tab = 0;
+  Map<String, dynamic>? _billToEdit;
 
   @override
   Widget build(BuildContext context) {
@@ -70,14 +71,27 @@ class _BillingViewState extends State<BillingView> {
                 Offstage(
                   offstage: _tab != 0,
                   child: CreateBillScreen(
+                    key: ValueKey(_billToEdit?['billNo'] ?? 'create'),
                     state: widget.state,
+                    initialBill: _billToEdit,
                     onSaved: () {
-                      setState(() => _tab = 1);
+                      setState(() {
+                        _billToEdit = null;
+                        _tab = 1;
+                      });
                     },
                   ),
                 ),
               if (_tab == 1 && canViewHistory)
-                BillHistoryScreen(state: widget.state),
+                BillHistoryScreen(
+                  state: widget.state,
+                  onEditBill: (bill) {
+                    setState(() {
+                      _billToEdit = bill;
+                      _tab = 0;
+                    });
+                  },
+                ),
               if (_tab == 2)
                 CustomerLedgerScreen(state: widget.state),
             ],

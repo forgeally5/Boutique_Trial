@@ -36,7 +36,8 @@ String _formatPaymentBreakdown(Map<String, dynamic> b) {
 
 class BillHistoryScreen extends StatefulWidget {
   final AdminState? state;
-  const BillHistoryScreen({super.key, this.state});
+  final ValueChanged<Map<String, dynamic>>? onEditBill;
+  const BillHistoryScreen({super.key, this.state, this.onEditBill});
 
   @override
   State<BillHistoryScreen> createState() => _BillHistoryScreenState();
@@ -715,6 +716,7 @@ class _BillHistoryScreenState extends State<BillHistoryScreen> {
       onTap: () => _viewBill(b),
       onSettle: () => _openSettleDialog(b),
       onDelete: () => _deleteBill(b),
+      onEditBill: widget.onEditBill != null ? () => widget.onEditBill!(b) : null,
     );
   }
 
@@ -941,6 +943,7 @@ class _BillHistoryTile extends StatefulWidget {
   final VoidCallback onTap;
   final VoidCallback? onSettle;
   final VoidCallback? onDelete;
+  final VoidCallback? onEditBill;
 
   const _BillHistoryTile({
     super.key,
@@ -950,6 +953,7 @@ class _BillHistoryTile extends StatefulWidget {
     required this.onTap,
     this.onSettle,
     this.onDelete,
+    this.onEditBill,
   });
 
   @override
@@ -1135,6 +1139,15 @@ class _BillHistoryTileState extends State<_BillHistoryTile> {
                       onPressed: widget.onTap,
                     ),
                   ),
+                  if (widget.onEditBill != null)
+                    Focus(
+                      skipTraversal: true,
+                      child: IconButton(
+                        icon: const Icon(Icons.edit_outlined, color: BoutiqueColors.accent, size: 19),
+                        tooltip: 'Edit Bill',
+                        onPressed: widget.onEditBill,
+                      ),
+                    ),
                   if (widget.perms.deleteTransactions && widget.onDelete != null)
                     Focus(
                       skipTraversal: true,
@@ -1578,44 +1591,7 @@ class _BillDetailDialogState extends State<_BillDetailDialog> {
                         icon: const Icon(Icons.payments_rounded, size: 16),
                         label: Text('Pay Due (₹${pendingBalance.toStringAsFixed(2)})', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                         onPressed: _openSettleDialog,
-                      )
-                    else
-                      OutlinedButton.icon(
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: BoutiqueColors.accent,
-                          side: const BorderSide(color: BoutiqueColors.border),
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                        ),
-                        icon: const Icon(Icons.edit_note_rounded, size: 16),
-                        label: const Text('Edit Payment', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                        onPressed: _openSettleDialog,
                       ),
-                    const SizedBox(width: 8),
-                    OutlinedButton.icon(
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: BoutiqueColors.accent,
-                        side: const BorderSide(color: BoutiqueColors.border),
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                      ),
-                      icon: const Icon(Icons.person_outline, size: 16),
-                      label: const Text('Edit Customer', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                      onPressed: _openEditCustomerDialog,
-                    ),
-                    const SizedBox(width: 8),
-                    OutlinedButton.icon(
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: BoutiqueColors.accent,
-                        side: const BorderSide(color: BoutiqueColors.border),
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                      ),
-                      icon: const Icon(Icons.edit_square, size: 16),
-                      label: const Text('Edit Items', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                      onPressed: _openEditItemsDialog,
-                    ),
-                    const SizedBox(width: 8),
                     IconButton(
                       icon: const Icon(Icons.print_outlined, color: BoutiqueColors.accent),
                       onPressed: () => _handlePrintPdf(context),
