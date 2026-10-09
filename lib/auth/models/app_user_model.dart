@@ -216,6 +216,21 @@ class AppUserModel {
     };
   }
 
+  /// Safe serialization for local cache/sessions — strips out any plain passwords
+  Map<String, dynamic> toSessionMap() {
+    return {
+      'uid': uid,
+      'name': displayName,
+      'displayName': displayName,
+      'email': email,
+      'role': role,
+      'isActive': isActive,
+      'is_active': isActive ? 1 : 0,
+      'permissions': permissions.toMap(),
+      'createdAt': createdAt?.toIso8601String(),
+    };
+  }
+
   bool get isAdmin => role.toLowerCase() == 'admin';
   bool get isSalesman => role.toLowerCase() == 'salesman';
 }

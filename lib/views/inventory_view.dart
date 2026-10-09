@@ -158,7 +158,7 @@ class _InventoryViewState extends State<InventoryView> {
               if (_selectedDrawerProduct?.tagId == tagId) {
                 setState(() => _selectedDrawerProduct = null);
               }
-              // Actually delete from Firestore + local state
+              // Actually delete from API + local state
               state.deleteProduct(tagId);
               BoutiqueToast.showSuccess(context, 'Product deleted');
             },

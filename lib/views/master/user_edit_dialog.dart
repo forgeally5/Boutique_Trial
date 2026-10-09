@@ -64,7 +64,7 @@ class _UserEditDialogState extends State<UserEditDialog> {
     if (!_formKey.currentState!.validate()) return;
 
     final user = AppUserModel(
-      uid: widget.existingUser?.uid ?? 'temp_${DateTime.now().millisecondsSinceEpoch}', // Real app uses Firebase Auth UID
+      uid: widget.existingUser?.uid ?? 'temp_${DateTime.now().millisecondsSinceEpoch}',
       email: _emailController.text.trim(),
       displayName: _nameController.text.trim(),
       role: _selectedRole,

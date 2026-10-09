@@ -63,6 +63,11 @@ if ($method === 'GET') {
 
 // ─── 2. CREATE PRODUCT ─────────────────────────────────────────────────
 if ($method === 'POST' && ($action === '' || $action === 'create')) {
+    $user = validateToken();
+    if (!$user) {
+        sendResponse(false, null, 'Unauthorized. Please login.', 401);
+    }
+
     $input = getJsonInput();
     $tagId = trim($input['tagId'] ?? $input['tag_id'] ?? '');
     $name = trim($input['name'] ?? '');
@@ -140,6 +145,11 @@ if ($method === 'POST' && ($action === '' || $action === 'create')) {
 
 // ─── 3. UPDATE PRODUCT ─────────────────────────────────────────────────
 if ($method === 'PUT' || ($method === 'POST' && $action === 'update')) {
+    $user = validateToken();
+    if (!$user) {
+        sendResponse(false, null, 'Unauthorized. Please login.', 401);
+    }
+
     $input = getJsonInput();
     $tagId = trim($input['tagId'] ?? $input['tag_id'] ?? '');
     if (empty($tagId)) {
@@ -208,6 +218,11 @@ if ($method === 'PUT' || ($method === 'POST' && $action === 'update')) {
 
 // ─── 4. BATCH STOCK DEDUCTION (Post-Billing) ───────────────────────────
 if ($method === 'POST' && $action === 'deduct_stock') {
+    $user = validateToken();
+    if (!$user) {
+        sendResponse(false, null, 'Unauthorized. Please login.', 401);
+    }
+
     $input = getJsonInput();
     $deductions = $input['deductions'] ?? []; // [{tagId, qty, isReserved}]
 
@@ -238,6 +253,11 @@ if ($method === 'POST' && $action === 'deduct_stock') {
 
 // ─── 5. DELETE PRODUCT ─────────────────────────────────────────────────
 if ($method === 'DELETE' || ($method === 'POST' && $action === 'delete')) {
+    $user = validateToken();
+    if (!$user) {
+        sendResponse(false, null, 'Unauthorized. Please login.', 401);
+    }
+
     $tagId = $_GET['tagId'] ?? (getJsonInput()['tagId'] ?? '');
     if (empty($tagId)) {
         sendResponse(false, null, 'tagId is required', 400);

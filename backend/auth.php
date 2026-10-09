@@ -204,15 +204,15 @@ if ($method === 'POST' && ($action === 'forgot_password' || $action === 'forgot'
 
 // ─── GET CURRENT USER INFO OR ALL USERS ────────────────────────────────
 if ($method === 'GET') {
+    $userPayload = validateToken();
+    if (!$userPayload) {
+        sendResponse(false, null, 'Unauthorized. Please login.', 401);
+    }
+
     if ($action === 'all') {
         $stmt = $pdo->query("SELECT id, uid, name, email, phone, role, is_active, permissions, created_at FROM users ORDER BY id ASC");
         $users = $stmt->fetchAll();
         sendResponse(true, $users);
-    }
-
-    $userPayload = validateToken();
-    if (!$userPayload) {
-        sendResponse(false, null, 'Unauthorized', 401);
     }
 
     $stmt = $pdo->prepare("SELECT id, uid, name, email, phone, role, is_active, permissions, created_at FROM users WHERE id = ?");
@@ -222,13 +222,19 @@ if ($method === 'GET') {
     sendResponse(true, $user);
 }
 
-// ─── CREATE / REGISTER USER ────────────────────────────────────────────
+// ─── CREATE / REGISTER USER (ADMIN ONLY) ───────────────────────────────
 if ($method === 'POST' && ($action === 'register' || $action === 'create')) {
+    $userPayload = validateToken();
+    if (!$userPayload || strtolower($userPayload['role'] ?? '') !== 'admin') {
+        sendResponse(false, null, 'Forbidden. Admin privileges required.', 403);
+    }
+
     $input = getJsonInput();
     $name = trim($input['name'] ?? '');
     $email = trim($input['email'] ?? '');
-    $password = $input['password'] ?? 'Boutique@123';
-    $role = $input['role'] ?? 'Staff';
+    // If no password provided, generate a secure random 8-character temporary password
+    $password = !empty($input['password']) ? $input['password'] : ('Rm#' . strtoupper(bin2hex(random_bytes(3))));
+    $role = $input['role'] ?? 'Salesman';
     $phone = $input['phone'] ?? '';
     $uid = $input['uid'] ?? ('user_' . time() . '_' . rand(100, 999));
     $permissions = isset($input['permissions']) ? json_encode($input['permissions']) : null;
@@ -243,7 +249,11 @@ if ($method === 'POST' && ($action === 'register' || $action === 'create')) {
     try {
         $stmt->execute([$uid, $name, $email, $phone, $role, $hash, $permissions]);
         $newId = $pdo->lastInsertId();
-        sendResponse(true, ['id' => $newId, 'uid' => $uid], 'User created successfully', 201);
+        sendResponse(true, [
+            'id' => $newId,
+            'uid' => $uid,
+            'generated_password' => $password
+        ], 'User created successfully', 201);
     } catch (PDOException $e) {
         sendResponse(false, null, 'User creation failed: ' . $e->getMessage(), 400);
     }
@@ -251,21 +261,33 @@ if ($method === 'POST' && ($action === 'register' || $action === 'create')) {
 
 // ─── UPDATE USER ───────────────────────────────────────────────────────
 if ($method === 'PUT' || ($method === 'POST' && $action === 'update')) {
+    $userPayload = validateToken();
+    if (!$userPayload) {
+        sendResponse(false, null, 'Unauthorized. Please login.', 401);
+    }
+
     $input = getJsonInput();
     $uid = $input['uid'] ?? '';
     if (empty($uid)) {
         sendResponse(false, null, 'User UID required', 400);
     }
 
+    // Only Admin can update other users or change roles/permissions
+    $isAdmin = strtolower($userPayload['role'] ?? '') === 'admin';
+    $isSelf = ($userPayload['uid'] ?? '') === $uid;
+    if (!$isAdmin && !$isSelf) {
+        sendResponse(false, null, 'Forbidden. You can only update your own account.', 403);
+    }
+
     $fields = [];
     $params = [];
 
     if (isset($input['name'])) { $fields[] = "name = ?"; $params[] = $input['name']; }
-    if (isset($input['email'])) { $fields[] = "email = ?"; $params[] = $input['email']; }
+    if (isset($input['email']) && $isAdmin) { $fields[] = "email = ?"; $params[] = $input['email']; }
     if (isset($input['phone'])) { $fields[] = "phone = ?"; $params[] = $input['phone']; }
-    if (isset($input['role'])) { $fields[] = "role = ?"; $params[] = $input['role']; }
-    if (isset($input['is_active'])) { $fields[] = "is_active = ?"; $params[] = (int)$input['is_active']; }
-    if (isset($input['permissions'])) { $fields[] = "permissions = ?"; $params[] = json_encode($input['permissions']); }
+    if (isset($input['role']) && $isAdmin) { $fields[] = "role = ?"; $params[] = $input['role']; }
+    if (isset($input['is_active']) && $isAdmin) { $fields[] = "is_active = ?"; $params[] = (int)$input['is_active']; }
+    if (isset($input['permissions']) && $isAdmin) { $fields[] = "permissions = ?"; $params[] = json_encode($input['permissions']); }
     if (!empty($input['password'])) {
         $fields[] = "password_hash = ?";
         $params[] = password_hash($input['password'], PASSWORD_BCRYPT);
@@ -283,8 +305,13 @@ if ($method === 'PUT' || ($method === 'POST' && $action === 'update')) {
     sendResponse(true, null, 'User updated successfully');
 }
 
-// ─── DELETE USER ───────────────────────────────────────────────────────
+// ─── DELETE USER (ADMIN ONLY) ──────────────────────────────────────────
 if ($method === 'DELETE' || ($method === 'POST' && $action === 'delete')) {
+    $userPayload = validateToken();
+    if (!$userPayload || strtolower($userPayload['role'] ?? '') !== 'admin') {
+        sendResponse(false, null, 'Forbidden. Admin privileges required.', 403);
+    }
+
     $input = getJsonInput();
     $uid = $_GET['uid'] ?? $input['uid'] ?? '';
     if (empty($uid)) {

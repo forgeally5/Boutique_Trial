@@ -50,7 +50,7 @@ class BillRow {
   /// Line GST amount
   double get lineGstAmount => lineAmount * (gstRate / 100);
 
-  /// Serialise for Firestore
+  /// Serialise for JSON API / Local DB
   Map<String, dynamic> toMap() => {
     'tagId': product?.tagId ?? '',
     'name': product?.name ?? '',

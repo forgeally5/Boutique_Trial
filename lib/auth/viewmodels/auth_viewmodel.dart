@@ -241,7 +241,7 @@ class AuthViewModel extends ChangeNotifier {
         await Hive.openBox(_sessionBoxName);
       }
       final box = Hive.box(_sessionBoxName);
-      await box.put('session_user', jsonEncode(user.toMap()));
+      await box.put('session_user', jsonEncode(user.toSessionMap()));
       if (token != null) await box.put('session_token', token);
     } catch (e) {
       debugPrint('Error saving session locally: $e');

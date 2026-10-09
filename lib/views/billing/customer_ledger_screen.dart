@@ -42,7 +42,7 @@ class _CustomerLedgerScreenState extends State<CustomerLedgerScreen> {
     if (v == null) return DateTime.now();
     if (v is DateTime) return v;
     if (v is String) return DateTime.tryParse(v) ?? DateTime.now();
-    // Handle map-style {seconds:..., nanoseconds:...} from old Firestore data
+    // Handle map-style {seconds:..., nanoseconds:...} from timestamp data
     if (v is Map) {
       final s = v['seconds'] ?? v['_seconds'];
       if (s != null) return DateTime.fromMillisecondsSinceEpoch((s as num).toInt() * 1000);

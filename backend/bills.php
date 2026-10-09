@@ -74,6 +74,11 @@ if ($method === 'GET') {
 
 // ─── 2. CREATE NEW BILL ────────────────────────────────────────────────
 if ($method === 'POST' && ($action === '' || $action === 'create')) {
+    $user = validateToken();
+    if (!$user) {
+        sendResponse(false, null, 'Unauthorized. Please login.', 401);
+    }
+
     $input = getJsonInput();
     $billNo = trim($input['billNo'] ?? $input['bill_no'] ?? '');
     $docId = $input['docId'] ?? $input['doc_id'] ?? ('bill_' . time() . '_' . rand(1000, 9999));
@@ -141,6 +146,11 @@ if ($method === 'POST' && ($action === '' || $action === 'create')) {
 
 // ─── 3. UPDATE BILL / RECORD PAYMENT / RETURN ──────────────────────────
 if ($method === 'PUT' || ($method === 'POST' && $action === 'update')) {
+    $user = validateToken();
+    if (!$user) {
+        sendResponse(false, null, 'Unauthorized. Please login.', 401);
+    }
+
     $input = getJsonInput();
     $idVal = $input['id'] ?? $input['docId'] ?? $input['doc_id'] ?? $input['billNo'] ?? $input['bill_no'] ?? '';
     if (empty($idVal)) {
@@ -212,6 +222,11 @@ if ($method === 'PUT' || ($method === 'POST' && $action === 'update')) {
 
 // ─── 4. DELETE BILL ────────────────────────────────────────────────────
 if ($method === 'DELETE' || ($method === 'POST' && $action === 'delete')) {
+    $user = validateToken();
+    if (!$user) {
+        sendResponse(false, null, 'Unauthorized. Please login.', 401);
+    }
+
     $docId = $_GET['docId'] ?? $_GET['id'] ?? (getJsonInput()['docId'] ?? getJsonInput()['id'] ?? '');
     if (empty($docId)) {
         sendResponse(false, null, 'docId is required', 400);

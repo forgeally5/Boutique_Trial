@@ -670,7 +670,7 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
   // ── Build ─────────────────────────────────────────────────────────────────
   // NOTE: No ListenableBuilder(widget.state) here — we track products via
   // _onStateProductsUpdate() listener which only updates _cachedProducts.
-  // This prevents AdminState Firestore events from rebuilding the whole form.
+  // This prevents AdminState sync events from rebuilding the whole form.
 
   @override
   Widget build(BuildContext context) {

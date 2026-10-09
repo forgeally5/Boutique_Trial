@@ -31,7 +31,7 @@ class LiveRate {
   }
 }
 
-/// Flat data structure holding all live rates — used to read/write from Firestore.
+/// Flat data structure holding all live rates — used to read/write settings.
 class LiveRatesData {
   final double gold24KTrading;
   final double gold22KJewellery;

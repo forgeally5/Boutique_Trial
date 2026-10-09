@@ -1,7 +1,5 @@
 import 'dart:async';
-import 'dart:convert';
 import 'package:flutter/foundation.dart';
-import 'package:http/http.dart' as http;
 import '../auth/models/app_user_model.dart';
 import '../auth/models/system_quota_model.dart';
 import '../auth/models/override_request_model.dart';
@@ -61,7 +59,6 @@ class UserManagementService {
   }
 
   Future<void> updateUser(AppUserModel user) async {
-    final url = Uri.parse('${_apiService.baseUrl}/auth.php?action=update');
     final payload = {
       'uid': user.uid,
       'name': user.displayName,
@@ -72,21 +69,19 @@ class UserManagementService {
       if (user.plainPassword != null && user.plainPassword!.isNotEmpty)
         'password': user.plainPassword,
     };
-    await http.post(url, headers: {'Content-Type': 'application/json'}, body: jsonEncode(payload));
+    await _apiService.updateUser(payload);
   }
 
   Future<void> toggleUserStatus(String uid, bool isActive) async {
-    final url = Uri.parse('${_apiService.baseUrl}/auth.php?action=update');
     final payload = {
       'uid': uid,
       'is_active': isActive ? 1 : 0,
     };
-    await http.post(url, headers: {'Content-Type': 'application/json'}, body: jsonEncode(payload));
+    await _apiService.updateUser(payload);
   }
 
   Future<void> deleteUser(String uid) async {
-    final url = Uri.parse('${_apiService.baseUrl}/auth.php?action=delete&uid=${Uri.encodeComponent(uid)}');
-    await http.post(url);
+    await _apiService.deleteUser(uid);
   }
 
   // ---------------------------------------------------------------------------

@@ -466,7 +466,7 @@ class _ItemDialogState extends State<ItemDialog> {
       }
       if (mounted) Navigator.pop(context);
     } catch (e) {
-      if (mounted) BoutiqueToast.showError(context, 'Failed to save to Firestore: $e');
+      if (mounted) BoutiqueToast.showError(context, 'Failed to save product: $e');
     }
   }
 

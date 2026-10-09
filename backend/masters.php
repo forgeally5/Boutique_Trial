@@ -25,7 +25,12 @@ if ($method === 'GET') {
 }
 
 // ─── ADD MASTER ITEM ───────────────────────────────────────────────────
-if ($method === 'POST') {
+if ($method === 'POST' && $action !== 'delete') {
+    $user = validateToken();
+    if (!$user) {
+        sendResponse(false, null, 'Unauthorized. Please login.', 401);
+    }
+
     $input = getJsonInput();
     $type = $input['type'] ?? $type;
     $name = trim($input['name'] ?? '');
@@ -42,6 +47,11 @@ if ($method === 'POST') {
 
 // ─── RENAME MASTER ITEM ────────────────────────────────────────────────
 if ($method === 'PUT') {
+    $user = validateToken();
+    if (!$user) {
+        sendResponse(false, null, 'Unauthorized. Please login.', 401);
+    }
+
     $input = getJsonInput();
     $type = $input['type'] ?? $type;
     $oldName = trim($input['oldName'] ?? '');
@@ -60,6 +70,11 @@ if ($method === 'PUT') {
 // ─── DELETE MASTER ITEM ────────────────────────────────────────────────
 $action = $_GET['action'] ?? '';
 if ($method === 'DELETE' || ($method === 'POST' && $action === 'delete')) {
+    $user = validateToken();
+    if (!$user) {
+        sendResponse(false, null, 'Unauthorized. Please login.', 401);
+    }
+
     $type = $_GET['type'] ?? (getJsonInput()['type'] ?? '');
     $name = $_GET['name'] ?? (getJsonInput()['name'] ?? '');
 

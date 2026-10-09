@@ -19,7 +19,7 @@ class AdminState extends ChangeNotifier {
   StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
   Timer? _periodicConnTimer;
 
-  // ── Debounce notifyListeners so rapid Firestore events batch into one rebuild ──
+  // ── Debounce notifyListeners so rapid update events batch into one rebuild ──
   Timer? _debounceTimer;
   void _debouncedNotify() {
     _debounceTimer?.cancel();
@@ -62,15 +62,12 @@ class AdminState extends ChangeNotifier {
   // Diamond Rates Map: key is "CLARITY_COLOR-RANGE" (e.g. "IF_D-E")
   final Map<String, double> _diamondRates = {};
 
-  // Products — separate raw maps per Firestore collection to avoid double-merge cost
+  // Products — separate raw maps per collection to avoid double-merge cost
   final Map<String, Product> _jewelryInventoryMap = {};
   final Map<String, Product> _productsMap = {};
   List<Product> _productsList = [];
 
   /// Tombstone set — tagIds deleted by the user in this session.
-  /// Prevents Firestore stream events from re-inserting a product that was
-  /// already deleted but whose deletion is still propagating across both
-  /// collections (race condition between two async deletes).
   final Set<String> _deletedTagIds = {};
   final LiveRateService _liveRateService = LiveRateService();
 
@@ -119,7 +116,7 @@ class AdminState extends ChangeNotifier {
     'Yet to add',
   ];
 
-  // Default devotional-store categories (merged with dynamic Firestore categories in getter)
+  // Default devotional-store categories (merged with dynamic backend categories in getter)
   final List<String> _categories = [
     'Idols', 'Pooja Thali Sets', 'Lamps/Vilakku', 'Incense/Agarbathi',
     'Camphor', 'Oil/Ghee', 'Bells', 'Kalasam', 'Religious Books',
@@ -843,9 +840,7 @@ class AdminState extends ChangeNotifier {
     });
   }
 
-  // _persistCalculationsToFirestore removed (was causing N+1 Firestore writes
-  // on every live-rate stream event). Rates are persisted only when the user
-  // explicitly calls updateMultipleLiveRates() or updateDiamondRates().
+  // Rates are persisted only when the user explicitly calls updateMultipleLiveRates() or updateDiamondRates().
 
   Future<void> updateLiveRate(String id, double newRate) async {
     await updateMultipleLiveRates({id: newRate});

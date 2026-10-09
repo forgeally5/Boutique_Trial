@@ -89,6 +89,24 @@ class ApiService {
     }
   }
 
+  Future<void> updateUser(Map<String, dynamic> userData) async {
+    final url = Uri.parse('$baseUrl/auth.php?action=update');
+    final res = await http.post(url, headers: _headers, body: jsonEncode(userData));
+    final data = jsonDecode(res.body);
+    if (res.statusCode != 200) {
+      throw Exception(data['message'] ?? 'Failed to update user');
+    }
+  }
+
+  Future<void> deleteUser(String uid) async {
+    final url = Uri.parse('$baseUrl/auth.php?action=delete&uid=${Uri.encodeComponent(uid)}');
+    final res = await http.post(url, headers: _headers);
+    final data = jsonDecode(res.body);
+    if (res.statusCode != 200) {
+      throw Exception(data['message'] ?? 'Failed to delete user');
+    }
+  }
+
   // ─── PRODUCTS ────────────────────────────────────────────────────────
   static double _toDouble(dynamic v) {
     if (v == null) return 0.0;

@@ -28,6 +28,11 @@ if ($method === 'GET') {
 
 // ─── SAVE / UPDATE SETTING ─────────────────────────────────────────────
 if ($method === 'POST' || $method === 'PUT') {
+    $user = validateToken();
+    if (!$user) {
+        sendResponse(false, null, 'Unauthorized. Please login.', 401);
+    }
+
     $input = getJsonInput();
     $key = $input['key'] ?? $key;
     $value = $input['value'] ?? $input;

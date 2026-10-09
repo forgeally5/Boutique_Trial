@@ -28,7 +28,7 @@ class ConnectivityHelper {
         }
       }
     } catch (_) {
-      // If plugin is not implemented/registered, default to true for native Firestore sync
+      // If plugin is not implemented/registered, default to true for network sync
       return true;
     }
   }

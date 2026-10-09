@@ -17,6 +17,11 @@ if ($method === 'GET') {
 
 // ─── CREATE VENDOR ISSUE ───────────────────────────────────────────────
 if ($method === 'POST' && ($action === '' || $action === 'create')) {
+    $user = validateToken();
+    if (!$user) {
+        sendResponse(false, null, 'Unauthorized. Please login.', 401);
+    }
+
     $input = getJsonInput();
     $docId = $input['docId'] ?? $input['doc_id'] ?? ('issue_' . time() . '_' . rand(100, 999));
     $vendorName = trim($input['vendorName'] ?? $input['vendor_name'] ?? '');
@@ -46,6 +51,11 @@ if ($method === 'POST' && ($action === '' || $action === 'create')) {
 
 // ─── UPDATE VENDOR ISSUE ───────────────────────────────────────────────
 if ($method === 'PUT' || ($method === 'POST' && $action === 'update')) {
+    $user = validateToken();
+    if (!$user) {
+        sendResponse(false, null, 'Unauthorized. Please login.', 401);
+    }
+
     $input = getJsonInput();
     $docId = $input['docId'] ?? $input['doc_id'] ?? '';
     if (empty($docId)) {
@@ -73,6 +83,11 @@ if ($method === 'PUT' || ($method === 'POST' && $action === 'update')) {
 
 // ─── DELETE VENDOR ISSUE ───────────────────────────────────────────────
 if ($method === 'DELETE' || ($method === 'POST' && $action === 'delete')) {
+    $user = validateToken();
+    if (!$user) {
+        sendResponse(false, null, 'Unauthorized. Please login.', 401);
+    }
+
     $docId = $_GET['docId'] ?? (getJsonInput()['docId'] ?? '');
     if (empty($docId)) {
         sendResponse(false, null, 'docId is required', 400);

@@ -4,6 +4,11 @@ require_once __DIR__ . '/config.php';
 $method = $_SERVER['REQUEST_METHOD'];
 
 if ($method === 'POST') {
+    $user = validateToken();
+    if (!$user) {
+        sendResponse(false, null, 'Unauthorized. Please login.', 401);
+    }
+
     if (!isset($_FILES['file']) && !isset($_FILES['image'])) {
         sendResponse(false, null, 'No file uploaded', 400);
     }
