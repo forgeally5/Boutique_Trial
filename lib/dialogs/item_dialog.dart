@@ -44,6 +44,8 @@ class _ItemDialogState extends State<ItemDialog> {
   late TextEditingController _reservedQtyCtrl;
   late TextEditingController _ratePerGramCtrl;
   late TextEditingController _grossWeightCtrl;
+  late TextEditingController _addQuantityCtrl;
+  late TextEditingController _addWeightCtrl;
 
   String _discountType = '%'; // "%" or "₹"
   String _pricingType = 'Quantity-Based'; // "Quantity-Based" or "Weight-Based"
@@ -220,6 +222,8 @@ class _ItemDialogState extends State<ItemDialog> {
     _gstRateCtrl = TextEditingController(text: p != null && p.gstRate > 0 ? (p.gstRate == p.gstRate.toInt() ? p.gstRate.toInt().toString() : p.gstRate.toString()) : '0');
     _reservedForCtrl = TextEditingController(text: p != null ? p.reservedFor : '');
     _reservedQtyCtrl = TextEditingController(text: p != null && p.reservedQuantity > 0 ? p.reservedQuantity.toString() : '');
+    _addQuantityCtrl = TextEditingController();
+    _addWeightCtrl = TextEditingController();
 
     if (p != null && p.name.isNotEmpty) {
       _itemName = p.name;
@@ -279,6 +283,8 @@ class _ItemDialogState extends State<ItemDialog> {
     _gstRateCtrl.dispose();
     _reservedForCtrl.dispose();
     _reservedQtyCtrl.dispose();
+    _addQuantityCtrl.dispose();
+    _addWeightCtrl.dispose();
     super.dispose();
   }
 
@@ -317,14 +323,6 @@ class _ItemDialogState extends State<ItemDialog> {
     if (name.isEmpty) {
       if (_nameTouched) return 'Item Name is required';
       return null;
-    }
-    final isEdit = widget.initialProduct != null;
-    final currentTagId = widget.initialProduct?.tagId.trim().toUpperCase() ?? '';
-    final isDuplicate = widget.adminState.allProducts
-        .where((p) => isEdit ? p.tagId.trim().toUpperCase() != currentTagId : true)
-        .any((p) => p.name.trim().toLowerCase() == name.toLowerCase());
-    if (isDuplicate) {
-      return 'A product with this name already exists in inventory.';
     }
     return null;
   }
@@ -411,6 +409,14 @@ class _ItemDialogState extends State<ItemDialog> {
       setState(() => _isUploading = false);
     }
 
+    final int oldQty = int.tryParse(_quantityCtrl.text) ?? 0;
+    final int addedQty = int.tryParse(_addQuantityCtrl.text) ?? 0;
+    final int newQty = widget.initialProduct != null ? oldQty + addedQty : oldQty;
+
+    final double oldGrossWeight = double.tryParse(_grossWeightCtrl.text) ?? 0.0;
+    final double addedGrossWeight = double.tryParse(_addWeightCtrl.text) ?? 0.0;
+    final double newGrossWeight = widget.initialProduct != null ? oldGrossWeight + addedGrossWeight : oldGrossWeight;
+
     final product = Product(
       tagId: _tagIdCtrl.text.trim().toUpperCase(),
       name: resolvedName,
@@ -422,12 +428,12 @@ class _ItemDialogState extends State<ItemDialog> {
       vendor: _vendor,
       notes: _notesCtrl.text.trim(),
       pricingType: _pricingType,
-      grossWeight: _pricingType == 'Weight-Based' ? (double.tryParse(_grossWeightCtrl.text) ?? 0.0) : 0.0,
+      grossWeight: _pricingType == 'Weight-Based' ? newGrossWeight : 0.0,
       netWeight: 0.0,
       weightUnit: _weightUnit,
       ratePerGram: _pricingType == 'Weight-Based' ? (double.tryParse(_ratePerGramCtrl.text) ?? 0.0) : 0.0,
       makingCharges: 0.0,
-      quantity: int.tryParse(_quantityCtrl.text) ?? 0,
+      quantity: newQty,
       unit: _unit,
       mrp: _pricingType == 'Weight-Based' ? 0.0 : ((double.tryParse(_mrpCtrl.text) ?? 0.0) > 0 ? double.tryParse(_mrpCtrl.text)! : _sellingPrice),
       sellingPrice: _pricingType == 'Weight-Based' ? 0.0 : _sellingPrice,
@@ -455,6 +461,40 @@ class _ItemDialogState extends State<ItemDialog> {
         }
       } else {
         await widget.adminState.updateProduct(product);
+        if (addedQty > 0 || addedGrossWeight > 0) {
+          try {
+            final now = DateTime.now();
+            final docId = 'INW_${now.millisecondsSinceEpoch}_${product.tagId}';
+            final billNo = 'INW-${now.millisecondsSinceEpoch.toString().substring(5)}';
+            await ApiService().createBill({
+              'docId': docId,
+              'billNo': billNo,
+              'billType': 'Inward',
+              'billDate': now.toIso8601String(),
+              'customerName': 'Stock Inward',
+              'paymentStatus': 'Paid',
+              'isFullyPaid': true,
+              'items': [
+                {
+                  'tagId': product.tagId,
+                  'name': product.name,
+                  'category': product.category,
+                  'pricingType': product.pricingType,
+                  'qty': addedQty > 0 ? addedQty : (_pricingType == 'Weight-Based' ? 1 : 0),
+                  'weight': addedGrossWeight,
+                  'oldQty': oldQty,
+                  'newQty': newQty,
+                  'oldWeight': oldGrossWeight,
+                  'newWeight': newGrossWeight,
+                  'rate': _pricingType == 'Quantity-Based' ? product.sellingPrice : product.ratePerGram,
+                  'amount': _pricingType == 'Quantity-Based' ? (product.sellingPrice * addedQty) : (product.ratePerGram * addedGrossWeight),
+                }
+              ]
+            });
+          } catch (e) {
+            debugPrint('Failed to log inward transaction: $e');
+          }
+        }
         if (mounted) {
           if (downloadInwardExcel) {
             await ExcelGenerator.downloadInwardBillExcel(products: [product]);
@@ -476,11 +516,13 @@ class _ItemDialogState extends State<ItemDialog> {
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       backgroundColor: _bg,
-      child: Container(
-        width: 860,
-        constraints: const BoxConstraints(maxHeight: 680),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
+      child: FocusTraversalGroup(
+        policy: WidgetOrderTraversalPolicy(),
+        child: Container(
+          width: 860,
+          constraints: const BoxConstraints(maxHeight: 680),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
           children: [
             // Header
             Container(
@@ -748,14 +790,33 @@ class _ItemDialogState extends State<ItemDialog> {
                     const SizedBox(height: 12),
                     Row(children: [
                       Expanded(
-                        child: _field(
-                          label: 'Quantity *',
-                          controller: _quantityCtrl,
-                          isNum: true,
-                          isInt: true,
-                          error: _quantityError(),
-                          hint: '0',
-                          onChanged: (_) => setState(() => _quantityTouched = true),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: _field(
+                                label: 'Quantity *',
+                                controller: _quantityCtrl,
+                                readOnly: widget.initialProduct != null,
+                                isNum: true,
+                                isInt: true,
+                                error: _quantityError(),
+                                hint: '0',
+                                onChanged: (_) => setState(() => _quantityTouched = true),
+                              ),
+                            ),
+                            if (widget.initialProduct != null) ...[
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: _field(
+                                  label: 'Add Stock (+)',
+                                  controller: _addQuantityCtrl,
+                                  isNum: true,
+                                  isInt: true,
+                                  hint: '0',
+                                ),
+                              ),
+                            ],
+                          ],
                         ),
                       ),
                       const SizedBox(width: 16),
@@ -787,6 +848,11 @@ class _ItemDialogState extends State<ItemDialog> {
                     // ── Section 3: Pricing & Discount ─────────────────────
                     _sectionHeader('Pricing & Discount', Icons.currency_rupee_rounded),
                     const SizedBox(height: 12),
+                    FocusTraversalGroup(
+                      policy: OrderedTraversalPolicy(),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
                     Row(
                       children: [
                         Expanded(
@@ -799,30 +865,54 @@ class _ItemDialogState extends State<ItemDialog> {
                             child: Row(
                               children: [
                                 Expanded(
-                                  child: GestureDetector(
-                                    onTap: () => setState(() => _pricingType = 'Quantity-Based'),
-                                    child: Container(
-                                      padding: const EdgeInsets.symmetric(vertical: 10),
-                                      decoration: BoxDecoration(
-                                        color: _pricingType == 'Quantity-Based' ? _brown : Colors.transparent,
-                                        borderRadius: const BorderRadius.horizontal(left: Radius.circular(8)),
+                                  child: FocusTraversalOrder(
+                                    order: const NumericFocusOrder(1),
+                                    child: Focus(
+                                      onKeyEvent: (node, event) {
+                                        if (event is KeyDownEvent && (event.logicalKey == LogicalKeyboardKey.enter || event.logicalKey == LogicalKeyboardKey.space)) {
+                                          setState(() => _pricingType = 'Quantity-Based');
+                                          return KeyEventResult.handled;
+                                        }
+                                        return KeyEventResult.ignored;
+                                      },
+                                      child: GestureDetector(
+                                        onTap: () => setState(() => _pricingType = 'Quantity-Based'),
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(vertical: 10),
+                                          decoration: BoxDecoration(
+                                            color: _pricingType == 'Quantity-Based' ? _brown : Colors.transparent,
+                                            borderRadius: const BorderRadius.horizontal(left: Radius.circular(8)),
+                                          ),
+                                          alignment: Alignment.center,
+                                          child: Text('Fixed Price', style: TextStyle(color: _pricingType == 'Quantity-Based' ? Colors.white : _lightBrown, fontWeight: FontWeight.bold)),
+                                        ),
                                       ),
-                                      alignment: Alignment.center,
-                                      child: Text('Fixed Price', style: TextStyle(color: _pricingType == 'Quantity-Based' ? Colors.white : _lightBrown, fontWeight: FontWeight.bold)),
                                     ),
                                   ),
                                 ),
                                 Expanded(
-                                  child: GestureDetector(
-                                    onTap: () => setState(() => _pricingType = 'Weight-Based'),
-                                    child: Container(
-                                      padding: const EdgeInsets.symmetric(vertical: 10),
-                                      decoration: BoxDecoration(
-                                        color: _pricingType == 'Weight-Based' ? _brown : Colors.transparent,
-                                        borderRadius: const BorderRadius.horizontal(right: Radius.circular(8)),
+                                  child: FocusTraversalOrder(
+                                    order: const NumericFocusOrder(2),
+                                    child: Focus(
+                                      onKeyEvent: (node, event) {
+                                        if (event is KeyDownEvent && (event.logicalKey == LogicalKeyboardKey.enter || event.logicalKey == LogicalKeyboardKey.space)) {
+                                          setState(() => _pricingType = 'Weight-Based');
+                                          return KeyEventResult.handled;
+                                        }
+                                        return KeyEventResult.ignored;
+                                      },
+                                      child: GestureDetector(
+                                        onTap: () => setState(() => _pricingType = 'Weight-Based'),
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(vertical: 10),
+                                          decoration: BoxDecoration(
+                                            color: _pricingType == 'Weight-Based' ? _brown : Colors.transparent,
+                                            borderRadius: const BorderRadius.horizontal(right: Radius.circular(8)),
+                                          ),
+                                          alignment: Alignment.center,
+                                          child: Text('By Weight', style: TextStyle(color: _pricingType == 'Weight-Based' ? Colors.white : _lightBrown, fontWeight: FontWeight.bold)),
+                                        ),
                                       ),
-                                      alignment: Alignment.center,
-                                      child: Text('By Weight', style: TextStyle(color: _pricingType == 'Weight-Based' ? Colors.white : _lightBrown, fontWeight: FontWeight.bold)),
                                     ),
                                   ),
                                 ),
@@ -841,26 +931,30 @@ class _ItemDialogState extends State<ItemDialog> {
                                   controller: _gstRateCtrl,
                                   isNum: true,
                                   hint: '0',
+                                  focusOrder: 9,
                                 ),
                               ),
                               const SizedBox(width: 4),
-                              PopupMenuButton<String>(
-                                icon: const Icon(Icons.arrow_drop_down, color: _brown),
-                                tooltip: 'Common GST Rates',
-                                onSelected: (v) {
-                                  if (v == 'Custom') {
-                                    _gstRateCtrl.clear();
-                                  } else {
-                                    _gstRateCtrl.text = v;
-                                  }
-                                },
-                                itemBuilder: (context) {
-                                  final items = ['0', '5', '12', '18', '28']
-                                      .map((r) => PopupMenuItem(value: r, child: Text('$r%')))
-                                      .toList();
-                                  items.add(const PopupMenuItem(value: 'Custom', child: Text('Custom')));
-                                  return items;
-                                },
+                              FocusTraversalOrder(
+                                order: const NumericFocusOrder(10),
+                                child: PopupMenuButton<String>(
+                                  icon: const Icon(Icons.arrow_drop_down, color: _brown),
+                                  tooltip: 'Common GST Rates',
+                                  onSelected: (v) {
+                                    if (v == 'Custom') {
+                                      _gstRateCtrl.clear();
+                                    } else {
+                                      _gstRateCtrl.text = v;
+                                    }
+                                  },
+                                  itemBuilder: (context) {
+                                    final items = ['0', '5', '12', '18', '28']
+                                        .map((r) => PopupMenuItem(value: r, child: Text('$r%')))
+                                        .toList();
+                                    items.add(const PopupMenuItem(value: 'Custom', child: Text('Custom')));
+                                    return items;
+                                  },
+                                ),
                               ),
                             ],
                           ),
@@ -881,6 +975,7 @@ class _ItemDialogState extends State<ItemDialog> {
                                     controller: _ratePerGramCtrl,
                                     isNum: true,
                                     hint: 'e.g. 85.50',
+                                    focusOrder: 3,
                                   ),
                                 ),
                                 const SizedBox(width: 8),
@@ -897,13 +992,17 @@ class _ItemDialogState extends State<ItemDialog> {
                                               _availableWeightUnits.contains(_weightUnit) ? _weightUnit : (_availableWeightUnits.isNotEmpty ? _availableWeightUnits.first : 'g'),
                                               _availableWeightUnits,
                                               (v) => setState(() => _weightUnit = v!),
+                                              focusOrder: 4,
                                             ),
                                           ),
                                           const SizedBox(width: 4),
-                                          IconButton(
-                                            onPressed: () => _showManageMasterListDialog('Weight Unit'),
-                                            icon: const Icon(Icons.settings_outlined, color: _brown),
-                                            tooltip: 'Manage Units',
+                                          FocusTraversalOrder(
+                                            order: const NumericFocusOrder(5),
+                                            child: IconButton(
+                                              onPressed: () => _showManageMasterListDialog('Weight Unit'),
+                                              icon: const Icon(Icons.settings_outlined, color: _brown),
+                                              tooltip: 'Manage Units',
+                                            ),
                                           ),
                                         ],
                                       ),
@@ -917,6 +1016,7 @@ class _ItemDialogState extends State<ItemDialog> {
                               controller: _sellingPriceCtrl,
                               isNum: true,
                               hint: '0.00',
+                              focusOrder: 3,
                               onChanged: (v) {
                                 if (_mrpCtrl.text.isEmpty) {
                                   _mrpCtrl.text = v;
@@ -933,11 +1033,31 @@ class _ItemDialogState extends State<ItemDialog> {
                               children: [
                                 Expanded(
                                   flex: 2,
-                                  child: _field(
-                                    label: 'Total Stock ($_weightUnit)',
-                                    controller: _grossWeightCtrl,
-                                    isNum: true,
-                                    hint: 'e.g. 500.0',
+                                  child: Row(
+                                    children: [
+                                      Expanded(
+                                        child: _field(
+                                          label: 'Total Stock ($_weightUnit)',
+                                          controller: _grossWeightCtrl,
+                                          readOnly: widget.initialProduct != null,
+                                          isNum: true,
+                                          hint: 'e.g. 500.0',
+                                          focusOrder: 6,
+                                        ),
+                                      ),
+                                      if (widget.initialProduct != null) ...[
+                                        const SizedBox(width: 8),
+                                        Expanded(
+                                          child: _field(
+                                            label: 'Add Stock (+)',
+                                            controller: _addWeightCtrl,
+                                            isNum: true,
+                                            hint: '0.0',
+                                            focusOrder: 6.5,
+                                          ),
+                                        ),
+                                      ],
+                                    ],
                                   ),
                                 ),
                                 const SizedBox(width: 8),
@@ -954,13 +1074,17 @@ class _ItemDialogState extends State<ItemDialog> {
                                               _availableWeightUnits.contains(_weightUnit) ? _weightUnit : (_availableWeightUnits.isNotEmpty ? _availableWeightUnits.first : 'g'),
                                               _availableWeightUnits,
                                               (v) => setState(() => _weightUnit = v!),
+                                              focusOrder: 7,
                                             ),
                                           ),
                                           const SizedBox(width: 4),
-                                          IconButton(
-                                            onPressed: () => _showManageMasterListDialog('Weight Unit'),
-                                            icon: const Icon(Icons.settings_outlined, color: _brown),
-                                            tooltip: 'Manage Units',
+                                          FocusTraversalOrder(
+                                            order: const NumericFocusOrder(8),
+                                            child: IconButton(
+                                              onPressed: () => _showManageMasterListDialog('Weight Unit'),
+                                              icon: const Icon(Icons.settings_outlined, color: _brown),
+                                              tooltip: 'Manage Units',
+                                            ),
                                           ),
                                         ],
                                       ),
@@ -974,6 +1098,7 @@ class _ItemDialogState extends State<ItemDialog> {
                               controller: _mrpCtrl,
                               isNum: true,
                               hint: '0.00',
+                              focusOrder: 4,
                             ),
                       ),
                     ]),
@@ -989,6 +1114,7 @@ class _ItemDialogState extends State<ItemDialog> {
                           isNum: true,
                           error: _discountError(),
                           hint: '0',
+                          focusOrder: 11,
                         ),
                       ),
                       const SizedBox(width: 8),
@@ -1007,8 +1133,8 @@ class _ItemDialogState extends State<ItemDialog> {
                               color: Colors.white,
                             ),
                             child: Row(children: [
-                              _discountTypeBtn('%'),
-                              _discountTypeBtn('₹'),
+                              _discountTypeBtn('%', focusOrder: 12),
+                              _discountTypeBtn('₹', focusOrder: 13),
                             ]),
                           ),
                         ],
@@ -1083,30 +1209,43 @@ class _ItemDialogState extends State<ItemDialog> {
                       controller: _notesCtrl,
                       maxLines: 2,
                       hint: 'Any extra details about this item...',
+                      focusOrder: 14,
                     ),
                     const SizedBox(height: 12),
-                    GestureDetector(
-                      onTap: () => setState(() => _isReserved = !_isReserved),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                        decoration: BoxDecoration(
-                          color: _isReserved ? const Color(0xFFE8F5E9) : Colors.white,
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(
-                            color: _isReserved ? Colors.green : _border,
+                    FocusTraversalOrder(
+                      order: const NumericFocusOrder(15),
+                      child: Focus(
+                        onKeyEvent: (node, event) {
+                          if (event is KeyDownEvent && (event.logicalKey == LogicalKeyboardKey.enter || event.logicalKey == LogicalKeyboardKey.space)) {
+                            setState(() => _isReserved = !_isReserved);
+                            return KeyEventResult.handled;
+                          }
+                          return KeyEventResult.ignored;
+                        },
+                        child: GestureDetector(
+                          onTap: () => setState(() => _isReserved = !_isReserved),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                            decoration: BoxDecoration(
+                              color: _isReserved ? const Color(0xFFE8F5E9) : Colors.white,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: _isReserved ? Colors.green : _border,
+                              ),
+                            ),
+                            child: Row(children: [
+                              Icon(
+                                _isReserved ? Icons.check_box : Icons.check_box_outline_blank,
+                                color: _isReserved ? Colors.green : _lightBrown,
+                              ),
+                              const SizedBox(width: 10),
+                              const Text(
+                                'Reserved for Customer',
+                                style: TextStyle(fontWeight: FontWeight.w600, color: _brown),
+                              ),
+                            ]),
                           ),
                         ),
-                        child: Row(children: [
-                          Icon(
-                            _isReserved ? Icons.check_box : Icons.check_box_outline_blank,
-                            color: _isReserved ? Colors.green : _lightBrown,
-                          ),
-                          const SizedBox(width: 10),
-                          const Text(
-                            'Reserved for Customer',
-                            style: TextStyle(fontWeight: FontWeight.w600, color: _brown),
-                          ),
-                        ]),
                       ),
                     ),
                     if (_isReserved) ...[
@@ -1119,6 +1258,7 @@ class _ItemDialogState extends State<ItemDialog> {
                               controller: _reservedQtyCtrl,
                               isNum: true,
                               hint: 'e.g. 2',
+                              focusOrder: 16,
                             ),
                           ),
                           const SizedBox(width: 12),
@@ -1127,6 +1267,7 @@ class _ItemDialogState extends State<ItemDialog> {
                               label: 'Customer Details (Name/Number)',
                               controller: _reservedForCtrl,
                               hint: 'e.g. John Doe - 9876543210',
+                              focusOrder: 17,
                             ),
                           ),
                         ],
@@ -1151,6 +1292,9 @@ class _ItemDialogState extends State<ItemDialog> {
                         ]),
                       ),
                     ],
+                        ],
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -1223,6 +1367,7 @@ class _ItemDialogState extends State<ItemDialog> {
             ),
           ],
         ),
+        ),
       ),
     );
   }
@@ -1245,26 +1390,39 @@ class _ItemDialogState extends State<ItemDialog> {
     ]);
   }
 
-  Widget _discountTypeBtn(String type) {
+  Widget _discountTypeBtn(String type, {double? focusOrder}) {
     final isSelected = _discountType == type;
-    return GestureDetector(
-      onTap: () => setState(() => _discountType = type),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        decoration: BoxDecoration(
-          color: isSelected ? _brown : Colors.transparent,
-          borderRadius: BorderRadius.circular(7),
-        ),
-        child: Text(
-          type,
-          style: TextStyle(
-            fontWeight: FontWeight.bold,
-            color: isSelected ? Colors.white : _lightBrown,
+    Widget btn = Focus(
+      onKeyEvent: (node, event) {
+        if (event is KeyDownEvent && (event.logicalKey == LogicalKeyboardKey.enter || event.logicalKey == LogicalKeyboardKey.space)) {
+          setState(() => _discountType = type);
+          return KeyEventResult.handled;
+        }
+        return KeyEventResult.ignored;
+      },
+      child: GestureDetector(
+        onTap: () => setState(() => _discountType = type),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            color: isSelected ? _brown : Colors.transparent,
+            borderRadius: BorderRadius.circular(7),
+          ),
+          child: Text(
+            type,
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              color: isSelected ? Colors.white : _lightBrown,
+            ),
           ),
         ),
       ),
     );
+    if (focusOrder != null) {
+      btn = FocusTraversalOrder(order: NumericFocusOrder(focusOrder), child: btn);
+    }
+    return btn;
   }
 
   Widget _field({
@@ -1278,8 +1436,54 @@ class _ItemDialogState extends State<ItemDialog> {
     void Function(String)? onChanged,
     List<TextInputFormatter>? inputFormatters,
     TextInputAction textInputAction = TextInputAction.next,
+    double? focusOrder,
+    bool readOnly = false,
   }) {
     final hasError = error != null;
+    Widget textField = TextField(
+      controller: controller,
+      readOnly: readOnly,
+      maxLines: maxLines,
+      onChanged: onChanged,
+      textInputAction: maxLines > 1 ? TextInputAction.newline : textInputAction,
+      keyboardType: maxLines > 1 
+          ? TextInputType.multiline
+          : (isNum
+              ? (isInt ? TextInputType.number : const TextInputType.numberWithOptions(decimal: true))
+              : TextInputType.text),
+      inputFormatters: [
+        if (isNum && isInt) FilteringTextInputFormatter.digitsOnly,
+        if (isNum && !isInt)
+          FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*')),
+        ...?inputFormatters,
+      ],
+      style: const TextStyle(color: _brown, fontSize: 14),
+      decoration: InputDecoration(
+        hintText: hint,
+        hintStyle: const TextStyle(color: Color(0xFFBCAAA4)),
+        filled: true,
+        fillColor: Colors.white,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: BorderSide(
+            color: hasError ? _errorColor : _border,
+          ),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: BorderSide(
+            color: hasError ? _errorColor : _brown,
+            width: 1.5,
+          ),
+        ),
+      ),
+    );
+
+    if (focusOrder != null) {
+      textField = FocusTraversalOrder(order: NumericFocusOrder(focusOrder), child: textField);
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1290,44 +1494,7 @@ class _ItemDialogState extends State<ItemDialog> {
           ),
         ),
         const SizedBox(height: 5),
-        TextField(
-          controller: controller,
-          maxLines: maxLines,
-          onChanged: onChanged,
-          textInputAction: maxLines > 1 ? TextInputAction.newline : textInputAction,
-          keyboardType: maxLines > 1 
-              ? TextInputType.multiline
-              : (isNum
-                  ? (isInt ? TextInputType.number : const TextInputType.numberWithOptions(decimal: true))
-                  : TextInputType.text),
-          inputFormatters: [
-            if (isNum && isInt) FilteringTextInputFormatter.digitsOnly,
-            if (isNum && !isInt)
-              FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*')),
-            ...?inputFormatters,
-          ],
-          style: const TextStyle(color: _brown, fontSize: 14),
-          decoration: InputDecoration(
-            hintText: hint,
-            hintStyle: const TextStyle(color: Color(0xFFBCAAA4)),
-            filled: true,
-            fillColor: Colors.white,
-            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide(
-                color: hasError ? _errorColor : _border,
-              ),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide(
-                color: hasError ? _errorColor : _brown,
-                width: 1.5,
-              ),
-            ),
-          ),
-        ),
+        textField,
         if (hasError)
           Padding(
             padding: const EdgeInsets.only(top: 4, left: 2),
@@ -1340,13 +1507,14 @@ class _ItemDialogState extends State<ItemDialog> {
     );
   }
 
-  Widget _dropdown(String label, String value, List<String> items, ValueChanged<String?> onChanged) {
+  Widget _dropdown(String label, String value, List<String> items, ValueChanged<String?> onChanged, {double? focusOrder}) {
     return _CustomDropdown(
       label: label,
       value: value,
       items: items,
       onChanged: onChanged,
       showSearchableDropdownDialog: _showSearchableDropdownDialog,
+      focusOrder: focusOrder,
     );
   }
 
@@ -1356,6 +1524,7 @@ class _ItemDialogState extends State<ItemDialog> {
     required List<String> items,
     String? error,
     required ValueChanged<String?> onChanged,
+    double? focusOrder,
   }) {
     return _CustomDropdown(
       label: label,
@@ -1364,6 +1533,7 @@ class _ItemDialogState extends State<ItemDialog> {
       error: error,
       onChanged: onChanged,
       showSearchableDropdownDialog: _showSearchableDropdownDialog,
+      focusOrder: focusOrder,
     );
   }
 
@@ -1400,6 +1570,7 @@ class _CustomDropdown extends StatefulWidget {
   final String? error;
   final ValueChanged<String?> onChanged;
   final Function({required String label, required String currentValue, required List<String> items, required ValueChanged<String?> onSelected}) showSearchableDropdownDialog;
+  final double? focusOrder;
 
   const _CustomDropdown({
     required this.label,
@@ -1408,6 +1579,7 @@ class _CustomDropdown extends StatefulWidget {
     this.error,
     required this.onChanged,
     required this.showSearchableDropdownDialog,
+    this.focusOrder,
   });
 
   @override
@@ -1443,53 +1615,62 @@ class _CustomDropdownState extends State<_CustomDropdown> {
           ),
         ),
         const SizedBox(height: 5),
-        Focus(
-          onFocusChange: (focused) {
-            if (mounted) {
-              setState(() {
-                _isFocused = focused;
-              });
-            }
-          },
-          onKeyEvent: (node, event) {
-            if (event is KeyDownEvent && (event.logicalKey == LogicalKeyboardKey.enter || event.logicalKey == LogicalKeyboardKey.space)) {
-              _openDialog();
-              return KeyEventResult.handled;
-            }
-            return KeyEventResult.ignored;
-          },
-          child: GestureDetector(
-            onTap: _openDialog,
-            child: InputDecorator(
-              isFocused: _isFocused,
-              decoration: InputDecoration(
-                filled: true,
-                fillColor: Colors.white,
-                contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: BorderSide(color: widget.error != null ? _errorColor : _border),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: BorderSide(color: widget.error != null ? _errorColor : _brown, width: 1.5),
-                ),
-                suffixIcon: const Icon(Icons.arrow_drop_down, color: _lightBrown),
-              ),
-              child: Text(
-                widget.items.contains(widget.value) ? widget.value : (widget.items.isNotEmpty ? widget.items.first : ''),
-                style: const TextStyle(color: _brown, fontSize: 14),
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-          ),
-        ),
+        widget.focusOrder != null
+          ? FocusTraversalOrder(order: NumericFocusOrder(widget.focusOrder!), child: _buildFocus())
+          : _buildFocus(),
         if (widget.error != null)
           Padding(
             padding: const EdgeInsets.only(top: 4, left: 2),
             child: Text(widget.error!, style: const TextStyle(fontSize: 11, color: _errorColor)),
           ),
       ],
+    );
+  }
+
+  Widget _buildFocus() {
+    return Focus(
+      onFocusChange: (focused) {
+        if (mounted) {
+          setState(() {
+            _isFocused = focused;
+          });
+          if (focused) {
+            Scrollable.ensureVisible(context, alignment: 0.5, duration: const Duration(milliseconds: 200), curve: Curves.easeInOut);
+          }
+        }
+      },
+      onKeyEvent: (node, event) {
+        if (event is KeyDownEvent && (event.logicalKey == LogicalKeyboardKey.enter || event.logicalKey == LogicalKeyboardKey.space)) {
+          _openDialog();
+          return KeyEventResult.handled;
+        }
+        return KeyEventResult.ignored;
+      },
+      child: GestureDetector(
+        onTap: _openDialog,
+        child: InputDecorator(
+          isFocused: _isFocused,
+          decoration: InputDecoration(
+            filled: true,
+            fillColor: Colors.white,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(color: widget.error != null ? _errorColor : _border),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(color: widget.error != null ? _errorColor : _brown, width: 1.5),
+            ),
+            suffixIcon: const Icon(Icons.arrow_drop_down, color: _lightBrown),
+          ),
+          child: Text(
+            widget.items.contains(widget.value) ? widget.value : (widget.items.isNotEmpty ? widget.items.first : ''),
+            style: const TextStyle(color: _brown, fontSize: 14),
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ),
     );
   }
 }

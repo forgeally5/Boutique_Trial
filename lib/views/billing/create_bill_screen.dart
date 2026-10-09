@@ -22,6 +22,10 @@ class CreateBillScreen extends StatefulWidget {
   State<CreateBillScreen> createState() => _CreateBillScreenState();
 }
 
+class _CancelEditIntent extends Intent {
+  const _CancelEditIntent();
+}
+
 class _CreateBillScreenState extends State<CreateBillScreen> {
   final _fmt = DateFormat('dd/MM/yyyy');
 
@@ -794,10 +798,27 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      color: BoutiqueColors.bgMain,
-      child: LayoutBuilder(
-        builder: (context, constraints) {
+    return Shortcuts(
+      shortcuts: <ShortcutActivator, Intent>{
+        const SingleActivator(LogicalKeyboardKey.escape): const _CancelEditIntent(),
+      },
+      child: Actions(
+        actions: <Type, Action<Intent>>{
+          _CancelEditIntent: CallbackAction<_CancelEditIntent>(
+            onInvoke: (_CancelEditIntent intent) {
+              if (widget.initialBill != null) {
+                widget.onSaved?.call();
+              }
+              return null;
+            },
+          ),
+        },
+        child: Focus(
+          autofocus: true,
+          child: Container(
+            color: BoutiqueColors.bgMain,
+          child: LayoutBuilder(
+            builder: (context, constraints) {
           final double minW = 1200.0;
           final double width = constraints.maxWidth > minW ? constraints.maxWidth : minW;
           return SingleChildScrollView(
@@ -875,6 +896,9 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
             ),
           );
         },
+      ),
+    ),
+        ),
       ),
     );
   }

@@ -3,6 +3,8 @@ import '../utils/boutique_theme.dart';
 import 'reports/issue_report_screen.dart';
 import 'reports/stock_report_screen.dart';
 import 'reports/sales_report_screen.dart';
+import 'reports/inward_report_screen.dart';
+import '../utils/file_downloader.dart';
 
 class ReportsView extends StatefulWidget {
   const ReportsView({super.key});
@@ -18,7 +20,7 @@ class _ReportsViewState extends State<ReportsView>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 4, vsync: this);
   }
 
   @override
@@ -123,6 +125,16 @@ class _ReportsViewState extends State<ReportsView>
                       ],
                     ),
                   ),
+                  Tab(
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.input_rounded, size: 16),
+                        SizedBox(width: 8),
+                        Text('Inward Report'),
+                      ],
+                    ),
+                  ),
                 ],
               ),
             ],
@@ -137,6 +149,7 @@ class _ReportsViewState extends State<ReportsView>
               IssueReportScreen(),
               StockReportScreen(),
               SalesReportScreen(),
+              InwardReportScreen(),
             ],
           ),
         ),

@@ -11,6 +11,7 @@ import 'views/reports_view.dart';
 import 'login_page.dart';
 import 'views/widgets/connection_status_badge.dart';
 import 'utils/boutique_theme.dart';
+import 'utils/file_downloader.dart';
 import 'views/master/user_management_screen.dart';
 
 Future<void> main() async {
@@ -221,19 +222,39 @@ class _AdminHomeShellState extends State<AdminHomeShell> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Boutique Settings',
-            style: TextStyle(
-              fontFamily: 'serif',
-              fontSize: 26,
-              fontWeight: FontWeight.bold,
-              color: BoutiqueColors.textPrimary,
-            ),
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            'Manage session and system settings.',
-            style: TextStyle(fontSize: 14, color: BoutiqueColors.textSecondary),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Boutique Settings',
+                      style: TextStyle(
+                        fontFamily: 'serif',
+                        fontSize: 26,
+                        fontWeight: FontWeight.bold,
+                        color: BoutiqueColors.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Manage session and system settings.',
+                      style: TextStyle(fontSize: 14, color: BoutiqueColors.textSecondary),
+                    ),
+                  ],
+                ),
+              ),
+              Tooltip(
+                message: 'Refresh data from server',
+                child: IconButton(
+                  icon: const Icon(Icons.refresh_rounded, size: 20),
+                  color: BoutiqueColors.textSecondary,
+                  onPressed: reloadWebPage,
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 32),
           Wrap(
@@ -680,6 +701,11 @@ class _AdminHomeShellState extends State<AdminHomeShell> {
                           ),
                         ),
                         IconButton(
+                          icon: const Icon(Icons.refresh_rounded, size: 16, color: BoutiqueColors.accent),
+                          onPressed: reloadWebPage,
+                          tooltip: 'Speed Refresh (F5)',
+                        ),
+                        IconButton(
                           icon: const Icon(Icons.logout_rounded, size: 16, color: BoutiqueColors.textSecondary),
                           onPressed: _handleLogout,
                           tooltip: 'Logout',
@@ -733,6 +759,11 @@ class _AdminHomeShellState extends State<AdminHomeShell> {
                           ),
                         ),
                         const Spacer(),
+                        IconButton(
+                          icon: const Icon(Icons.refresh_rounded, color: BoutiqueColors.accent),
+                          onPressed: reloadWebPage,
+                          tooltip: 'Speed Refresh',
+                        ),
                         ConnectionStatusBadge(state: _state),
                       ],
                     ),

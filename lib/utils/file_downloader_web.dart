@@ -13,3 +13,7 @@ Future<void> downloadFile(List<int> bytes, String fileName, String mimeType) asy
   html.document.body?.children.remove(anchor);
   html.Url.revokeObjectUrl(url);
 }
+
+void reloadWebPage() {
+  html.window.location.reload();
+}

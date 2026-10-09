@@ -3,6 +3,8 @@ import 'package:provider/provider.dart';
 import '../state/admin_state.dart';
 import '../auth/models/app_user_model.dart';
 import '../auth/viewmodels/auth_viewmodel.dart';
+import '../utils/file_downloader.dart';
+import '../utils/boutique_theme.dart';
 import 'billing/create_bill_screen.dart';
 import 'billing/bill_history_screen.dart';
 import 'billing/customer_ledger_screen.dart';
@@ -59,6 +61,16 @@ class _BillingViewState extends State<BillingView> {
               if (canViewHistory) _buildTab(1, Icons.history_rounded, 'Bill History'),
               if (canViewHistory) const SizedBox(width: 4),
               _buildTab(2, Icons.account_balance_wallet_rounded, 'Customer Ledger'),
+              const Spacer(),
+              Tooltip(
+                message: 'Refresh data from server',
+                child: IconButton(
+                  icon: const Icon(Icons.refresh_rounded, size: 20),
+                  color: BoutiqueColors.textSecondary,
+                  onPressed: reloadWebPage,
+                ),
+              ),
+              const SizedBox(width: 16),
             ],
           ),
         ),

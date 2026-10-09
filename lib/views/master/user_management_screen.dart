@@ -4,6 +4,7 @@ import '../../auth/models/app_user_model.dart';
 import '../../auth/viewmodels/auth_viewmodel.dart';
 import '../../services/user_management_service.dart';
 import 'user_edit_dialog.dart';
+import '../../utils/file_downloader.dart';
 
 class UserManagementScreen extends StatefulWidget {
   const UserManagementScreen({super.key});
@@ -33,6 +34,14 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
               );
             },
           ),
+          Tooltip(
+            message: 'Refresh data from server',
+            child: IconButton(
+              icon: const Icon(Icons.refresh_rounded),
+              onPressed: reloadWebPage,
+            ),
+          ),
+          const SizedBox(width: 16),
         ],
       ),
       body: Column(

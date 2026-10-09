@@ -9,6 +9,126 @@ class ExcelGenerator {
   static final _dateTimeFmt = DateFormat('dd/MM/yyyy hh:mm a');
 
   /// Generate & download Inward Bill for a single or multiple products
+  static Future<void> downloadInwardReportExcel({
+    required List<Map<String, dynamic>> transactions,
+  }) async {
+    final Workbook workbook = Workbook();
+    final Worksheet sheet = workbook.worksheets[0];
+    sheet.name = 'Inward Report';
+
+    final nowStr = _dateTimeFmt.format(DateTime.now());
+
+    // ── Title Banner ──────────────────────────────────────────────────
+    final titleRange = sheet.getRangeByName('A1:G1');
+    titleRange.merge();
+    titleRange.setText('INWARD TRANSACTIONS REPORT');
+    titleRange.cellStyle.bold = true;
+    titleRange.cellStyle.fontSize = 13;
+    titleRange.cellStyle.backColor = '#5A3B22';
+    titleRange.cellStyle.fontColor = '#FFFFFF';
+    titleRange.cellStyle.hAlign = HAlignType.center;
+    titleRange.cellStyle.vAlign = VAlignType.center;
+
+    // ── Metadata ────────────────────────────────────────────────────
+    final metaDate = sheet.getRangeByName('A2:G2');
+    metaDate.merge();
+    metaDate.setText('Generated on: $nowStr');
+    metaDate.cellStyle.bold = true;
+    metaDate.cellStyle.fontSize = 10;
+    metaDate.cellStyle.backColor = '#F5ECE4';
+    metaDate.cellStyle.hAlign = HAlignType.left;
+    metaDate.cellStyle.vAlign = VAlignType.center;
+
+    // ── Headers ────────────────────────────────────────────────
+    final headers = [
+      'Date & Time',
+      'Item Name',
+      'Tag ID',
+      'Category',
+      'Added Qty',
+      'Added Weight',
+      'Total Value (₹)',
+    ];
+
+    for (int col = 0; col < headers.length; col++) {
+      final cell = sheet.getRangeByIndex(3, col + 1);
+      cell.setText(headers[col]);
+      cell.cellStyle.bold = true;
+      cell.cellStyle.fontSize = 10;
+      cell.cellStyle.backColor = '#8C6246';
+      cell.cellStyle.fontColor = '#FFFFFF';
+      cell.cellStyle.hAlign = col == 0 || col == 2 || col >= 4 ? HAlignType.center : HAlignType.left;
+      cell.cellStyle.vAlign = VAlignType.center;
+    }
+
+    // ── Data ──────────────────────────────────────────────────
+    int rowIndex = 4;
+    double grandTotal = 0.0;
+    int totalItems = 0;
+
+    for (final bill in transactions) {
+      final bDate = DateTime.tryParse(bill['billDate'] ?? '') ?? DateTime.now();
+      final dateStr = _dateTimeFmt.format(bDate);
+      final items = bill['items'] as List<dynamic>? ?? [];
+
+      for (final item in items) {
+        final isQty = item['pricingType'] == 'Quantity-Based';
+        final qty = (item['qty'] as num?)?.toInt() ?? 0;
+        final weight = (item['weight'] as num?)?.toDouble() ?? 0.0;
+        final amt = (item['amount'] as num?)?.toDouble() ?? 0.0;
+
+        grandTotal += amt;
+        totalItems++;
+
+        sheet.getRangeByIndex(rowIndex, 1).setText(dateStr);
+        sheet.getRangeByIndex(rowIndex, 2).setText(item['name']?.toString() ?? '');
+        sheet.getRangeByIndex(rowIndex, 3).setText(item['tagId']?.toString() ?? '');
+        sheet.getRangeByIndex(rowIndex, 4).setText(item['category']?.toString() ?? '');
+        
+        final c5 = sheet.getRangeByIndex(rowIndex, 5);
+        c5.setNumber(qty.toDouble());
+        c5.cellStyle.hAlign = HAlignType.center;
+
+        final c6 = sheet.getRangeByIndex(rowIndex, 6);
+        c6.setNumber(weight);
+        c6.cellStyle.hAlign = HAlignType.center;
+
+        final c7 = sheet.getRangeByIndex(rowIndex, 7);
+        c7.setNumber(amt);
+        c7.cellStyle.hAlign = HAlignType.right;
+
+        rowIndex++;
+      }
+    }
+
+    // ── Footer ──────────────────────────────────────────────────
+    final footerLabel = sheet.getRangeByIndex(rowIndex, 1, rowIndex, 6);
+    footerLabel.merge();
+    footerLabel.setText('TOTAL (Items: $totalItems)');
+    footerLabel.cellStyle.bold = true;
+    footerLabel.cellStyle.hAlign = HAlignType.right;
+
+    final footerTotal = sheet.getRangeByIndex(rowIndex, 7);
+    footerTotal.setNumber(grandTotal);
+    footerTotal.cellStyle.bold = true;
+    footerTotal.cellStyle.hAlign = HAlignType.right;
+
+    // Auto-fit columns
+    for (int i = 1; i <= 7; i++) {
+      sheet.autoFitColumn(i);
+    }
+
+    final List<int> bytes = workbook.saveAsStream();
+    workbook.dispose();
+
+    await downloadFile(
+      bytes,
+      'Inward_Report_${DateTime.now().millisecondsSinceEpoch}.xlsx',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
+  }
+
+  /// Generate & download Inward Bill for a single or multiple products
   static Future<void> downloadInwardBillExcel({
     required List<Product> products,
     String? vendorName,

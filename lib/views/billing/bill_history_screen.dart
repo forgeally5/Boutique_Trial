@@ -510,15 +510,7 @@ class _BillHistoryScreenState extends State<BillHistoryScreen> {
                     },
                   ),
                 ),
-                const SizedBox(width: 16),
-                Focus(
-                  skipTraversal: true,
-                  child: IconButton(
-                    icon: const Icon(Icons.refresh_rounded, color: BoutiqueColors.accent),
-                    onPressed: _loadBills,
-                    tooltip: 'Refresh',
-                  ),
-                ),
+                const SizedBox(width: 8),
               ],
             ),
           ),

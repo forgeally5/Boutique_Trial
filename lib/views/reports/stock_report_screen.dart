@@ -286,7 +286,7 @@ class _StockReportScreenState extends State<StockReportScreen> {
       _applyFilters();
       _applyCategoryFilters();
     } catch (e) {
-      setState(() => _loading = false);
+      if (mounted) setState(() => _loading = false);
       if (mounted) {
         BoutiqueToast.showError(context, 'Error loading stock: $e');
       }

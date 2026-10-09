@@ -199,24 +199,26 @@ class _InventoryViewState extends State<InventoryView> {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          const Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Inventory Catalog',
-                                style: TextStyle(
-                                  fontFamily: 'serif',
-                                  fontSize: 26,
-                                  fontWeight: FontWeight.bold,
-                                  color: BoutiqueColors.textPrimary,
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Inventory Catalog',
+                                  style: TextStyle(
+                                    fontFamily: 'serif',
+                                    fontSize: 26,
+                                    fontWeight: FontWeight.bold,
+                                    color: BoutiqueColors.textPrimary,
+                                  ),
                                 ),
-                              ),
-                              SizedBox(height: 4),
-                              Text(
-                                'Manage products, stock quantities, and categories.',
-                                style: TextStyle(fontSize: 13, color: BoutiqueColors.textSecondary),
-                              ),
-                            ],
+                                SizedBox(height: 4),
+                                Text(
+                                  'Manage products, stock quantities, and categories.',
+                                  style: TextStyle(fontSize: 13, color: BoutiqueColors.textSecondary),
+                                ),
+                              ],
+                            ),
                           ),
                           Row(
                             children: [
