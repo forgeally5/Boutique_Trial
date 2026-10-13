@@ -312,7 +312,7 @@ class _VendorIssueTabState extends State<VendorIssueTab> {
       ),
       child: Row(
         children: cols.asMap().entries.map((e) {
-          final flex = [2, 4, 3, 1, 2, 2, 2, 2][e.key];
+          final flex = [2, 4, 3, 1, 2, 2, 2, 3][e.key];
           return Expanded(
             flex: flex,
             child: Text(
@@ -364,66 +364,75 @@ class _VendorIssueTabState extends State<VendorIssueTab> {
             ),
           ),
           Expanded(
-            flex: 2,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                IconButton(
-                  tooltip: 'Download Issue Bill (.xlsx)',
-                  icon: const Icon(Icons.download_rounded, size: 16, color: Color(0xFF1E7E34)),
-                  onPressed: () async {
-                    final issue = VendorIssue(
-                      id: r['id'] ?? '',
-                      tagId: r['tagId'] ?? '',
-                      productName: r['productName'] ?? '',
-                      vendor: r['vendor'] ?? '',
-                      quantity: (r['quantity'] as num?)?.toInt() ?? 1,
-                      issueType: r['issueType'] ?? '',
-                      actionTaken: action,
-                      dateReported: dt ?? DateTime.now(),
-                      notes: r['notes'] ?? '',
-                      refundAmount: (r['refundAmount'] as num?)?.toDouble() ?? 0.0,
-                    );
-                    await ExcelGenerator.downloadVendorIssueBillExcel(issue: issue);
-                    if (mounted) {
-                      BoutiqueToast.showSuccess(context, 'Issue Bill (.xlsx) downloaded!');
-                    }
-                  },
-                ),
-                IconButton(
-                  icon: const Icon(Icons.edit, size: 16, color: BoutiqueColors.accent),
-                  tooltip: 'Edit Issue / Quantity',
-                  onPressed: () async {
-                    final issue = VendorIssue(
-                      id: r['id'] ?? '',
-                      tagId: r['tagId'] ?? '',
-                      productName: r['productName'] ?? '',
-                      vendor: r['vendor'] ?? '',
-                      quantity: (r['quantity'] as num?)?.toInt() ?? 1,
-                      issueType: r['issueType'] ?? '',
-                      actionTaken: action,
-                      dateReported: dt ?? DateTime.now(),
-                      notes: r['notes'] ?? '',
-                      refundAmount: (r['refundAmount'] as num?)?.toDouble() ?? 0.0,
-                    );
-                    final res = await showDialog(
-                      context: context,
-                      builder: (ctx) => VendorIssueDialog(
-                        state: context.read<AdminState>(),
-                        existingIssue: issue,
-                      ),
-                    );
-                    if (res == true) {
-                      _load();
-                    }
-                  },
-                ),
-                IconButton(
-                  icon: const Icon(Icons.rule_folder_outlined, size: 16, color: BoutiqueColors.textSecondary),
-                  tooltip: 'Update Status Action',
-                  onPressed: () => _updateAction(r['id'], r['tagId'], action),
-                ),
-              ],
+            flex: 3,
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    tooltip: 'Download Issue Bill (.xlsx)',
+                    icon: const Icon(Icons.download_rounded, size: 16, color: Color(0xFF1E7E34)),
+                    padding: const EdgeInsets.all(4),
+                    constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                    onPressed: () async {
+                      final issue = VendorIssue(
+                        id: r['id'] ?? '',
+                        tagId: r['tagId'] ?? '',
+                        productName: r['productName'] ?? '',
+                        vendor: r['vendor'] ?? '',
+                        quantity: (r['quantity'] as num?)?.toInt() ?? 1,
+                        issueType: r['issueType'] ?? '',
+                        actionTaken: action,
+                        dateReported: dt ?? DateTime.now(),
+                        notes: r['notes'] ?? '',
+                        refundAmount: (r['refundAmount'] as num?)?.toDouble() ?? 0.0,
+                      );
+                      await ExcelGenerator.downloadVendorIssueBillExcel(issue: issue);
+                      if (mounted) {
+                        BoutiqueToast.showSuccess(context, 'Issue Bill (.xlsx) downloaded!');
+                      }
+                    },
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.edit, size: 16, color: BoutiqueColors.accent),
+                    tooltip: 'Edit Issue / Quantity',
+                    padding: const EdgeInsets.all(4),
+                    constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                    onPressed: () async {
+                      final issue = VendorIssue(
+                        id: r['id'] ?? '',
+                        tagId: r['tagId'] ?? '',
+                        productName: r['productName'] ?? '',
+                        vendor: r['vendor'] ?? '',
+                        quantity: (r['quantity'] as num?)?.toInt() ?? 1,
+                        issueType: r['issueType'] ?? '',
+                        actionTaken: action,
+                        dateReported: dt ?? DateTime.now(),
+                        notes: r['notes'] ?? '',
+                        refundAmount: (r['refundAmount'] as num?)?.toDouble() ?? 0.0,
+                      );
+                      final res = await showDialog(
+                        context: context,
+                        builder: (ctx) => VendorIssueDialog(
+                          state: context.read<AdminState>(),
+                          existingIssue: issue,
+                        ),
+                      );
+                      if (res == true) {
+                        _load();
+                      }
+                    },
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.rule_folder_outlined, size: 16, color: BoutiqueColors.textSecondary),
+                    tooltip: 'Update Status Action',
+                    padding: const EdgeInsets.all(4),
+                    constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                    onPressed: () => _updateAction(r['id'], r['tagId'], action),
+                  ),
+                ],
+              ),
             ),
           ),
         ],

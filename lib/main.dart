@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'auth/viewmodels/auth_viewmodel.dart';
 import 'auth/models/app_user_model.dart';
@@ -148,6 +149,7 @@ class _AdminHomeShellState extends State<AdminHomeShell> {
   int _activeTabIndex = 0; // 0 = uninitialized
   String _selectedBillingSection = 'A Sales Entry';
   final TextEditingController _globalSearchCtrl = TextEditingController();
+  final FocusScopeNode _mainContentFocusScopeNode = FocusScopeNode(debugLabel: 'MainContentFocusScope');
 
   void _switchTab(int index) {
     if (index == _activeTabIndex) return;
@@ -155,6 +157,36 @@ class _AdminHomeShellState extends State<AdminHomeShell> {
     setState(() {
       _activeTabIndex = index;
     });
+  }
+
+  void _focusMainContent() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _mainContentFocusScopeNode.requestFocus();
+      final firstNode = _mainContentFocusScopeNode.traversalChildren.firstOrNull;
+      if (firstNode != null) {
+        firstNode.requestFocus();
+      } else {
+        _mainContentFocusScopeNode.nextFocus();
+      }
+    });
+  }
+
+  void _switchAndFocus(int targetTab) {
+    final authUser = context.read<AuthViewModel>().appUser;
+    final perms = authUser?.permissions ?? PermissionsModel.adminPreset();
+    final canViewSettings = authUser?.role.toLowerCase() == 'admin' || perms.manageUsers;
+    bool allowed = false;
+    if (targetTab == 1 && perms.viewInventory) allowed = true;
+    if (targetTab == 2 && perms.salesEntry) allowed = true;
+    if (targetTab == 3 && perms.viewReports) allowed = true;
+    if (targetTab == 4 && perms.manageUsers) allowed = true;
+    if (targetTab == 5 && canViewSettings) allowed = true;
+
+    if (allowed) {
+      _switchTab(targetTab);
+      _focusMainContent();
+    }
   }
 
   @override
@@ -206,6 +238,7 @@ class _AdminHomeShellState extends State<AdminHomeShell> {
 
   @override
   void dispose() {
+    _mainContentFocusScopeNode.dispose();
     _state.dispose();
     _globalSearchCtrl.dispose();
     super.dispose();
@@ -590,10 +623,32 @@ class _AdminHomeShellState extends State<AdminHomeShell> {
     // Guard to wait for init logic to assign active tab
     if (_activeTabIndex == 0) return const Scaffold(backgroundColor: BoutiqueColors.bgMain);
 
-    return Scaffold(
-      backgroundColor: BoutiqueColors.bgMain,
-      body: Row(
-        children: [
+    return CallbackShortcuts(
+      bindings: {
+        // Ctrl + 1..5 & Numpad 1..5 for Windows / Linux
+        const SingleActivator(LogicalKeyboardKey.digit1, control: true): () => _switchAndFocus(1),
+        const SingleActivator(LogicalKeyboardKey.digit2, control: true): () => _switchAndFocus(2),
+        const SingleActivator(LogicalKeyboardKey.digit3, control: true): () => _switchAndFocus(3),
+        const SingleActivator(LogicalKeyboardKey.digit4, control: true): () => _switchAndFocus(4),
+        const SingleActivator(LogicalKeyboardKey.digit5, control: true): () => _switchAndFocus(5),
+        const SingleActivator(LogicalKeyboardKey.numpad1, control: true): () => _switchAndFocus(1),
+        const SingleActivator(LogicalKeyboardKey.numpad2, control: true): () => _switchAndFocus(2),
+        const SingleActivator(LogicalKeyboardKey.numpad3, control: true): () => _switchAndFocus(3),
+        const SingleActivator(LogicalKeyboardKey.numpad4, control: true): () => _switchAndFocus(4),
+        const SingleActivator(LogicalKeyboardKey.numpad5, control: true): () => _switchAndFocus(5),
+        // Meta (Command) + 1..5 for macOS
+        const SingleActivator(LogicalKeyboardKey.digit1, meta: true): () => _switchAndFocus(1),
+        const SingleActivator(LogicalKeyboardKey.digit2, meta: true): () => _switchAndFocus(2),
+        const SingleActivator(LogicalKeyboardKey.digit3, meta: true): () => _switchAndFocus(3),
+        const SingleActivator(LogicalKeyboardKey.digit4, meta: true): () => _switchAndFocus(4),
+        const SingleActivator(LogicalKeyboardKey.digit5, meta: true): () => _switchAndFocus(5),
+      },
+      child: FocusScope(
+        autofocus: true,
+        child: Scaffold(
+          backgroundColor: BoutiqueColors.bgMain,
+          body: Row(
+            children: [
           // ── Persistent Left Sidebar (Desktop / Tablet) ──────────────────────
           if (isDesktop)
             Container(
@@ -771,70 +826,172 @@ class _AdminHomeShellState extends State<AdminHomeShell> {
 
                 // Page Body — IndexedStack keeps all views alive for instant tab switching
                 Expanded(
-                  child: ChangeNotifierProvider<AdminState>.value(
-                    value: _state,
-                    child: IndexedStack(
-                      index: _stackIndex,
-                    children: [
-                      // Index 0: Inventory
-                      InventoryView(state: _state, globalSearchCtrl: _globalSearchCtrl),
-                      // Index 1: Billing
-                      BillingView(
-                        state: _state,
-                        initialSection: _selectedBillingSection,
-                        onSectionChanged: (sec) {
-                          setState(() => _selectedBillingSection = sec);
-                        },
+                  child: FocusScope(
+                    node: _mainContentFocusScopeNode,
+                    child: ChangeNotifierProvider<AdminState>.value(
+                      value: _state,
+                      child: IndexedStack(
+                        index: _stackIndex,
+                        children: [
+                          // Index 0: Inventory
+                          ExcludeFocus(
+                            excluding: _stackIndex != 0,
+                            child: InventoryView(state: _state, globalSearchCtrl: _globalSearchCtrl),
+                          ),
+                          // Index 1: Billing
+                          ExcludeFocus(
+                            excluding: _stackIndex != 1,
+                            child: BillingView(
+                              state: _state,
+                              initialSection: _selectedBillingSection,
+                              onSectionChanged: (sec) {
+                                setState(() => _selectedBillingSection = sec);
+                              },
+                            ),
+                          ),
+                          // Index 2: Reports
+                          ExcludeFocus(
+                            excluding: _stackIndex != 2,
+                            child: const ReportsView(),
+                          ),
+                          // Index 3: Users
+                          ExcludeFocus(
+                            excluding: _stackIndex != 3,
+                            child: const UserManagementScreen(),
+                          ),
+                          // Index 4: Settings
+                          ExcludeFocus(
+                            excluding: _stackIndex != 4,
+                            child: _buildSettingsView(),
+                          ),
+                        ],
                       ),
-                      // Index 2: Reports
-                      const ReportsView(),
-                      // Index 3: Users
-                      const UserManagementScreen(),
-                      // Index 4: Settings
-                      _buildSettingsView(),
-                    ],
+                    ),
                   ),
-                ),
                 ),
               ],
             ),
           ),
         ],
       ),
+    ),
+    ),
     );
   }
 
   Widget _buildNavItem(int index, IconData icon, String label) {
-    final isSelected = _activeTabIndex == index;
+    return _SidebarNavItem(
+      index: index,
+      icon: icon,
+      label: label,
+      isSelected: _activeTabIndex == index,
+      onTap: () {
+        _switchTab(index);
+        _focusMainContent();
+      },
+      onEnterOrRight: () {
+        _switchTab(index);
+        _focusMainContent();
+      },
+    );
+  }
+}
+
+class _SidebarNavItem extends StatefulWidget {
+  final int index;
+  final IconData icon;
+  final String label;
+  final bool isSelected;
+  final VoidCallback onTap;
+  final VoidCallback onEnterOrRight;
+
+  const _SidebarNavItem({
+    required this.index,
+    required this.icon,
+    required this.label,
+    required this.isSelected,
+    required this.onTap,
+    required this.onEnterOrRight,
+  });
+
+  @override
+  State<_SidebarNavItem> createState() => _SidebarNavItemState();
+}
+
+class _SidebarNavItemState extends State<_SidebarNavItem> {
+  bool _isHovered = false;
+  bool _isFocused = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final showHighlight = widget.isSelected || _isHovered || _isFocused;
+
     return Container(
       margin: const EdgeInsets.only(bottom: 6),
-      child: InkWell(
-        onTap: () => _switchTab(index),
-        borderRadius: BorderRadius.circular(10),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          decoration: BoxDecoration(
-            color: isSelected ? BoutiqueColors.accentSoft : Colors.transparent,
-            borderRadius: BorderRadius.circular(10),
-            border: isSelected ? Border.all(color: BoutiqueColors.accentLightBorder, width: 1) : null,
-          ),
-          child: Row(
-            children: [
-              Icon(
-                icon,
-                size: 20,
-                color: isSelected ? BoutiqueColors.accent : BoutiqueColors.textSecondary,
-              ),
-              const SizedBox(width: 14),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-                  color: isSelected ? BoutiqueColors.accent : BoutiqueColors.textPrimary,
+      child: Focus(
+        onFocusChange: (v) => setState(() => _isFocused = v),
+        onKeyEvent: (node, event) {
+          if (event is KeyDownEvent) {
+            if (event.logicalKey == LogicalKeyboardKey.enter ||
+                event.logicalKey == LogicalKeyboardKey.numpadEnter ||
+                event.logicalKey == LogicalKeyboardKey.space ||
+                event.logicalKey == LogicalKeyboardKey.arrowRight) {
+              widget.onEnterOrRight();
+              return KeyEventResult.handled;
+            } else if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
+              node.nextFocus();
+              return KeyEventResult.handled;
+            } else if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
+              node.previousFocus();
+              return KeyEventResult.handled;
+            }
+          }
+          return KeyEventResult.ignored;
+        },
+        child: MouseRegion(
+          cursor: SystemMouseCursors.click,
+          onEnter: (_) => setState(() => _isHovered = true),
+          onExit: (_) => setState(() => _isHovered = false),
+          child: GestureDetector(
+            onTap: widget.onTap,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 150),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                color: widget.isSelected
+                    ? BoutiqueColors.accentSoft
+                    : (_isFocused || _isHovered
+                        ? BoutiqueColors.accentSoft.withValues(alpha: 0.5)
+                        : Colors.transparent),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: widget.isSelected
+                      ? (_isFocused ? BoutiqueColors.accent : BoutiqueColors.accentLightBorder)
+                      : (_isFocused
+                          ? BoutiqueColors.accent
+                          : (_isHovered ? BoutiqueColors.accentLightBorder : Colors.transparent)),
+                  width: _isFocused ? 1.5 : 1,
                 ),
               ),
-            ],
+              child: Row(
+                children: [
+                  Icon(
+                    widget.icon,
+                    size: 20,
+                    color: showHighlight ? BoutiqueColors.accent : BoutiqueColors.textSecondary,
+                  ),
+                  const SizedBox(width: 14),
+                  Text(
+                    widget.label,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: widget.isSelected || _isFocused ? FontWeight.bold : FontWeight.w500,
+                      color: showHighlight ? BoutiqueColors.accent : BoutiqueColors.textPrimary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
         ),
       ),

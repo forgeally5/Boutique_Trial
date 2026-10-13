@@ -553,7 +553,7 @@ class _IssueReportScreenState extends State<IssueReportScreen> {
       'Date', 'Party/Customer', 'Contact', 'Product',
       'Qty', 'Issue / Reason', 'Refund (₹)', 'Status', 'Actions'
     ];
-    const flexes = [2, 3, 2, 4, 1, 3, 2, 2, 2];
+    const flexes = [2, 3, 2, 4, 1, 3, 2, 2, 3];
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       decoration: const BoxDecoration(
@@ -661,86 +661,120 @@ class _IssueReportScreenState extends State<IssueReportScreen> {
           ),
           // Action (download & edit)
           Expanded(
-            flex: 2,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (isVendor) ...[
-                  IconButton(
-                    icon: const Icon(Icons.download_rounded, size: 16, color: Color(0xFF1E7E34)),
-                    tooltip: 'Download Issue Bill (.xlsx)',
-                    onPressed: () async {
-                      final issue = VendorIssue(
-                        id: r['id'] ?? '',
-                        tagId: r['tagId'] ?? '',
-                        productName: r['productName'] ?? '',
-                        vendor: r['counterpart'] ?? '',
-                        quantity: (r['qty'] as num?)?.toInt() ?? 1,
-                        issueType: r['issueReason'] ?? '',
-                        actionTaken: r['actionTaken'] ?? 'Pending',
-                        dateReported: r['_dt'] as DateTime? ?? DateTime.now(),
-                        notes: '',
-                        refundAmount: (r['refundAmount'] as num?)?.toDouble() ?? 0.0,
-                      );
-                      await ExcelGenerator.downloadVendorIssueBillExcel(issue: issue);
-                      if (mounted) {
-                        BoutiqueToast.showSuccess(context, 'Issue Bill (.xlsx) downloaded!');
-                      }
-                    },
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.edit, size: 16, color: BoutiqueColors.accent),
-                    tooltip: 'Edit Issue / Quantity',
-                    onPressed: () async {
-                      final issue = VendorIssue(
-                        id: r['id'] ?? '',
-                        tagId: r['tagId'] ?? '',
-                        productName: r['productName'] ?? '',
-                        vendor: r['counterpart'] ?? '',
-                        quantity: (r['qty'] as num?)?.toInt() ?? 1,
-                        issueType: r['issueReason'] ?? '',
-                        actionTaken: r['actionTaken'] ?? 'Pending',
-                        dateReported: r['_dt'] as DateTime? ?? DateTime.now(),
-                        notes: r['notes'] ?? '',
-                        refundAmount: (r['refundAmount'] as num?)?.toDouble() ?? 0.0,
-                      );
-                      final res = await showDialog(
-                        context: context,
-                        builder: (ctx) => VendorIssueDialog(
-                          state: context.read<AdminState>(),
-                          existingIssue: issue,
-                        ),
-                      );
-                      if (res == true) {
-                        _load();
-                      }
-                    },
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.rule_folder_outlined, size: 16, color: BoutiqueColors.textSecondary),
-                    tooltip: 'Update Status Action',
-                    onPressed: () => _updateVendorAction(r['id'], r['tagId'], r['actionTaken']),
-                  ),
-                ] else ...[
-                  IconButton(
-                    icon: const Icon(Icons.print_rounded, size: 16, color: BoutiqueColors.accent),
-                    tooltip: 'Print Return Bill',
-                    onPressed: () async {
-                       final bill = r['_bill'];
-                       if (bill != null) {
-                         try {
-                            final bytes = await BoutiquePdfGenerator.generate(bill);
-                            await Printing.layoutPdf(onLayout: (_) async => bytes);
-                         } catch(e) {
-                            if (mounted) BoutiqueToast.showError(context, 'Error generating PDF: $e');
+            flex: 3,
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (isVendor) ...[
+                    IconButton(
+                      icon: const Icon(Icons.download_rounded, size: 16, color: Color(0xFF1E7E34)),
+                      tooltip: 'Download Issue Bill (.xlsx)',
+                      padding: const EdgeInsets.all(4),
+                      constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                      onPressed: () async {
+                        final issue = VendorIssue(
+                          id: r['id'] ?? '',
+                          tagId: r['tagId'] ?? '',
+                          productName: r['productName'] ?? '',
+                          vendor: r['counterpart'] ?? '',
+                          quantity: (r['qty'] as num?)?.toInt() ?? 1,
+                          issueType: r['issueReason'] ?? '',
+                          actionTaken: r['actionTaken'] ?? 'Pending',
+                          dateReported: r['_dt'] as DateTime? ?? DateTime.now(),
+                          notes: '',
+                          refundAmount: (r['refundAmount'] as num?)?.toDouble() ?? 0.0,
+                        );
+                        await ExcelGenerator.downloadVendorIssueBillExcel(issue: issue);
+                        if (mounted) {
+                          BoutiqueToast.showSuccess(context, 'Issue Bill (.xlsx) downloaded!');
+                        }
+                      },
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.edit, size: 16, color: BoutiqueColors.accent),
+                      tooltip: 'Edit Issue / Quantity',
+                      padding: const EdgeInsets.all(4),
+                      constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                      onPressed: () async {
+                        final issue = VendorIssue(
+                          id: r['id'] ?? '',
+                          tagId: r['tagId'] ?? '',
+                          productName: r['productName'] ?? '',
+                          vendor: r['counterpart'] ?? '',
+                          quantity: (r['qty'] as num?)?.toInt() ?? 1,
+                          issueType: r['issueReason'] ?? '',
+                          actionTaken: r['actionTaken'] ?? 'Pending',
+                          dateReported: r['_dt'] as DateTime? ?? DateTime.now(),
+                          notes: r['notes'] ?? '',
+                          refundAmount: (r['refundAmount'] as num?)?.toDouble() ?? 0.0,
+                        );
+                        final res = await showDialog(
+                          context: context,
+                          builder: (ctx) => VendorIssueDialog(
+                            state: context.read<AdminState>(),
+                            existingIssue: issue,
+                          ),
+                        );
+                        if (res == true) {
+                          _load();
+                        }
+                      },
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.rule_folder_outlined, size: 16, color: BoutiqueColors.textSecondary),
+                      tooltip: 'Update Status Action',
+                      padding: const EdgeInsets.all(4),
+                      constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                      onPressed: () => _updateVendorAction(r['id'], r['tagId'], r['actionTaken']),
+                    ),
+                  ] else ...[
+                    IconButton(
+                      icon: const Icon(Icons.print_rounded, size: 16, color: BoutiqueColors.accent),
+                      tooltip: 'Print Return Bill',
+                      padding: const EdgeInsets.all(4),
+                      constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                      onPressed: () async {
+                         final bill = r['_bill'];
+                         if (bill != null) {
+                           try {
+                              final bytes = await BoutiquePdfGenerator.generate(bill);
+                              await Printing.layoutPdf(onLayout: (_) async => bytes);
+                           } catch(e) {
+                              if (mounted) BoutiqueToast.showError(context, 'Error generating PDF: $e');
+                           }
+                         } else {
+                            BoutiqueToast.showError(context, 'Bill data missing');
                          }
-                       } else {
-                          BoutiqueToast.showError(context, 'Bill data missing');
-                       }
-                    },
-                  ),
+                      },
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.edit, size: 16, color: BoutiqueColors.accent),
+                      tooltip: 'Edit Customer Return',
+                      padding: const EdgeInsets.all(4),
+                      constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                      onPressed: () async {
+                        final bill = r['_bill'];
+                        if (bill != null) {
+                          final res = await showDialog(
+                            context: context,
+                            builder: (ctx) => CustomerReturnDialog(
+                              state: context.read<AdminState>(),
+                              existingReturnBill: bill,
+                            ),
+                          );
+                          if (res == true) {
+                            _load();
+                          }
+                        } else {
+                          BoutiqueToast.showError(context, 'Return bill data missing');
+                        }
+                      },
+                    ),
+                  ],
                 ],
-              ],
+              ),
             ),
           ),
         ],

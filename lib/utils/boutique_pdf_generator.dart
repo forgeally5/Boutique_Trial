@@ -232,11 +232,11 @@ class BoutiquePdfGenerator {
                 pw.Table(
                   border: pw.TableBorder.all(color: goldLine, width: 0.5),
                   columnWidths: {
-                    0: const pw.FlexColumnWidth(0.8),
-                    1: const pw.FlexColumnWidth(3),
-                    2: const pw.FlexColumnWidth(1.2),
-                    3: const pw.FlexColumnWidth(0.8),
-                    4: const pw.FlexColumnWidth(1.2),
+                    0: const pw.FlexColumnWidth(0.7),
+                    1: const pw.FlexColumnWidth(3.0),
+                    2: const pw.FlexColumnWidth(1.3),
+                    3: const pw.FlexColumnWidth(1.2),
+                    4: const pw.FlexColumnWidth(1.3),
                   },
                   children: [
                     // Header Row
@@ -258,13 +258,22 @@ class BoutiquePdfGenerator {
                       final qty = (r['qty'] as num?)?.toDouble() ?? 1.0;
                       final price = (r['price'] as num?)?.toDouble() ?? 0.0;
                       final lineAmt = (r['lineAmount'] as num?)?.toDouble() ?? 0.0;
+                      final weight = (r['weight'] as num?)?.toDouble() ?? 0.0;
+                      final unit = (r['unit']?.toString().isNotEmpty == true) ? r['unit'].toString() : 'g';
+                      final isWeight = r['pricingType'] == 'Weight-Based' || weight > 0;
+                      final weightStr = weight.toStringAsFixed(weight.truncateToDouble() == weight ? 0 : 2);
+
+                      final priceDisplay = isWeight ? '${price.toStringAsFixed(2)}/$unit' : price.toStringAsFixed(2);
+                      final qtyDisplay = isWeight
+                          ? (qty > 1 ? '${qty.toInt()} pc ($weightStr$unit)' : (weight > 0 ? '$weightStr$unit' : '${qty.toInt()}'))
+                          : '${qty.toInt()}';
                       
                       return pw.TableRow(
                         children: [
                           pdfCell(i.toString(), align: pw.Alignment.center),
                           pdfCell(itemName, align: pw.Alignment.centerLeft),
-                          pdfCell(price.toStringAsFixed(2), align: pw.Alignment.center),
-                          pdfCell(qty.toInt().toString(), align: pw.Alignment.center),
+                          pdfCell(priceDisplay, align: pw.Alignment.center),
+                          pdfCell(qtyDisplay, align: pw.Alignment.center),
                           pdfCell(lineAmt.toStringAsFixed(2), align: pw.Alignment.center),
                         ],
                       );

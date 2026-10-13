@@ -1220,5 +1220,75 @@ class AdminState extends ChangeNotifier {
       }
     }
   }
+
+  Future<void> updateCustomerReturn({
+    required String docId,
+    required String returnBillNo,
+    required String originalBillNo,
+    required String customerName,
+    required String customerMobile,
+    required String returnReason,
+    required double totalRefund,
+    required String paymentMode,
+    required List<Map<String, dynamic>> oldItems,
+    required List<Map<String, dynamic>> newItems,
+  }) async {
+    // 1. Revert previous stock changes from oldItems
+    for (final oldItem in oldItems) {
+      final tagId = oldItem['tagId'];
+      final qty = (oldItem['qty'] as num?)?.toInt() ?? 0;
+      final condition = oldItem['condition'] as String? ?? 'Good';
+      if (condition.toLowerCase() == 'good') {
+        final product = lookupProduct(tagId);
+        if (product != null) {
+          final revertedQty = (product.quantity - qty).clamp(0, 999999);
+          final newStatus = revertedQty == 0
+              ? 'Out of Stock'
+              : (revertedQty < 5 ? 'Low Stock' : 'In Stock');
+          await updateProduct(product.copyWith(
+            quantity: revertedQty,
+            status: newStatus,
+          ));
+        }
+      }
+    }
+
+    // 2. Apply new stock changes for newItems
+    for (final newItem in newItems) {
+      final tagId = newItem['tagId'];
+      final qty = (newItem['qty'] as num?)?.toInt() ?? 0;
+      final condition = newItem['condition'] as String? ?? 'Good';
+      if (condition.toLowerCase() == 'good') {
+        final product = lookupProduct(tagId);
+        if (product != null) {
+          final newQty = product.quantity + qty;
+          final newStatus = newQty == 0
+              ? 'Out of Stock'
+              : (newQty < 5 ? 'Low Stock' : 'In Stock');
+          await updateProduct(product.copyWith(
+            quantity: newQty,
+            status: newStatus,
+          ));
+        }
+      }
+    }
+
+    final updatedItems = newItems.map((i) => {...i, 'originalBillNo': originalBillNo}).toList();
+    final updates = {
+      'originalBillNo': originalBillNo,
+      'customerName': customerName,
+      'customerMobile': customerMobile,
+      'items': updatedItems,
+      'totalPayable': totalRefund,
+      'returnReason': returnReason,
+      'paymentMode': paymentMode,
+      'narration': 'Return for $originalBillNo',
+    };
+
+    if (docId.isNotEmpty) {
+      await ApiService().updateBill(docId, updates);
+    }
+    notifyListeners();
+  }
 }
 

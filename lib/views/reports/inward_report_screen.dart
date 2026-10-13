@@ -20,8 +20,6 @@ class _InwardReportScreenState extends State<InwardReportScreen> {
   DateTime? _startDate;
   DateTime? _endDate;
 
-  final _numFmt = NumberFormat('#,##,##0.00', 'en_IN');
-
   @override
   void initState() {
     super.initState();
@@ -155,7 +153,7 @@ class _InwardReportScreenState extends State<InwardReportScreen> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.inventory_2_outlined, size: 64, color: BoutiqueColors.textSecondary.withOpacity(0.5)),
+          Icon(Icons.inventory_2_outlined, size: 64, color: BoutiqueColors.textSecondary.withValues(alpha: 0.5)),
           const SizedBox(height: 16),
           Text(msg, style: const TextStyle(color: BoutiqueColors.textSecondary, fontSize: 16)),
         ],
@@ -237,7 +235,7 @@ class _InwardReportScreenState extends State<InwardReportScreen> {
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
-                  color: Colors.green.withOpacity(0.1),
+                  color: Colors.green.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(4),
                 ),
                 child: Text(
@@ -324,8 +322,10 @@ class _InwardReportScreenState extends State<InwardReportScreen> {
         Expanded(
           child: _isLoading
               ? const Center(child: CircularProgressIndicator(color: BoutiqueColors.accent))
-              : _filtered.isEmpty
-                  ? _emptyState('No inward transactions found for the selected date range.')
+              : _error.isNotEmpty
+                  ? _emptyState(_error)
+                  : _filtered.isEmpty
+                      ? _emptyState('No inward transactions found for the selected date range.')
                   : Container(
                       margin: const EdgeInsets.all(24),
                       decoration: BoutiqueDecoration.card(),

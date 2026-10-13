@@ -97,8 +97,11 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
     
     final bDate = b['billDate'] ?? b['voucherDate'] ?? b['date'];
     if (bDate != null) {
-      if (bDate is DateTime) _billDate = bDate;
-      else _billDate = DateTime.tryParse(bDate.toString()) ?? DateTime.now();
+      if (bDate is DateTime) {
+        _billDate = bDate;
+      } else {
+        _billDate = DateTime.tryParse(bDate.toString()) ?? DateTime.now();
+      }
     }
     
     _customerNameCtrl.text = b['customerName']?.toString() ?? '';
@@ -341,45 +344,70 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
     return true;
   }
 
+  bool _isShowingMobileDialog = false;
+
   void _showMobileErrorDialog() {
+    if (_isShowingMobileDialog || !mounted) return;
+    _isShowingMobileDialog = true;
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        titlePadding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
-        contentPadding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
-        title: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(color: Colors.red.shade100, shape: BoxShape.circle),
-              child: const Icon(Icons.error_outline, color: Colors.red),
+      barrierDismissible: true,
+      builder: (ctx) {
+        void closeDialog() {
+          if (ctx.mounted) {
+            Navigator.of(ctx).pop();
+            _customerMobileFocusNode.requestFocus();
+          }
+        }
+
+        return CallbackShortcuts(
+          bindings: {
+            const SingleActivator(LogicalKeyboardKey.enter): closeDialog,
+            const SingleActivator(LogicalKeyboardKey.numpadEnter): closeDialog,
+            const SingleActivator(LogicalKeyboardKey.escape): closeDialog,
+            const SingleActivator(LogicalKeyboardKey.space): closeDialog,
+          },
+          child: FocusScope(
+            autofocus: true,
+            child: AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              titlePadding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
+              contentPadding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
+              title: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(color: Colors.red.shade100, shape: BoxShape.circle),
+                    child: const Icon(Icons.error_outline, color: Colors.red),
+                  ),
+                  const SizedBox(width: 12),
+                  const Text('Invalid Mobile', style: TextStyle(fontFamily: 'serif', fontSize: 20, color: Colors.red, fontWeight: FontWeight.bold)),
+                ],
+              ),
+              content: const Text(
+                'Please enter a valid 10-digit mobile number.',
+                style: TextStyle(fontSize: 14, height: 1.4),
+              ),
+              actions: [
+                ElevatedButton(
+                  autofocus: true,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.red,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    elevation: 0,
+                  ),
+                  onPressed: closeDialog,
+                  child: const Text('OK'),
+                ),
+              ],
             ),
-            const SizedBox(width: 12),
-            const Text('Invalid Mobile', style: TextStyle(fontFamily: 'serif', fontSize: 20, color: Colors.red, fontWeight: FontWeight.bold)),
-          ],
-        ),
-        content: const Text(
-          'Please enter a valid 10-digit mobile number.',
-          style: TextStyle(fontSize: 14, height: 1.4),
-        ),
-        actions: [
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-              elevation: 0,
-            ),
-            onPressed: () {
-              Navigator.pop(ctx);
-              _customerMobileFocusNode.requestFocus();
-            },
-            child: const Text('OK'),
           ),
-        ],
-      ),
-    );
+        );
+      },
+    ).then((_) {
+      _isShowingMobileDialog = false;
+    });
   }
 
   Future<void> _saveBill(bool isSplit, String singleMode, List<Map<String, dynamic>> splitPayments) async {
@@ -1101,6 +1129,7 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
                     final m = value.trim();
                     if (m.isNotEmpty && !RegExp(r'^\d{10}$').hasMatch(m)) {
                       _showMobileErrorDialog();
+                      return;
                     }
                     _narrationFocusNode.requestFocus();
                   },

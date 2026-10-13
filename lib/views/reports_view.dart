@@ -4,7 +4,6 @@ import 'reports/issue_report_screen.dart';
 import 'reports/stock_report_screen.dart';
 import 'reports/sales_report_screen.dart';
 import 'reports/inward_report_screen.dart';
-import '../utils/file_downloader.dart';
 
 class ReportsView extends StatefulWidget {
   const ReportsView({super.key});

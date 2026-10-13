@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../state/admin_state.dart';
 import '../models/product.dart';
@@ -31,6 +32,51 @@ class _InventoryViewState extends State<InventoryView> {
   Product? _selectedDrawerProduct;
   final TextEditingController _searchCtrl = TextEditingController();
   DateTimeRange? _selectedDateRange;
+  int _selectedProductIndex = 0;
+  final ScrollController _listScrollCtrl = ScrollController();
+  final Map<int, FocusNode> _itemFocusNodes = {};
+
+  FocusNode _getItemFocusNode(int index) {
+    return _itemFocusNodes.putIfAbsent(index, () => FocusNode(debugLabel: 'product_row_$index'));
+  }
+
+  void _clearItemFocusNodes() {
+    for (final n in _itemFocusNodes.values) {
+      n.dispose();
+    }
+    _itemFocusNodes.clear();
+  }
+
+  void _selectProductAt(int targetIndex, List<Product> list, {bool openDrawer = false}) {
+    if (list.isEmpty) return;
+    final clampedIndex = targetIndex.clamp(0, list.length - 1);
+    setState(() {
+      _selectedProductIndex = clampedIndex;
+      if (openDrawer) {
+        _selectedDrawerProduct = list[clampedIndex];
+      } else if (_selectedDrawerProduct != null) {
+        _selectedDrawerProduct = list[clampedIndex];
+      }
+    });
+
+    final nextNode = _getItemFocusNode(clampedIndex);
+    nextNode.requestFocus();
+
+    if (nextNode.context != null) {
+      Scrollable.ensureVisible(
+        nextNode.context!,
+        alignment: 0.3,
+        duration: const Duration(milliseconds: 80),
+      );
+    } else if (_listScrollCtrl.hasClients) {
+      final approxOffset = (clampedIndex * 64.0).clamp(0.0, _listScrollCtrl.position.maxScrollExtent);
+      _listScrollCtrl.animateTo(
+        approxOffset,
+        duration: const Duration(milliseconds: 80),
+        curve: Curves.easeOut,
+      );
+    }
+  }
 
   @override
   void initState() {
@@ -51,6 +97,8 @@ class _InventoryViewState extends State<InventoryView> {
   void dispose() {
     widget.globalSearchCtrl?.removeListener(_onGlobalSearch);
     _searchCtrl.dispose();
+    _listScrollCtrl.dispose();
+    _clearItemFocusNodes();
     super.dispose();
   }
 
@@ -184,8 +232,10 @@ class _InventoryViewState extends State<InventoryView> {
           policy: OrderedTraversalPolicy(),
           child: Stack(
             children: [
-              Column(
-              children: [
+              ExcludeFocus(
+                excluding: _selectedDrawerProduct != null,
+                child: Column(
+                  children: [
                 // Top Header Section
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
@@ -552,67 +602,105 @@ class _InventoryViewState extends State<InventoryView> {
 
                 // Main Content View (Table or Grid)
                 Expanded(
-                  child: Container(
-                    margin: const EdgeInsets.symmetric(horizontal: 32, vertical: 8),
-                    decoration: BoutiqueDecoration.card(),
-                    child: filteredList.isEmpty
-                        ? const Center(
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(Icons.inventory_outlined, size: 48, color: BoutiqueColors.textMuted),
-                                SizedBox(height: 12),
-                                Text('No matching items found in catalog.', style: TextStyle(color: BoutiqueColors.textSecondary, fontSize: 14)),
-                              ],
-                            ),
-                          )
-                        : (_isGridView
-                            ? GridView.builder(
-                                padding: const EdgeInsets.all(20),
-                                gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                                  maxCrossAxisExtent: 260,
-                                  childAspectRatio: 0.85,
-                                  crossAxisSpacing: 16,
-                                  mainAxisSpacing: 16,
-                                ),
-                                itemCount: filteredList.length,
-                                itemBuilder: (context, index) {
-                                  final p = filteredList[index];
-                                  return FocusTraversalOrder(
-                                    order: NumericFocusOrder(8.0 + index),
-                                    child: _buildGridCard(p),
-                                  );
-                                },
-                              )
-                            : ListView.separated(
-                                padding: const EdgeInsets.symmetric(vertical: 8),
-                                itemCount: filteredList.length,
-                                separatorBuilder: (_, _) => const Divider(height: 1, color: BoutiqueColors.borderLight),
-                                itemBuilder: (context, index) {
-                                  final p = filteredList[index];
-                                  return FocusTraversalOrder(
-                                    order: NumericFocusOrder(8.0 + index),
-                                    child: _buildTableRow(p),
-                                  );
-                                },
-                              )),
+                  child: Focus(
+                    onKeyEvent: (node, event) {
+                      if (event is KeyDownEvent) {
+                        if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
+                          _selectProductAt(_selectedProductIndex + 1, filteredList);
+                          return KeyEventResult.handled;
+                        } else if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
+                          _selectProductAt(_selectedProductIndex - 1, filteredList);
+                          return KeyEventResult.handled;
+                        } else if (event.logicalKey == LogicalKeyboardKey.enter && _selectedDrawerProduct == null) {
+                          if (filteredList.isNotEmpty && _selectedProductIndex >= 0 && _selectedProductIndex < filteredList.length) {
+                            setState(() => _selectedDrawerProduct = filteredList[_selectedProductIndex]);
+                            return KeyEventResult.handled;
+                          }
+                        }
+                      }
+                      return KeyEventResult.ignored;
+                    },
+                    child: Container(
+                      margin: const EdgeInsets.symmetric(horizontal: 32, vertical: 8),
+                      decoration: BoutiqueDecoration.card(),
+                      child: filteredList.isEmpty
+                          ? const Center(
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.inventory_outlined, size: 48, color: BoutiqueColors.textMuted),
+                                  SizedBox(height: 12),
+                                  Text('No matching items found in catalog.', style: TextStyle(color: BoutiqueColors.textSecondary, fontSize: 14)),
+                                ],
+                              ),
+                            )
+                          : (_isGridView
+                              ? GridView.builder(
+                                  controller: _listScrollCtrl,
+                                  padding: const EdgeInsets.all(20),
+                                  gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                                    maxCrossAxisExtent: 260,
+                                    childAspectRatio: 0.85,
+                                    crossAxisSpacing: 16,
+                                    mainAxisSpacing: 16,
+                                  ),
+                                  itemCount: filteredList.length,
+                                  itemBuilder: (context, index) {
+                                    final p = filteredList[index];
+                                    return FocusTraversalOrder(
+                                      order: NumericFocusOrder(8.0 + index),
+                                      child: _buildGridCard(p, index, filteredList),
+                                    );
+                                  },
+                                )
+                              : ListView.separated(
+                                  controller: _listScrollCtrl,
+                                  padding: const EdgeInsets.symmetric(vertical: 8),
+                                  itemCount: filteredList.length,
+                                  separatorBuilder: (_, _) => const Divider(height: 1, color: BoutiqueColors.borderLight),
+                                  itemBuilder: (context, index) {
+                                    final p = filteredList[index];
+                                    return FocusTraversalOrder(
+                                      order: NumericFocusOrder(8.0 + index),
+                                      child: _buildTableRow(p, index, filteredList),
+                                    );
+                                  },
+                                )),
+                    ),
                   ),
                 ),
               ],
             ),
+          ),
 
             // Side Drawer Overlay (When product is selected)
             if (_selectedDrawerProduct != null)
               Positioned.fill(
-                child: GestureDetector(
-                  onTap: () => setState(() => _selectedDrawerProduct = null),
-                  child: Container(
-                    color: Colors.black26,
-                    child: Align(
-                      alignment: Alignment.centerRight,
-                      child: GestureDetector(
-                        onTap: () {}, // Prevent click propagation
-                        child: _buildSideDrawer(_selectedDrawerProduct!),
+                child: CallbackShortcuts(
+                  bindings: {
+                    const SingleActivator(LogicalKeyboardKey.escape): () {
+                      setState(() => _selectedDrawerProduct = null);
+                    },
+                    const SingleActivator(LogicalKeyboardKey.arrowDown): () {
+                      _selectProductAt(_selectedProductIndex + 1, filteredList);
+                    },
+                    const SingleActivator(LogicalKeyboardKey.arrowUp): () {
+                      _selectProductAt(_selectedProductIndex - 1, filteredList);
+                    },
+                  },
+                  child: FocusScope(
+                    autofocus: true,
+                    child: GestureDetector(
+                      onTap: () => setState(() => _selectedDrawerProduct = null),
+                      child: Container(
+                        color: Colors.black26,
+                        child: Align(
+                          alignment: Alignment.centerRight,
+                          child: GestureDetector(
+                            onTap: () {}, // Prevent click propagation
+                            child: _buildSideDrawer(_selectedDrawerProduct!),
+                          ),
+                        ),
                       ),
                     ),
                   ),
@@ -687,174 +775,265 @@ class _InventoryViewState extends State<InventoryView> {
     );
   }
 
-  Widget _buildTableRow(Product p) {
+  Widget _buildTableRow(Product p, int index, List<Product> list) {
     final isOutOfStock = p.quantity <= 0;
     final isLowStock = p.quantity > 0 && p.quantity < 5;
     final matStr = p.material.isNotEmpty ? ' • ${p.material}' : '';
-    return Material(
-      color: Colors.transparent,
-      child: ListTile(
-      onTap: () => setState(() => _selectedDrawerProduct = p),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 6),
-      leading: ClipRRect(
-        borderRadius: BorderRadius.circular(8),
-        child: Container(
-          width: 42,
-          height: 42,
-          color: BoutiqueColors.accentSoft,
-          child: p.imageUrl.isNotEmpty 
-              ? Image.network(
-                  p.imageUrl,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, _, _) => const Center(
-                    child: Icon(Icons.inventory_2_outlined, color: BoutiqueColors.accent, size: 22),
-                  ),
-                )
-              : const Center(
-                  child: Icon(Icons.inventory_2_outlined, color: BoutiqueColors.accent, size: 22),
-                ),
-        ),
-      ),
-      title: Row(
-        children: [
-          Text(p.tagId, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: BoutiqueColors.accent)),
-          const SizedBox(width: 10),
-          Text(p.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: BoutiqueColors.textPrimary)),
-          if (isOutOfStock) ...[
-            const SizedBox(width: 10),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-              decoration: BoxDecoration(
-                color: const Color(0xFFFFEBEE),
-                borderRadius: BorderRadius.circular(4),
-              ),
-              child: const Text('Out of Stock', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFFD32F2F))),
-            ),
-          ] else if (isLowStock) ...[
-            const SizedBox(width: 10),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-              decoration: BoxDecoration(color: BoutiqueColors.lowStockBg, borderRadius: BorderRadius.circular(4)),
-              child: const Text('Low Stock', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFFD97706))),
-            ),
-          ],
-        ],
-      ),
-      subtitle: Text(
-        '${p.category}$matStr • Qty: ${p.sellableQuantity} ${p.unit}${p.reservedQuantity > 0 ? ' (Res: ${p.reservedQuantity})' : ''}',
-        style: const TextStyle(fontSize: 12, color: BoutiqueColors.textSecondary),
-      ),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _buildPriceDisplay(p),
-          const SizedBox(width: 12),
-          if (perms.tagBarcodePrint || perms.editTags)
-            IconButton(
-              tooltip: 'Print QR Label',
-              icon: const Icon(Icons.qr_code_2_rounded, color: BoutiqueColors.accent, size: 20),
-              onPressed: () => QrPdfGenerator.printProductQr(p),
-            ),
-          IconButton(
-            tooltip: 'Download Inward Bill (.xlsx)',
-            icon: const Icon(Icons.download_rounded, color: Color(0xFF1E7E34), size: 20),
-            onPressed: () async {
-              await ExcelGenerator.downloadInwardBillExcel(products: [p]);
-              if (!mounted) return;
-              BoutiqueToast.showSuccess(context, 'Inward Bill (.xlsx) downloaded for ${p.tagId}!');
-            },
-          ),
-          if (perms.editTags)
-            IconButton(
-              icon: const Icon(Icons.edit_outlined, color: BoutiqueColors.textSecondary, size: 20),
-              onPressed: () => _showEditProductDialog(context, p),
-            ),
-          if (perms.deleteTags)
-            IconButton(
-              icon: const Icon(Icons.delete_outline_rounded, color: BoutiqueColors.destructive, size: 20),
-              onPressed: () => _confirmDeleteProduct(context, p.tagId),
-            ),
-        ],
-      ),
-    ),
-    );
-  }
+    final isSelected = _selectedProductIndex == index;
 
-  Widget _buildGridCard(Product p) {
-    final isOutOfStock = p.quantity <= 0;
-    final isLowStock = p.quantity > 0 && p.quantity < 5;
-    return InkWell(
-      onTap: () => setState(() => _selectedDrawerProduct = p),
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoutiqueDecoration.card(),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+    return Focus(
+      focusNode: _getItemFocusNode(index),
+      onFocusChange: (hasF) {
+        if (hasF && _selectedProductIndex != index) {
+          setState(() => _selectedProductIndex = index);
+        }
+      },
+      onKeyEvent: (node, event) {
+        if (event is KeyDownEvent) {
+          if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
+            _selectProductAt(index + 1, list);
+            return KeyEventResult.handled;
+          } else if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
+            _selectProductAt(index - 1, list);
+            return KeyEventResult.handled;
+          } else if (event.logicalKey == LogicalKeyboardKey.enter ||
+              event.logicalKey == LogicalKeyboardKey.space) {
+            setState(() => _selectedDrawerProduct = p);
+            return KeyEventResult.handled;
+          }
+        }
+        return KeyEventResult.ignored;
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 120),
+        decoration: BoxDecoration(
+          color: isSelected ? BoutiqueColors.accentSoft : Colors.transparent,
+          border: Border(
+            left: BorderSide(
+              color: isSelected ? BoutiqueColors.accent : Colors.transparent,
+              width: 4,
+            ),
+          ),
+        ),
+        child: Material(
+          color: Colors.transparent,
+          child: ListTile(
+            selected: isSelected,
+            selectedTileColor: BoutiqueColors.accentSoft,
+            onTap: () {
+              _selectProductAt(index, list, openDrawer: true);
+            },
+            hoverColor: BoutiqueColors.accentSoft.withValues(alpha: 0.4),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 6),
+            leading: ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: Container(
+                width: 42,
+                height: 42,
+                color: isSelected ? BoutiqueColors.bgCard : BoutiqueColors.accentSoft,
+                child: p.imageUrl.isNotEmpty 
+                    ? Image.network(
+                        p.imageUrl,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, _, _) => const Center(
+                          child: Icon(Icons.inventory_2_outlined, color: BoutiqueColors.accent, size: 22),
+                        ),
+                      )
+                    : const Center(
+                        child: Icon(Icons.inventory_2_outlined, color: BoutiqueColors.accent, size: 22),
+                      ),
+              ),
+            ),
+            title: Row(
               children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(color: BoutiqueColors.accentSoft, borderRadius: BorderRadius.circular(6)),
-                  child: Text(p.tagId, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: BoutiqueColors.accent)),
-                ),
-                if (isOutOfStock)
+                Text(p.tagId, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: BoutiqueColors.accent)),
+                const SizedBox(width: 10),
+                Text(p.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: BoutiqueColors.textPrimary)),
+                if (isOutOfStock) ...[
+                  const SizedBox(width: 10),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                     decoration: BoxDecoration(
                       color: const Color(0xFFFFEBEE),
                       borderRadius: BorderRadius.circular(4),
                     ),
                     child: const Text('Out of Stock', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFFD32F2F))),
-                  )
-                else if (isLowStock)
+                  ),
+                ] else if (isLowStock) ...[
+                  const SizedBox(width: 10),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                     decoration: BoxDecoration(color: BoutiqueColors.lowStockBg, borderRadius: BorderRadius.circular(4)),
                     child: const Text('Low Stock', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFFD97706))),
                   ),
+                ],
               ],
             ),
-            Center(
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(10),
-                child: Container(
-                  width: 72,
-                  height: 72,
-                  color: BoutiqueColors.accentSoft,
-                  child: p.imageUrl.isNotEmpty
-                      ? Image.network(
-                          p.imageUrl,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, _, _) => const Center(
+            subtitle: Text(
+              '${p.category}$matStr • Qty: ${p.sellableQuantity} ${p.unit}${p.reservedQuantity > 0 ? ' (Res: ${p.reservedQuantity})' : ''}',
+              style: const TextStyle(fontSize: 12, color: BoutiqueColors.textSecondary),
+            ),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _buildPriceDisplay(p),
+                const SizedBox(width: 12),
+                if (perms.tagBarcodePrint || perms.editTags)
+                  IconButton(
+                    tooltip: 'Print QR Label',
+                    icon: const Icon(Icons.qr_code_2_rounded, color: BoutiqueColors.accent, size: 20),
+                    onPressed: () => QrPdfGenerator.printProductQr(p),
+                  ),
+                IconButton(
+                  tooltip: 'Download Inward Bill (.xlsx)',
+                  icon: const Icon(Icons.download_rounded, color: Color(0xFF1E7E34), size: 20),
+                  onPressed: () async {
+                    await ExcelGenerator.downloadInwardBillExcel(products: [p]);
+                    if (!mounted) return;
+                    BoutiqueToast.showSuccess(context, 'Inward Bill (.xlsx) downloaded for ${p.tagId}!');
+                  },
+                ),
+                if (perms.editTags)
+                  IconButton(
+                    icon: const Icon(Icons.edit_outlined, color: BoutiqueColors.textSecondary, size: 20),
+                    onPressed: () => _showEditProductDialog(context, p),
+                  ),
+                if (perms.deleteTags)
+                  IconButton(
+                    icon: const Icon(Icons.delete_outline_rounded, color: BoutiqueColors.destructive, size: 20),
+                    onPressed: () => _confirmDeleteProduct(context, p.tagId),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGridCard(Product p, int index, List<Product> list) {
+    final isOutOfStock = p.quantity <= 0;
+    final isLowStock = p.quantity > 0 && p.quantity < 5;
+    final isSelected = _selectedProductIndex == index;
+
+    return Focus(
+      focusNode: _getItemFocusNode(index),
+      onFocusChange: (hasF) {
+        if (hasF && _selectedProductIndex != index) {
+          setState(() => _selectedProductIndex = index);
+        }
+      },
+      onKeyEvent: (node, event) {
+        if (event is KeyDownEvent) {
+          if (event.logicalKey == LogicalKeyboardKey.arrowRight ||
+              event.logicalKey == LogicalKeyboardKey.arrowDown) {
+            _selectProductAt(index + 1, list);
+            return KeyEventResult.handled;
+          } else if (event.logicalKey == LogicalKeyboardKey.arrowLeft ||
+              event.logicalKey == LogicalKeyboardKey.arrowUp) {
+            _selectProductAt(index - 1, list);
+            return KeyEventResult.handled;
+          } else if (event.logicalKey == LogicalKeyboardKey.enter ||
+              event.logicalKey == LogicalKeyboardKey.space) {
+            setState(() => _selectedDrawerProduct = p);
+            return KeyEventResult.handled;
+          }
+        }
+        return KeyEventResult.ignored;
+      },
+      child: InkWell(
+        onTap: () => _selectProductAt(index, list, openDrawer: true),
+        hoverColor: BoutiqueColors.accentSoft.withValues(alpha: 0.3),
+        borderRadius: BorderRadius.circular(12),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 120),
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: isSelected ? BoutiqueColors.accentSoft.withValues(alpha: 0.5) : BoutiqueColors.bgCard,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: isSelected ? BoutiqueColors.accent : BoutiqueColors.borderLight,
+              width: isSelected ? 2 : 1,
+            ),
+            boxShadow: isSelected ? BoutiqueDecoration.softShadow : null,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: isSelected ? BoutiqueColors.accent : BoutiqueColors.accentSoft,
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      p.tagId,
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        color: isSelected ? Colors.white : BoutiqueColors.accent,
+                      ),
+                    ),
+                  ),
+                  if (isOutOfStock)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFFEBEE),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: const Text('Out of Stock', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFFD32F2F))),
+                    )
+                  else if (isLowStock)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                      decoration: BoxDecoration(color: BoutiqueColors.lowStockBg, borderRadius: BorderRadius.circular(4)),
+                      child: const Text('Low Stock', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFFD97706))),
+                    ),
+                ],
+              ),
+              Center(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(10),
+                  child: Container(
+                    width: 72,
+                    height: 72,
+                    color: BoutiqueColors.accentSoft,
+                    child: p.imageUrl.isNotEmpty
+                        ? Image.network(
+                            p.imageUrl,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, _, _) => const Center(
+                              child: Icon(Icons.inventory_2_outlined, size: 36, color: BoutiqueColors.accent),
+                            ),
+                          )
+                        : const Center(
                             child: Icon(Icons.inventory_2_outlined, size: 36, color: BoutiqueColors.accent),
                           ),
-                        )
-                      : const Center(
-                          child: Icon(Icons.inventory_2_outlined, size: 36, color: BoutiqueColors.accent),
-                        ),
+                  ),
                 ),
               ),
-            ),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(p.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: BoutiqueColors.textPrimary)),
-                Text(p.category, style: const TextStyle(fontSize: 11, color: BoutiqueColors.textSecondary)),
-                const SizedBox(height: 8),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    _buildPriceDisplay(p),
-                    Text('Qty: ${p.sellableQuantity}${p.reservedQuantity > 0 ? '\n(Res: ${p.reservedQuantity})' : ''}', textAlign: TextAlign.right, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: BoutiqueColors.textSecondary)),
-                  ],
-                ),
-              ],
-            ),
-          ],
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(p.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: BoutiqueColors.textPrimary)),
+                  Text(p.category, style: const TextStyle(fontSize: 11, color: BoutiqueColors.textSecondary)),
+                  const SizedBox(height: 8),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      _buildPriceDisplay(p),
+                      Text('Qty: ${p.sellableQuantity}${p.reservedQuantity > 0 ? '\n(Res: ${p.reservedQuantity})' : ''}', textAlign: TextAlign.right, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: BoutiqueColors.textSecondary)),
+                    ],
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -934,6 +1113,12 @@ class _InventoryViewState extends State<InventoryView> {
             children: [
               const Text('Item Details', style: TextStyle(fontFamily: 'serif', fontSize: 22, fontWeight: FontWeight.bold, color: BoutiqueColors.textPrimary)),
               IconButton(
+                autofocus: true,
+                tooltip: 'Close (Esc)',
+                style: IconButton.styleFrom(
+                  focusColor: BoutiqueColors.accentSoft,
+                  hoverColor: BoutiqueColors.accentSoft.withValues(alpha: 0.5),
+                ),
                 icon: const Icon(Icons.close_rounded, color: BoutiqueColors.textSecondary),
                 onPressed: () => setState(() => _selectedDrawerProduct = null),
               ),
@@ -987,29 +1172,52 @@ class _InventoryViewState extends State<InventoryView> {
               if (perms.deleteTags)
                 Expanded(
                   child: OutlinedButton.icon(
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      side: const BorderSide(color: BoutiqueColors.destructive),
+                    style: ButtonStyle(
+                      padding: WidgetStateProperty.all(const EdgeInsets.symmetric(vertical: 14)),
+                      side: WidgetStateProperty.resolveWith((states) {
+                        if (states.contains(WidgetState.focused)) {
+                          return const BorderSide(color: BoutiqueColors.destructive, width: 2.5);
+                        }
+                        return const BorderSide(color: BoutiqueColors.destructive, width: 1);
+                      }),
+                      backgroundColor: WidgetStateProperty.resolveWith((states) {
+                        if (states.contains(WidgetState.focused)) {
+                          return BoutiqueColors.destructive.withValues(alpha: 0.12);
+                        }
+                        return Colors.transparent;
+                      }),
                     ),
                     onPressed: () => _confirmDeleteProduct(context, p.tagId),
                     icon: const Icon(Icons.delete_outline, color: BoutiqueColors.destructive, size: 18),
-                    label: const Text('Delete', style: TextStyle(color: BoutiqueColors.destructive)),
+                    label: const Text('Delete', style: TextStyle(color: BoutiqueColors.destructive, fontWeight: FontWeight.bold)),
                   ),
                 ),
               if (perms.deleteTags && perms.editTags) const SizedBox(width: 12),
               if (perms.editTags)
                 Expanded(
                   child: ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: BoutiqueColors.accent,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
+                    style: ButtonStyle(
+                      backgroundColor: WidgetStateProperty.all(BoutiqueColors.accent),
+                      padding: WidgetStateProperty.all(const EdgeInsets.symmetric(vertical: 14)),
+                      side: WidgetStateProperty.resolveWith((states) {
+                        if (states.contains(WidgetState.focused)) {
+                          return const BorderSide(color: Colors.black87, width: 2.5);
+                        }
+                        return BorderSide.none;
+                      }),
+                      elevation: WidgetStateProperty.resolveWith((states) {
+                        if (states.contains(WidgetState.focused)) {
+                          return 6;
+                        }
+                        return 0;
+                      }),
                     ),
                     onPressed: () {
                       setState(() => _selectedDrawerProduct = null);
                       _showEditProductDialog(context, p);
                     },
                     icon: const Icon(Icons.edit, color: Colors.white, size: 18),
-                    label: const Text('Edit Item', style: TextStyle(color: Colors.white)),
+                    label: const Text('Edit Item', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
                   ),
                 ),
             ],

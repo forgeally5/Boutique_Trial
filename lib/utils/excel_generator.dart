@@ -72,7 +72,6 @@ class ExcelGenerator {
       final items = bill['items'] as List<dynamic>? ?? [];
 
       for (final item in items) {
-        final isQty = item['pricingType'] == 'Quantity-Based';
         final qty = (item['qty'] as num?)?.toInt() ?? 0;
         final weight = (item['weight'] as num?)?.toDouble() ?? 0.0;
         final amt = (item['amount'] as num?)?.toDouble() ?? 0.0;

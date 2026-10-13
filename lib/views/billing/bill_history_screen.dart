@@ -1252,6 +1252,7 @@ class _BillDetailDialogState extends State<_BillDetailDialog> {
     );
   }
 
+  // ignore: unused_element
   void _openEditCustomerDialog() {
     final nameCtrl = TextEditingController(text: (widget.bill['customerName'] ?? widget.bill['customer_name'] ?? '').toString());
     final mobileCtrl = TextEditingController(text: (widget.bill['customerMobile'] ?? widget.bill['customer_mobile'] ?? '').toString());
@@ -1390,6 +1391,7 @@ class _BillDetailDialogState extends State<_BillDetailDialog> {
     );
   }
 
+  // ignore: unused_element
   void _openEditItemsDialog() {
     final items = List<Map<String, dynamic>>.from(widget.bill['items'] ?? []);
     final controllers = items.map((e) => TextEditingController(text: e['name']?.toString() ?? '')).toList();
@@ -1764,10 +1766,10 @@ class _BillDetailDialogState extends State<_BillDetailDialog> {
                       Table(
                         border: TableBorder.all(color: goldLine, width: 0.8),
                         columnWidths: const {
-                          0: FlexColumnWidth(0.8),
-                          1: FlexColumnWidth(3.2),
-                          2: FlexColumnWidth(1.2),
-                          3: FlexColumnWidth(0.8),
+                          0: FlexColumnWidth(0.7),
+                          1: FlexColumnWidth(3.0),
+                          2: FlexColumnWidth(1.3),
+                          3: FlexColumnWidth(1.2),
                           4: FlexColumnWidth(1.3),
                         },
                         children: [
@@ -1798,6 +1800,15 @@ class _BillDetailDialogState extends State<_BillDetailDialog> {
                             final qty = (r['qty'] as num?)?.toDouble() ?? 1.0;
                             final price = (r['price'] as num?)?.toDouble() ?? 0.0;
                             final lineAmt = (r['lineAmount'] as num?)?.toDouble() ?? 0.0;
+                            final weight = (r['weight'] as num?)?.toDouble() ?? 0.0;
+                            final unit = (r['unit']?.toString().isNotEmpty == true) ? r['unit'].toString() : 'g';
+                            final isWeight = r['pricingType'] == 'Weight-Based' || weight > 0;
+                            final weightStr = weight.toStringAsFixed(weight.truncateToDouble() == weight ? 0 : 2);
+
+                            final priceDisplay = isWeight ? '${price.toStringAsFixed(2)}/$unit' : price.toStringAsFixed(2);
+                            final qtyDisplay = isWeight
+                                ? (qty > 1 ? '${qty.toInt()} pc ($weightStr$unit)' : (weight > 0 ? '$weightStr$unit' : '${qty.toInt()}'))
+                                : '${qty.toInt()}';
                             
                             String nameDisplay = itemName;
                             if (retQty > 0) {
@@ -1812,8 +1823,8 @@ class _BillDetailDialogState extends State<_BillDetailDialog> {
                               children: [
                                 tableCell('$i'),
                                 tableCell(nameDisplay, align: Alignment.centerLeft, color: retQty > 0 ? const Color(0xFFDC2626) : null),
-                                tableCell(price.toStringAsFixed(2)),
-                                tableCell('${qty.toInt()}'),
+                                tableCell(priceDisplay),
+                                tableCell(qtyDisplay),
                                 tableCell(lineAmt.toStringAsFixed(2), bold: true),
                               ],
                             );
