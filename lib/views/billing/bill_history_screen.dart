@@ -460,6 +460,31 @@ class _BillHistoryScreenState extends State<BillHistoryScreen> {
                     decoration: BoutiqueInputDecoration.field(
                       hintText: 'Search bill #, customer, mobile...',
                       prefixIcon: const Icon(Icons.search_rounded, size: 18, color: BoutiqueColors.textSecondary),
+                      suffixIcon: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (_searchCtrl.text.isNotEmpty)
+                            IconButton(
+                              icon: const Icon(Icons.close_rounded, size: 16, color: BoutiqueColors.textMuted),
+                              tooltip: 'Clear search',
+                              onPressed: () {
+                                _searchCtrl.clear();
+                                setState(() {});
+                              },
+                            ),
+                          IconButton(
+                            icon: const Icon(Icons.paste_rounded, size: 16, color: BoutiqueColors.accent),
+                            tooltip: 'Paste bill number or text',
+                            onPressed: () async {
+                              final data = await Clipboard.getData(Clipboard.kTextPlain);
+                              if (data?.text != null && data!.text!.isNotEmpty) {
+                                _searchCtrl.text = data.text!.trim();
+                                setState(() {});
+                              }
+                            },
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
@@ -1035,10 +1060,31 @@ class _BillHistoryTileState extends State<_BillHistoryTile> {
                   children: [
                     Row(
                       children: [
-                        Text(
+                        SelectableText(
                           b['billNo'] ?? '—',
                           style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: BoutiqueColors.accent),
                         ),
+                        if ((b['billNo']?.toString().trim().isNotEmpty ?? false))
+                          IconButton(
+                            icon: const Icon(Icons.copy_rounded, size: 14, color: BoutiqueColors.accent),
+                            tooltip: 'Copy Bill Number (${b['billNo']})',
+                            padding: const EdgeInsets.symmetric(horizontal: 4),
+                            constraints: const BoxConstraints(),
+                            splashRadius: 16,
+                            onPressed: () {
+                              final billNo = b['billNo'].toString();
+                              Clipboard.setData(ClipboardData(text: billNo));
+                              ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('Copied "$billNo" to clipboard'),
+                                  duration: const Duration(seconds: 2),
+                                  behavior: SnackBarBehavior.floating,
+                                  width: 260,
+                                ),
+                              );
+                            },
+                          ),
                         const SizedBox(width: 8),
                         if (b['isReturned'] == 1 || b['isReturned'] == true || b['isReturned'] == '1')
                           Container(

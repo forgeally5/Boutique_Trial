@@ -690,7 +690,35 @@ class _IssueReportScreenState extends State<IssueReportScreen> {
                   ),
                   IconButton(
                     icon: const Icon(Icons.edit, size: 16, color: BoutiqueColors.accent),
-                    tooltip: 'Update action',
+                    tooltip: 'Edit Issue / Quantity',
+                    onPressed: () async {
+                      final issue = VendorIssue(
+                        id: r['id'] ?? '',
+                        tagId: r['tagId'] ?? '',
+                        productName: r['productName'] ?? '',
+                        vendor: r['counterpart'] ?? '',
+                        quantity: (r['qty'] as num?)?.toInt() ?? 1,
+                        issueType: r['issueReason'] ?? '',
+                        actionTaken: r['actionTaken'] ?? 'Pending',
+                        dateReported: r['_dt'] as DateTime? ?? DateTime.now(),
+                        notes: r['notes'] ?? '',
+                        refundAmount: (r['refundAmount'] as num?)?.toDouble() ?? 0.0,
+                      );
+                      final res = await showDialog(
+                        context: context,
+                        builder: (ctx) => VendorIssueDialog(
+                          state: context.read<AdminState>(),
+                          existingIssue: issue,
+                        ),
+                      );
+                      if (res == true) {
+                        _load();
+                      }
+                    },
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.rule_folder_outlined, size: 16, color: BoutiqueColors.textSecondary),
+                    tooltip: 'Update Status Action',
                     onPressed: () => _updateVendorAction(r['id'], r['tagId'], r['actionTaken']),
                   ),
                 ] else ...[

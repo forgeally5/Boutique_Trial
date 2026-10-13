@@ -8,8 +8,13 @@ import '../utils/excel_generator.dart';
 
 class VendorIssueDialog extends StatefulWidget {
   final AdminState state;
+  final VendorIssue? existingIssue;
 
-  const VendorIssueDialog({super.key, required this.state});
+  const VendorIssueDialog({
+    super.key,
+    required this.state,
+    this.existingIssue,
+  });
 
   @override
   State<VendorIssueDialog> createState() => _VendorIssueDialogState();
@@ -35,6 +40,25 @@ class _VendorIssueDialogState extends State<VendorIssueDialog> {
   void initState() {
     super.initState();
     _qtyCtrl.addListener(_onQtyChanged);
+
+    if (widget.existingIssue != null) {
+      final ei = widget.existingIssue!;
+      _qtyCtrl.text = ei.quantity.toString();
+      _notesCtrl.text = ei.notes;
+      _refundCtrl.text = ei.refundAmount.toStringAsFixed(2);
+      _vendorCtrl.text = ei.vendor;
+      _issueType = ei.issueType;
+      _dateReported = ei.dateReported;
+
+      // Find matching product by tagId
+      try {
+        _selectedProduct = widget.state.products.firstWhere(
+          (p) => p.tagId == ei.tagId,
+        );
+      } catch (_) {
+        _selectedProduct = widget.state.lookupProduct(ei.tagId);
+      }
+    }
   }
 
   void _onQtyChanged() {
@@ -81,9 +105,16 @@ class _VendorIssueDialogState extends State<VendorIssueDialog> {
     }
 
     final qty = int.tryParse(_qtyCtrl.text) ?? 0;
-    if (qty <= 0 || qty > _selectedProduct!.quantity) {
+    final maxAvailable = widget.existingIssue != null
+        ? _selectedProduct!.quantity + widget.existingIssue!.quantity
+        : _selectedProduct!.quantity;
+
+    if (qty <= 0 || qty > maxAvailable) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Invalid quantity'), backgroundColor: Colors.red),
+        SnackBar(
+          content: Text('Invalid quantity (Max available: $maxAvailable)'),
+          backgroundColor: Colors.red,
+        ),
       );
       return;
     }
@@ -91,24 +122,37 @@ class _VendorIssueDialogState extends State<VendorIssueDialog> {
     setState(() => _isSaving = true);
     try {
       final issue = VendorIssue(
-        id: '',
+        id: widget.existingIssue?.id ?? '',
         tagId: _selectedProduct!.tagId,
         productName: _selectedProduct!.name,
         vendor: _vendorCtrl.text.trim().isNotEmpty ? _vendorCtrl.text.trim() : _selectedProduct!.vendor,
         quantity: qty,
         issueType: _issueType!,
-        actionTaken: 'Pending', // defaults to Pending; updatable from the table
+        actionTaken: widget.existingIssue?.actionTaken ?? 'Pending',
         dateReported: _dateReported,
         notes: _notesCtrl.text.trim(),
         refundAmount: double.tryParse(_refundCtrl.text) ?? 0.0,
       );
 
-      await widget.state.logVendorIssue(issue);
+      if (widget.existingIssue != null) {
+        await widget.state.editVendorIssue(
+          oldIssue: widget.existingIssue!,
+          newIssue: issue,
+        );
+        if (mounted) {
+          BoutiqueToast.showSuccess(context, 'Vendor issue updated & stock adjusted!');
+        }
+      } else {
+        await widget.state.logVendorIssue(issue);
+        if (mounted) {
+          BoutiqueToast.showSuccess(context, 'Issue logged successfully!');
+        }
+      }
 
       if (downloadExcel) {
         await ExcelGenerator.downloadVendorIssueBillExcel(issue: issue);
         if (mounted) {
-          BoutiqueToast.showSuccess(context, 'Issue logged & Issue Bill (.xlsx) downloaded!');
+          BoutiqueToast.showSuccess(context, 'Issue Bill (.xlsx) downloaded!');
         }
       }
 
@@ -204,10 +248,28 @@ class _VendorIssueDialogState extends State<VendorIssueDialog> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('Log Vendor Issue', style: TextStyle(fontFamily: 'serif', fontSize: 20, fontWeight: FontWeight.bold, color: BoutiqueColors.textPrimary)),
+              Text(
+                widget.existingIssue != null ? 'Edit Vendor Issue' : 'Log Vendor Issue',
+                style: const TextStyle(
+                  fontFamily: 'serif',
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: BoutiqueColors.textPrimary,
+                ),
+              ),
               const SizedBox(height: 20),
               
-              _buildProductSearch(),
+              if (widget.existingIssue != null && _selectedProduct != null)
+                TextFormField(
+                  initialValue: '${_selectedProduct!.tagId} - ${_selectedProduct!.name}',
+                  enabled: false,
+                  decoration: BoutiqueInputDecoration.field(
+                    labelText: 'Product (Locked for Edit)',
+                    hintText: '',
+                  ),
+                )
+              else
+                _buildProductSearch(),
               const SizedBox(height: 16),
 
               if (_selectedProduct != null) ...[
@@ -230,7 +292,7 @@ class _VendorIssueDialogState extends State<VendorIssueDialog> {
                               const Icon(Icons.inventory_2_outlined, size: 16, color: BoutiqueColors.accent),
                               const SizedBox(width: 6),
                               Text(
-                                'Available Stock: ${_selectedProduct!.quantity} ${_selectedProduct!.unit}',
+                                'Available Stock: ${widget.existingIssue != null ? (_selectedProduct!.quantity + widget.existingIssue!.quantity) : _selectedProduct!.quantity} ${_selectedProduct!.unit}',
                                 style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: BoutiqueColors.accent),
                               ),
                             ],
@@ -405,7 +467,9 @@ class _VendorIssueDialogState extends State<VendorIssueDialog> {
                   ElevatedButton(
                     style: ElevatedButton.styleFrom(backgroundColor: BoutiqueColors.accent, foregroundColor: Colors.white),
                     onPressed: _isSaving ? null : () => _save(downloadExcel: false),
-                    child: _isSaving ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)) : const Text('Log Issue'),
+                    child: _isSaving
+                        ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                        : Text(widget.existingIssue != null ? 'Update Issue' : 'Log Issue'),
                   ),
                 ],
               )

@@ -1013,6 +1013,66 @@ class AdminState extends ChangeNotifier {
     }
   }
 
+  Future<void> editVendorIssue({
+    required VendorIssue oldIssue,
+    required VendorIssue newIssue,
+  }) async {
+    try {
+      final payload = {
+        'id': newIssue.id,
+        'docId': newIssue.id,
+        'vendorName': newIssue.vendor,
+        'status': newIssue.actionTaken,
+        'totalAmount': newIssue.refundAmount,
+        'notes': newIssue.notes,
+        'issueDate': newIssue.dateReported.toIso8601String(),
+        'items': [
+          {
+            'tagId': newIssue.tagId,
+            'productName': newIssue.productName,
+            'qty': newIssue.quantity,
+            'quantity': newIssue.quantity,
+            'issueType': newIssue.issueType,
+            'actionTaken': newIssue.actionTaken,
+            'refundAmount': newIssue.refundAmount,
+            'photoUrl': newIssue.photoUrl,
+          }
+        ],
+      };
+      await ApiService().updateVendorIssue(newIssue.id, payload);
+    } catch (e) {
+      debugPrint("Error updating vendor issue in backend: $e");
+    }
+
+    final product = lookupProduct(newIssue.tagId);
+    if (product != null) {
+      // Calculate delta of quantity affected
+      final diff = newIssue.quantity - oldIssue.quantity;
+      if (diff != 0) {
+        // If more quantity is marked as issue (diff > 0), available stock reduces by diff and issueQuantity increases by diff.
+        // If quantity is reduced (diff < 0), available stock increases and issueQuantity decreases.
+        final newQty = (product.quantity - diff).clamp(0, 999999);
+        final newIssueQty = (product.issueQuantity + diff).clamp(0, 999999);
+
+        String newStatus;
+        if (newQty == 0) {
+          newStatus = 'Out of Stock';
+        } else if (newQty < 5) {
+          newStatus = 'Low Stock';
+        } else {
+          newStatus = 'In Stock';
+        }
+
+        final updatedProduct = product.copyWith(
+          quantity: newQty,
+          issueQuantity: newIssueQty,
+          status: newStatus,
+        );
+        await updateProduct(updatedProduct);
+      }
+    }
+  }
+
   Future<void> updateVendorIssueAction(String issueId, String tagId, String newAction) async {
     try {
       // Fetch current issue to get previousAction and quantity

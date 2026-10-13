@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:printing/printing.dart';
 import '../../state/admin_state.dart';
@@ -22,11 +23,20 @@ class _CustomerLedgerScreenState extends State<CustomerLedgerScreen> {
 
   String? _selectedCustomerKey;
   String _searchQuery = '';
+  final TextEditingController _searchCtrl = TextEditingController();
+  final FocusNode _searchFocusNode = FocusNode();
 
   @override
   void initState() {
     super.initState();
     _fetchPendingBills();
+  }
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    _searchFocusNode.dispose();
+    super.dispose();
   }
 
   double _getPendingAmount(Map<String, dynamic> b) {
@@ -175,7 +185,14 @@ class _CustomerLedgerScreenState extends State<CustomerLedgerScreen> {
         );
       }
     } finally {
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() => _isLoading = false);
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && _searchFocusNode.canRequestFocus) {
+            _searchFocusNode.requestFocus();
+          }
+        });
+      }
     }
   }
 
@@ -231,17 +248,21 @@ class _CustomerLedgerScreenState extends State<CustomerLedgerScreen> {
 
     final keys = _filteredCustomerKeys;
 
-    return Row(
-      children: [
-        // LEFT: Customer / Bill Group List
-        Container(
-          width: 360,
-          decoration: const BoxDecoration(
-            color: BoutiqueColors.bgSubtle,
-            border: Border(
-              right: BorderSide(color: BoutiqueColors.borderLight),
-            ),
-          ),
+    return FocusTraversalGroup(
+      policy: OrderedTraversalPolicy(),
+      child: Row(
+        children: [
+          // LEFT: Customer / Bill Group List
+          FocusTraversalOrder(
+            order: const NumericFocusOrder(1.0),
+            child: Container(
+              width: 360,
+              decoration: const BoxDecoration(
+                color: BoutiqueColors.bgSubtle,
+                border: Border(
+                  right: BorderSide(color: BoutiqueColors.borderLight),
+                ),
+              ),
           child: Column(
             children: [
               Padding(
@@ -250,12 +271,46 @@ class _CustomerLedgerScreenState extends State<CustomerLedgerScreen> {
                   children: [
                     Expanded(
                       child: TextField(
+                        controller: _searchCtrl,
+                        focusNode: _searchFocusNode,
+                        autofocus: true,
+                        textInputAction: TextInputAction.next,
                         decoration: BoutiqueInputDecoration.field(
                           hintText: 'Search customer, mobile or bill #...',
                           prefixIcon: const Icon(
                             Icons.search,
                             size: 20,
                             color: BoutiqueColors.textSecondary,
+                          ),
+                          suffixIcon: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (_searchCtrl.text.isNotEmpty)
+                                IconButton(
+                                  icon: const Icon(Icons.close_rounded, size: 16, color: BoutiqueColors.textMuted),
+                                  tooltip: 'Clear search',
+                                  onPressed: () {
+                                    _searchCtrl.clear();
+                                    setState(() {
+                                      _searchQuery = '';
+                                    });
+                                  },
+                                ),
+                              IconButton(
+                                icon: const Icon(Icons.paste_rounded, size: 16, color: BoutiqueColors.accent),
+                                tooltip: 'Paste bill number or text',
+                                onPressed: () async {
+                                  final data = await Clipboard.getData(Clipboard.kTextPlain);
+                                  if (data?.text != null && data!.text!.isNotEmpty) {
+                                    final text = data.text!.trim();
+                                    _searchCtrl.text = text;
+                                    setState(() {
+                                      _searchQuery = text;
+                                    });
+                                  }
+                                },
+                              ),
+                            ],
                           ),
                         ),
                         onChanged: (v) => setState(() {
@@ -308,97 +363,15 @@ class _CustomerLedgerScreenState extends State<CustomerLedgerScreen> {
                           );
                           final isSelected = _selectedCustomerKey == k;
 
-                          return InkWell(
+                          return _CustomerLedgerTile(
+                            displayName: displayName,
+                            rawMobile: rawMobile,
+                            billNos: billNos,
+                            totalPending: totalPending,
+                            billCount: bills.length,
+                            isSelected: isSelected,
                             onTap: () =>
                                 setState(() => _selectedCustomerKey = k),
-                            child: Container(
-                              padding: const EdgeInsets.all(16),
-                              decoration: BoxDecoration(
-                                color: isSelected
-                                    ? Colors.white
-                                    : Colors.transparent,
-                                border: Border(
-                                  bottom: const BorderSide(
-                                    color: BoutiqueColors.borderLight,
-                                  ),
-                                  left: BorderSide(
-                                    color: isSelected
-                                        ? BoutiqueColors.accent
-                                        : Colors.transparent,
-                                    width: 4,
-                                  ),
-                                ),
-                              ),
-                              child: Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          displayName,
-                                          style: TextStyle(
-                                            fontWeight: FontWeight.bold,
-                                            fontSize: 14,
-                                            color: isSelected
-                                                ? BoutiqueColors.accent
-                                                : BoutiqueColors.textPrimary,
-                                          ),
-                                        ),
-                                        if (rawMobile.isNotEmpty)
-                                          Text(
-                                            rawMobile,
-                                            style: const TextStyle(
-                                              fontSize: 12,
-                                              color:
-                                                  BoutiqueColors.textSecondary,
-                                            ),
-                                          ),
-                                        if (billNos.isNotEmpty)
-                                          Padding(
-                                            padding: const EdgeInsets.only(
-                                              top: 2,
-                                            ),
-                                            child: Text(
-                                              'Bill: $billNos',
-                                              style: const TextStyle(
-                                                fontSize: 11,
-                                                fontWeight: FontWeight.w600,
-                                                color: BoutiqueColors.textMuted,
-                                              ),
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                            ),
-                                          ),
-                                      ],
-                                    ),
-                                  ),
-                                  Column(
-                                    crossAxisAlignment: CrossAxisAlignment.end,
-                                    children: [
-                                      Text(
-                                        '₹${NumberFormat('#,##,##0.00').format(totalPending)}',
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 14,
-                                          color: Color(0xFFB91C1C),
-                                        ),
-                                      ),
-                                      Text(
-                                        '${bills.length} ${bills.length == 1 ? 'bill' : 'bills'} due',
-                                        style: const TextStyle(
-                                          fontSize: 11,
-                                          color: BoutiqueColors.textSecondary,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                            ),
                           );
                         },
                       ),
@@ -406,38 +379,42 @@ class _CustomerLedgerScreenState extends State<CustomerLedgerScreen> {
             ],
           ),
         ),
+      ),
 
         // RIGHT: Customer Details & Split / Installment Due Payments
         Expanded(
-          child:
-              _selectedCustomerKey == null ||
-                  !_customerGroups.containsKey(_selectedCustomerKey)
-              ? const Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        Icons.account_balance_wallet_outlined,
-                        size: 64,
-                        color: BoutiqueColors.border,
-                      ),
-                      SizedBox(height: 16),
-                      Text(
-                        'Select a customer or bill to view & settle due balance',
-                        style: TextStyle(
-                          color: BoutiqueColors.textSecondary,
-                          fontSize: 16,
+          child: FocusTraversalOrder(
+            order: const NumericFocusOrder(2.0),
+            child: _selectedCustomerKey == null ||
+                    !_customerGroups.containsKey(_selectedCustomerKey)
+                ? const Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.account_balance_wallet_outlined,
+                          size: 64,
+                          color: BoutiqueColors.border,
                         ),
-                      ),
-                    ],
+                        SizedBox(height: 16),
+                        Text(
+                          'Select a customer or bill to view & settle due balance',
+                          style: TextStyle(
+                            color: BoutiqueColors.textSecondary,
+                            fontSize: 16,
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                : _buildCustomerDetailPanel(
+                    _customerGroups[_selectedCustomerKey!]!,
                   ),
-                )
-              : _buildCustomerDetailPanel(
-                  _customerGroups[_selectedCustomerKey!]!,
-                ),
+          ),
         ),
       ],
-    );
+    ),
+  );
   }
 
   Widget _buildCustomerDetailPanel(List<Map<String, dynamic>> bills) {
@@ -639,7 +616,7 @@ class _CustomerLedgerScreenState extends State<CustomerLedgerScreen> {
                             children: [
                               Row(
                                 children: [
-                                  Text(
+                                  SelectableText(
                                     'Invoice #${b['billNo'] ?? '-'}',
                                     style: const TextStyle(
                                       fontWeight: FontWeight.bold,
@@ -647,6 +624,27 @@ class _CustomerLedgerScreenState extends State<CustomerLedgerScreen> {
                                       color: BoutiqueColors.accent,
                                     ),
                                   ),
+                                  if ((b['billNo']?.toString().trim().isNotEmpty ?? false))
+                                    IconButton(
+                                      icon: const Icon(Icons.copy_rounded, size: 14, color: BoutiqueColors.accent),
+                                      tooltip: 'Copy Bill Number (${b['billNo']})',
+                                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                                      constraints: const BoxConstraints(),
+                                      splashRadius: 16,
+                                      onPressed: () {
+                                        final billNo = b['billNo'].toString();
+                                        Clipboard.setData(ClipboardData(text: billNo));
+                                        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          SnackBar(
+                                            content: Text('Copied "$billNo" to clipboard'),
+                                            duration: const Duration(seconds: 2),
+                                            behavior: SnackBarBehavior.floating,
+                                            width: 260,
+                                          ),
+                                        );
+                                      },
+                                    ),
                                   const SizedBox(width: 10),
                                   Container(
                                     padding: const EdgeInsets.symmetric(
@@ -940,28 +938,46 @@ class _CustomerLedgerScreenState extends State<CustomerLedgerScreen> {
                                                     ),
                                                   ),
                                                 ),
-                                                Container(
-                                                  padding:
-                                                      const EdgeInsets.symmetric(
+                                                InkWell(
+                                                  borderRadius: BorderRadius.circular(4),
+                                                  onTap: () {
+                                                    Clipboard.setData(ClipboardData(text: refNo));
+                                                    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                                                    ScaffoldMessenger.of(context).showSnackBar(
+                                                      SnackBar(
+                                                        content: Text('Copied "$refNo" to clipboard'),
+                                                        duration: const Duration(seconds: 2),
+                                                        behavior: SnackBarBehavior.floating,
+                                                        width: 260,
+                                                      ),
+                                                    );
+                                                  },
+                                                  child: Tooltip(
+                                                    message: 'Click to copy Bill #$refNo',
+                                                    child: Container(
+                                                      padding: const EdgeInsets.symmetric(
                                                         horizontal: 7,
                                                         vertical: 3,
                                                       ),
-                                                  decoration: BoxDecoration(
-                                                    color: BoutiqueColors
-                                                        .accentSoft,
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                          4,
-                                                        ),
-                                                  ),
-                                                  child: Text(
-                                                    'Ref: #$refNo',
-                                                    style: const TextStyle(
-                                                      fontSize: 10.5,
-                                                      fontWeight:
-                                                          FontWeight.w600,
-                                                      color:
-                                                          BoutiqueColors.accent,
+                                                      decoration: BoxDecoration(
+                                                        color: BoutiqueColors.accentSoft,
+                                                        borderRadius: BorderRadius.circular(4),
+                                                      ),
+                                                      child: Row(
+                                                        mainAxisSize: MainAxisSize.min,
+                                                        children: [
+                                                          Text(
+                                                            'Ref: #$refNo',
+                                                            style: const TextStyle(
+                                                              fontSize: 10.5,
+                                                              fontWeight: FontWeight.w600,
+                                                              color: BoutiqueColors.accent,
+                                                            ),
+                                                          ),
+                                                          const SizedBox(width: 4),
+                                                          const Icon(Icons.copy_rounded, size: 11, color: BoutiqueColors.accent),
+                                                        ],
+                                                      ),
                                                     ),
                                                   ),
                                                 ),
@@ -1844,8 +1860,16 @@ class _CustomerLedgerScreenState extends State<CustomerLedgerScreen> {
       text: maxDue.toStringAsFixed(2),
     );
     final List<Map<String, dynamic>> splitRows = [
-      {'mode': 'Cash', 'ctrl': TextEditingController(text: '')},
-      {'mode': 'UPI', 'ctrl': TextEditingController(text: '')},
+      {
+        'mode': 'Cash',
+        'ctrl': TextEditingController(text: ''),
+        'fn': FocusNode(),
+      },
+      {
+        'mode': 'UPI',
+        'ctrl': TextEditingController(text: ''),
+        'fn': FocusNode(),
+      },
     ];
     bool isSaving = false;
     final nextDrPreview =
@@ -1876,14 +1900,16 @@ class _CustomerLedgerScreenState extends State<CustomerLedgerScreen> {
               borderRadius: BorderRadius.circular(16),
             ),
             backgroundColor: BoutiqueColors.bgCard,
-            child: Container(
-              width: 480,
-              padding: const EdgeInsets.all(24),
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
+            child: FocusTraversalGroup(
+              policy: OrderedTraversalPolicy(),
+              child: Container(
+                width: 480,
+                padding: const EdgeInsets.all(24),
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
@@ -2013,96 +2039,150 @@ class _CustomerLedgerScreenState extends State<CustomerLedgerScreen> {
                     Row(
                       children: [
                         Expanded(
-                          child: InkWell(
-                            onTap: () =>
-                                setDialogState(() => isSplitMode = false),
-                            borderRadius: BorderRadius.circular(8),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                vertical: 10,
-                                horizontal: 12,
-                              ),
-                              decoration: BoxDecoration(
-                                color: !isSplitMode
-                                    ? BoutiqueColors.accentSoft
-                                    : Colors.white,
-                                borderRadius: BorderRadius.circular(8),
-                                border: Border.all(
-                                  color: !isSplitMode
-                                      ? BoutiqueColors.accent
-                                      : BoutiqueColors.border,
-                                  width: !isSplitMode ? 1.5 : 1,
-                                ),
-                              ),
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(
-                                    !isSplitMode
-                                        ? Icons.radio_button_checked
-                                        : Icons.radio_button_off,
-                                    size: 18,
-                                    color: !isSplitMode
-                                        ? BoutiqueColors.accent
-                                        : BoutiqueColors.textSecondary,
-                                  ),
-                                  const SizedBox(width: 8),
-                                  const Text(
-                                    'Single Mode',
-                                    style: TextStyle(
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w600,
+                          child: FocusTraversalOrder(
+                            order: const NumericFocusOrder(1.0),
+                            child: Focus(
+                              onKeyEvent: (node, event) {
+                                if (event is KeyDownEvent &&
+                                    (event.logicalKey ==
+                                            LogicalKeyboardKey.enter ||
+                                        event.logicalKey ==
+                                            LogicalKeyboardKey.space)) {
+                                  setDialogState(() => isSplitMode = false);
+                                  return KeyEventResult.handled;
+                                }
+                                return KeyEventResult.ignored;
+                              },
+                              child: Builder(
+                                builder: (focusContext) {
+                                  final isFocused =
+                                      Focus.of(focusContext).hasFocus;
+                                  return InkWell(
+                                    onTap: () =>
+                                        setDialogState(() => isSplitMode = false),
+                                    borderRadius: BorderRadius.circular(8),
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 10,
+                                        horizontal: 12,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: !isSplitMode
+                                            ? BoutiqueColors.accentSoft
+                                            : Colors.white,
+                                        borderRadius: BorderRadius.circular(8),
+                                        border: Border.all(
+                                          color: isFocused
+                                              ? const Color(0xFF6B1D2F)
+                                              : (!isSplitMode
+                                                  ? BoutiqueColors.accent
+                                                  : BoutiqueColors.border),
+                                          width: isFocused
+                                              ? 2.0
+                                              : (!isSplitMode ? 1.5 : 1),
+                                        ),
+                                      ),
+                                      child: Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.center,
+                                        children: [
+                                          Icon(
+                                            !isSplitMode
+                                                ? Icons.radio_button_checked
+                                                : Icons.radio_button_off,
+                                            size: 18,
+                                            color: !isSplitMode
+                                                ? BoutiqueColors.accent
+                                                : BoutiqueColors.textSecondary,
+                                          ),
+                                          const SizedBox(width: 8),
+                                          const Text(
+                                            'Single Mode',
+                                            style: TextStyle(
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
                                     ),
-                                  ),
-                                ],
+                                  );
+                                },
                               ),
                             ),
                           ),
                         ),
                         const SizedBox(width: 10),
                         Expanded(
-                          child: InkWell(
-                            onTap: () =>
-                                setDialogState(() => isSplitMode = true),
-                            borderRadius: BorderRadius.circular(8),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                vertical: 10,
-                                horizontal: 12,
-                              ),
-                              decoration: BoxDecoration(
-                                color: isSplitMode
-                                    ? BoutiqueColors.accentSoft
-                                    : Colors.white,
-                                borderRadius: BorderRadius.circular(8),
-                                border: Border.all(
-                                  color: isSplitMode
-                                      ? BoutiqueColors.accent
-                                      : BoutiqueColors.border,
-                                  width: isSplitMode ? 1.5 : 1,
-                                ),
-                              ),
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(
-                                    isSplitMode
-                                        ? Icons.radio_button_checked
-                                        : Icons.radio_button_off,
-                                    size: 18,
-                                    color: isSplitMode
-                                        ? BoutiqueColors.accent
-                                        : BoutiqueColors.textSecondary,
-                                  ),
-                                  const SizedBox(width: 8),
-                                  const Text(
-                                    'Split Modes (Cash+UPI)',
-                                    style: TextStyle(
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w600,
+                          child: FocusTraversalOrder(
+                            order: const NumericFocusOrder(2.0),
+                            child: Focus(
+                              onKeyEvent: (node, event) {
+                                if (event is KeyDownEvent &&
+                                    (event.logicalKey ==
+                                            LogicalKeyboardKey.enter ||
+                                        event.logicalKey ==
+                                            LogicalKeyboardKey.space)) {
+                                  setDialogState(() => isSplitMode = true);
+                                  return KeyEventResult.handled;
+                                }
+                                return KeyEventResult.ignored;
+                              },
+                              child: Builder(
+                                builder: (focusContext) {
+                                  final isFocused =
+                                      Focus.of(focusContext).hasFocus;
+                                  return InkWell(
+                                    onTap: () =>
+                                        setDialogState(() => isSplitMode = true),
+                                    borderRadius: BorderRadius.circular(8),
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 10,
+                                        horizontal: 12,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: isSplitMode
+                                            ? BoutiqueColors.accentSoft
+                                            : Colors.white,
+                                        borderRadius: BorderRadius.circular(8),
+                                        border: Border.all(
+                                          color: isFocused
+                                              ? const Color(0xFF6B1D2F)
+                                              : (isSplitMode
+                                                  ? BoutiqueColors.accent
+                                                  : BoutiqueColors.border),
+                                          width: isFocused
+                                              ? 2.0
+                                              : (isSplitMode ? 1.5 : 1),
+                                        ),
+                                      ),
+                                      child: Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.center,
+                                        children: [
+                                          Icon(
+                                            isSplitMode
+                                                ? Icons.radio_button_checked
+                                                : Icons.radio_button_off,
+                                            size: 18,
+                                            color: isSplitMode
+                                                ? BoutiqueColors.accent
+                                                : BoutiqueColors.textSecondary,
+                                          ),
+                                          const SizedBox(width: 8),
+                                          const Text(
+                                            'Split Modes (Cash+UPI)',
+                                            style: TextStyle(
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
                                     ),
-                                  ),
-                                ],
+                                  );
+                                },
                               ),
                             ),
                           ),
@@ -2112,34 +2192,41 @@ class _CustomerLedgerScreenState extends State<CustomerLedgerScreen> {
                     const SizedBox(height: 12),
 
                     if (!isSplitMode) ...[
-                      TextField(
-                        controller: singleAmountCtrl,
-                        keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true,
-                        ),
-                        onChanged: (_) => setDialogState(() {}),
-                        decoration: BoutiqueInputDecoration.field(
-                          labelText: 'Amount Paying Now (₹)',
-                          hintText: 'Enter partial or full due amount',
+                      FocusTraversalOrder(
+                        order: const NumericFocusOrder(3.0),
+                        child: TextField(
+                          controller: singleAmountCtrl,
+                          keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true,
+                          ),
+                          onChanged: (_) => setDialogState(() {}),
+                          decoration: BoutiqueInputDecoration.field(
+                            labelText: 'Amount Paying Now (₹)',
+                            hintText: 'Enter partial or full due amount',
+                          ),
                         ),
                       ),
                       const SizedBox(height: 14),
-                      DropdownButtonFormField<String>(
-                        initialValue: singleMode,
-                        decoration: BoutiqueInputDecoration.field(
-                          labelText: 'Payment Mode',
-                          hintText: '',
-                        ),
-                        items: const [
-                          DropdownMenuItem(value: 'Cash', child: Text('Cash')),
-                          DropdownMenuItem(value: 'UPI', child: Text('UPI')),
-                          DropdownMenuItem(value: 'Card', child: Text('Card')),
-                          DropdownMenuItem(
-                            value: 'Bank Transfer',
-                            child: Text('Bank Transfer'),
+                      FocusTraversalOrder(
+                        order: const NumericFocusOrder(4.0),
+                        child: DropdownButtonFormField<String>(
+                          initialValue: singleMode,
+                          decoration: BoutiqueInputDecoration.field(
+                            labelText: 'Payment Mode',
+                            hintText: '',
                           ),
-                        ],
-                        onChanged: (v) => setDialogState(() => singleMode = v!),
+                          items: const [
+                            DropdownMenuItem(value: 'Cash', child: Text('Cash')),
+                            DropdownMenuItem(value: 'UPI', child: Text('UPI')),
+                            DropdownMenuItem(value: 'Card', child: Text('Card')),
+                            DropdownMenuItem(
+                              value: 'Bank Transfer',
+                              child: Text('Bank Transfer'),
+                            ),
+                          ],
+                          onChanged: (v) =>
+                              setDialogState(() => singleMode = v!),
+                        ),
                       ),
                     ] else ...[
                       ...splitRows.asMap().entries.map((entry) {
@@ -2152,54 +2239,64 @@ class _CustomerLedgerScreenState extends State<CustomerLedgerScreen> {
                             children: [
                               Expanded(
                                 flex: 5,
-                                child: DropdownButtonFormField<String>(
-                                  initialValue: row['mode'] as String,
-                                  decoration: BoutiqueInputDecoration.field(
-                                    labelText: 'Mode ${idx + 1}',
-                                    hintText: '',
+                                child: FocusTraversalOrder(
+                                  order: NumericFocusOrder(3.0 + (idx * 0.2)),
+                                  child: DropdownButtonFormField<String>(
+                                    initialValue: row['mode'] as String,
+                                    decoration: BoutiqueInputDecoration.field(
+                                      labelText: 'Mode ${idx + 1}',
+                                      hintText: '',
+                                    ),
+                                    items: const [
+                                      DropdownMenuItem(
+                                        value: 'Cash',
+                                        child: Text('Cash'),
+                                      ),
+                                      DropdownMenuItem(
+                                        value: 'UPI',
+                                        child: Text('UPI'),
+                                      ),
+                                      DropdownMenuItem(
+                                        value: 'Card',
+                                        child: Text('Card'),
+                                      ),
+                                      DropdownMenuItem(
+                                        value: 'Bank Transfer',
+                                        child: Text('Bank Transfer'),
+                                      ),
+                                    ],
+                                    onChanged: (v) =>
+                                        setDialogState(() => row['mode'] = v!),
                                   ),
-                                  items: const [
-                                    DropdownMenuItem(
-                                      value: 'Cash',
-                                      child: Text('Cash'),
-                                    ),
-                                    DropdownMenuItem(
-                                      value: 'UPI',
-                                      child: Text('UPI'),
-                                    ),
-                                    DropdownMenuItem(
-                                      value: 'Card',
-                                      child: Text('Card'),
-                                    ),
-                                    DropdownMenuItem(
-                                      value: 'Bank Transfer',
-                                      child: Text('Bank Transfer'),
-                                    ),
-                                  ],
-                                  onChanged: (v) =>
-                                      setDialogState(() => row['mode'] = v!),
                                 ),
                               ),
                               const SizedBox(width: 10),
                               Expanded(
                                 flex: 5,
-                                child: TextField(
-                                  controller: ctrl,
-                                  keyboardType:
-                                      const TextInputType.numberWithOptions(
-                                        decimal: true,
-                                      ),
-                                  onChanged: (_) => setDialogState(() {}),
-                                  decoration: BoutiqueInputDecoration.field(
-                                    labelText: 'Amount (₹)',
-                                    hintText: '0.00',
+                                child: FocusTraversalOrder(
+                                  order: NumericFocusOrder(3.1 + (idx * 0.2)),
+                                  child: TextField(
+                                    controller: ctrl,
+                                    focusNode: row['fn'] as FocusNode?,
+                                    keyboardType:
+                                        const TextInputType.numberWithOptions(
+                                          decimal: true,
+                                        ),
+                                    onChanged: (_) => setDialogState(() {}),
+                                    decoration: BoutiqueInputDecoration.field(
+                                      labelText: 'Amount (₹)',
+                                      hintText: '0.00',
+                                    ),
                                   ),
                                 ),
                               ),
                               if (splitRows.length > 1)
                                 IconButton(
                                   onPressed: () => setDialogState(
-                                    () => splitRows.removeAt(idx),
+                                    () {
+                                      final removed = splitRows.removeAt(idx);
+                                      (removed['fn'] as FocusNode?)?.dispose();
+                                    },
                                   ),
                                   icon: const Icon(
                                     Icons.remove_circle_outline,
@@ -2213,15 +2310,25 @@ class _CustomerLedgerScreenState extends State<CustomerLedgerScreen> {
                       }),
                       Align(
                         alignment: Alignment.centerLeft,
-                        child: TextButton.icon(
-                          onPressed: () => setDialogState(() {
-                            splitRows.add({
-                              'mode': 'Cash',
-                              'ctrl': TextEditingController(text: ''),
-                            });
-                          }),
-                          icon: const Icon(Icons.add, size: 16),
-                          label: const Text('Add Another Payment Mode'),
+                        child: FocusTraversalOrder(
+                          order: const NumericFocusOrder(8.0),
+                          child: TextButton.icon(
+                            onPressed: () {
+                              final newFn = FocusNode();
+                              setDialogState(() {
+                                splitRows.add({
+                                  'mode': 'Cash',
+                                  'ctrl': TextEditingController(text: ''),
+                                  'fn': newFn,
+                                });
+                              });
+                              WidgetsBinding.instance.addPostFrameCallback((_) {
+                                newFn.requestFocus();
+                              });
+                            },
+                            icon: const Icon(Icons.add, size: 16),
+                            label: const Text('Add Another Payment Mode'),
+                          ),
                         ),
                       ),
                     ],
@@ -2230,95 +2337,101 @@ class _CustomerLedgerScreenState extends State<CustomerLedgerScreen> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.end,
                       children: [
-                        TextButton(
-                          onPressed: isSaving ? null : () => Navigator.pop(ctx),
-                          child: const Text(
-                            'Cancel',
-                            style: TextStyle(
-                              color: BoutiqueColors.textSecondary,
+                        FocusTraversalOrder(
+                          order: const NumericFocusOrder(9.0),
+                          child: TextButton(
+                            onPressed: isSaving ? null : () => Navigator.pop(ctx),
+                            child: const Text(
+                              'Cancel',
+                              style: TextStyle(
+                                color: BoutiqueColors.textSecondary,
+                              ),
                             ),
                           ),
                         ),
                         const SizedBox(width: 12),
-                        ElevatedButton(
-                          onPressed: isSaving
-                              ? null
-                              : () async {
-                                  List<Map<String, dynamic>> breakdown = [];
-                                  double totalPaidNow = 0.0;
+                        FocusTraversalOrder(
+                          order: const NumericFocusOrder(10.0),
+                          child: ElevatedButton(
+                            onPressed: isSaving
+                                ? null
+                                : () async {
+                                    List<Map<String, dynamic>> breakdown = [];
+                                    double totalPaidNow = 0.0;
 
-                                  if (!isSplitMode) {
-                                    final amt =
-                                        double.tryParse(
-                                          singleAmountCtrl.text,
-                                        ) ??
-                                        0.0;
-                                    totalPaidNow = amt;
-                                    if (amt > 0) {
-                                      breakdown.add({
-                                        'mode': singleMode,
-                                        'amount': amt,
-                                      });
-                                    }
-                                  } else {
-                                    for (final r in splitRows) {
+                                    if (!isSplitMode) {
                                       final amt =
                                           double.tryParse(
-                                            (r['ctrl'] as TextEditingController)
-                                                .text,
+                                            singleAmountCtrl.text,
                                           ) ??
                                           0.0;
+                                      totalPaidNow = amt;
                                       if (amt > 0) {
-                                        totalPaidNow += amt;
                                         breakdown.add({
-                                          'mode': r['mode'],
+                                          'mode': singleMode,
                                           'amount': amt,
                                         });
                                       }
+                                    } else {
+                                      for (final r in splitRows) {
+                                        final amt =
+                                            double.tryParse(
+                                              (r['ctrl'] as TextEditingController)
+                                                  .text,
+                                            ) ??
+                                            0.0;
+                                        if (amt > 0) {
+                                          totalPaidNow += amt;
+                                          breakdown.add({
+                                            'mode': r['mode'],
+                                            'amount': amt,
+                                          });
+                                        }
+                                      }
                                     }
-                                  }
 
-                                  if (totalPaidNow <= 0 ||
-                                      totalPaidNow > maxDue + 0.01) {
-                                    BoutiqueToast.showError(
-                                      ctx,
-                                      'Enter a valid amount up to ₹${maxDue.toStringAsFixed(2)}',
-                                    );
-                                    return;
-                                  }
+                                    if (totalPaidNow <= 0 ||
+                                        totalPaidNow > maxDue + 0.01) {
+                                      BoutiqueToast.showError(
+                                        ctx,
+                                        'Enter a valid amount up to ₹${maxDue.toStringAsFixed(2)}',
+                                      );
+                                      return;
+                                    }
 
-                                  setDialogState(() => isSaving = true);
-                                  Navigator.pop(ctx);
-                                  await onConfirm(totalPaidNow, breakdown);
-                                  if (mounted) {
-                                    BoutiqueToast.showSuccess(
-                                      context,
-                                      'Due Receipt generated & payment recorded!',
-                                    );
-                                    _fetchPendingBills();
-                                  }
-                                },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF15803D),
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 20,
-                              vertical: 12,
+                                    setDialogState(() => isSaving = true);
+                                    Navigator.pop(ctx);
+                                    await onConfirm(totalPaidNow, breakdown);
+                                    if (mounted) {
+                                      BoutiqueToast.showSuccess(
+                                        context,
+                                        'Due Receipt generated & payment recorded!',
+                                      );
+                                      _fetchPendingBills();
+                                    }
+                                  },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF15803D),
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 20,
+                                vertical: 12,
+                              ),
                             ),
-                          ),
-                          child: isSaving
-                              ? const SizedBox(
-                                  width: 16,
-                                  height: 16,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: Colors.white,
+                            child: isSaving
+                                ? const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                : const Text(
+                                    'Confirm & Generate Receipt',
+                                    style: TextStyle(fontWeight: FontWeight.bold),
                                   ),
-                                )
-                              : const Text(
-                                  'Confirm & Generate Receipt',
-                                  style: TextStyle(fontWeight: FontWeight.bold),
-                                ),
+                          ),
                         ),
                       ],
                     ),
@@ -2326,7 +2439,8 @@ class _CustomerLedgerScreenState extends State<CustomerLedgerScreen> {
                 ),
               ),
             ),
-          );
+          ),
+        );
         },
       ),
     );
@@ -2519,4 +2633,143 @@ class _CustomerLedgerScreenState extends State<CustomerLedgerScreen> {
     
   }
 }
+
+// ── Customer Ledger Left Tile with Tab Focus & Keyboard Support ──────────────
+class _CustomerLedgerTile extends StatefulWidget {
+  final String displayName;
+  final String rawMobile;
+  final String billNos;
+  final double totalPending;
+  final int billCount;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  const _CustomerLedgerTile({
+    required this.displayName,
+    required this.rawMobile,
+    required this.billNos,
+    required this.totalPending,
+    required this.billCount,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  @override
+  State<_CustomerLedgerTile> createState() => _CustomerLedgerTileState();
+}
+
+class _CustomerLedgerTileState extends State<_CustomerLedgerTile> {
+  bool _focused = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return FocusableActionDetector(
+      onFocusChange: (f) => setState(() => _focused = f),
+      actions: {
+        ActivateIntent: CallbackAction<ActivateIntent>(onInvoke: (_) {
+          widget.onTap();
+          return null;
+        }),
+      },
+      shortcuts: const {
+        SingleActivator(LogicalKeyboardKey.space): ActivateIntent(),
+        SingleActivator(LogicalKeyboardKey.enter): ActivateIntent(),
+        SingleActivator(LogicalKeyboardKey.numpadEnter): ActivateIntent(),
+      },
+      child: Material(
+        color: widget.isSelected
+            ? Colors.white
+            : _focused
+                ? const Color(0xFFFBF6EE)
+                : Colors.transparent,
+        child: InkWell(
+          onTap: widget.onTap,
+          hoverColor: const Color(0xFFFBF6EE),
+          focusColor: const Color(0xFFFBF6EE),
+          child: Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              border: Border(
+                bottom: const BorderSide(color: BoutiqueColors.borderLight),
+                left: BorderSide(
+                  color: widget.isSelected
+                      ? BoutiqueColors.accent
+                      : _focused
+                          ? BoutiqueColors.accent.withAlpha(150)
+                          : Colors.transparent,
+                  width: 4,
+                ),
+              ),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        widget.displayName,
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                          color: widget.isSelected
+                              ? BoutiqueColors.accent
+                              : BoutiqueColors.textPrimary,
+                        ),
+                      ),
+                      if (widget.rawMobile.isNotEmpty)
+                        Text(
+                          widget.rawMobile,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: BoutiqueColors.textSecondary,
+                          ),
+                        ),
+                      if (widget.billNos.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 2),
+                          child: Text(
+                            'Bill: ${widget.billNos}',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: BoutiqueColors.textMuted,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      '₹${NumberFormat('#,##,##0.00').format(widget.totalPending)}',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                        color: Color(0xFFB91C1C),
+                      ),
+                    ),
+                    Text(
+                      '${widget.billCount} ${widget.billCount == 1 ? 'bill' : 'bills'} due',
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: BoutiqueColors.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 

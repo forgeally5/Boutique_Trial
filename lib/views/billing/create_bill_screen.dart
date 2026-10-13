@@ -88,6 +88,7 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
     // Listen to AdminState for product list updates ONLY — no full-form rebuild
     widget.state.addListener(_onStateProductsUpdate);
     _gstCtrl.addListener(_onGstChanged);
+    _customerMobileFocusNode.addListener(_onMobileFocusChanged);
   }
 
   void _loadInitialBill(Map<String, dynamic> b) {
@@ -256,8 +257,18 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
     }
   }
 
+  void _onMobileFocusChanged() {
+    if (!_customerMobileFocusNode.hasFocus) {
+      final m = _customerMobileCtrl.text.trim();
+      if (m.isNotEmpty && !RegExp(r'^\d{10}$').hasMatch(m)) {
+        _showMobileErrorDialog();
+      }
+    }
+  }
+
   @override
   void dispose() {
+    _customerMobileFocusNode.removeListener(_onMobileFocusChanged);
     widget.state.removeListener(_onStateProductsUpdate);
     _rowVersion.dispose();
     _billNoCtrl.dispose();
@@ -360,7 +371,10 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
               elevation: 0,
             ),
-            onPressed: () => Navigator.pop(ctx),
+            onPressed: () {
+              Navigator.pop(ctx);
+              _customerMobileFocusNode.requestFocus();
+            },
             child: const Text('OK'),
           ),
         ],
@@ -2215,13 +2229,34 @@ class _BillSummaryPanel extends StatefulWidget {
 class _BillSummaryPanelState extends State<_BillSummaryPanel> {
   bool _isSplitPayment = false;
   String _singlePaymentMode = 'Cash';
-  final List<Map<String, dynamic>> _splitPayments = [{'mode': 'Cash', 'amountCtrl': TextEditingController(text: '')}];
+  final List<Map<String, dynamic>> _splitPayments = [
+    {
+      'mode': 'Cash',
+      'amountCtrl': TextEditingController(text: ''),
+      'focusNode': FocusNode(),
+    }
+  ];
   final List<String> _paymentModes = ['Cash', 'GPay', 'Bank Transfer', 'Card', 'UPI', 'Other'];
+
+  void _addNewSplitPayment() {
+    final newFocusNode = FocusNode();
+    setState(() {
+      _splitPayments.add({
+        'mode': 'Cash',
+        'amountCtrl': TextEditingController(text: ''),
+        'focusNode': newFocusNode,
+      });
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      newFocusNode.requestFocus();
+    });
+  }
 
   @override
   void dispose() {
     for (var p in _splitPayments) {
       (p['amountCtrl'] as TextEditingController).dispose();
+      (p['focusNode'] as FocusNode?)?.dispose();
     }
     super.dispose();
   }
@@ -2542,7 +2577,16 @@ class _BillSummaryPanelState extends State<_BillSummaryPanel> {
                       contentPadding: EdgeInsets.zero,
                       dense: true,
                       // ignore: deprecated_member_use
-                      onChanged: (v) => setState(() => _isSplitPayment = v!),
+                      onChanged: (v) {
+                        if (v != null) {
+                          setState(() => _isSplitPayment = v);
+                          if (v && _splitPayments.isNotEmpty) {
+                            WidgetsBinding.instance.addPostFrameCallback((_) {
+                              (_splitPayments.first['focusNode'] as FocusNode?)?.requestFocus();
+                            });
+                          }
+                        }
+                      },
                     ),
                   ),
                 ),
@@ -2603,7 +2647,13 @@ class _BillSummaryPanelState extends State<_BillSummaryPanel> {
                           height: 42,
                           child: TextField(
                             controller: _splitPayments[idx]['amountCtrl'],
+                            focusNode: _splitPayments[idx]['focusNode'],
                             keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                            textInputAction: TextInputAction.next,
+                            onSubmitted: (_) {
+                              // If enter pressed on amount field, trigger adding a new mode or next focus
+                              _addNewSplitPayment();
+                            },
                             style: const TextStyle(fontSize: 13),
                             onChanged: (val) async {
                               setState(() {});
@@ -2659,6 +2709,7 @@ class _BillSummaryPanelState extends State<_BillSummaryPanel> {
                           icon: const Icon(Icons.remove_circle_outline, color: BoutiqueColors.destructive, size: 20),
                           onPressed: () {
                             (_splitPayments[idx]['amountCtrl'] as TextEditingController).dispose();
+                            (_splitPayments[idx]['focusNode'] as FocusNode?)?.dispose();
                             setState(() => _splitPayments.removeAt(idx));
                           },
                         ),
@@ -2668,9 +2719,7 @@ class _BillSummaryPanelState extends State<_BillSummaryPanel> {
               Align(
                 alignment: Alignment.centerLeft,
                 child: TextButton.icon(
-                  onPressed: () {
-                    setState(() => _splitPayments.add({'mode': 'Cash', 'amountCtrl': TextEditingController(text: '')}));
-                  },
+                  onPressed: _addNewSplitPayment,
                   icon: const Icon(Icons.add, size: 16),
                   label: const Text('Add Payment Mode', style: TextStyle(fontSize: 12)),
                   style: TextButton.styleFrom(
