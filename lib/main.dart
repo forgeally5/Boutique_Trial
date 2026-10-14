@@ -642,6 +642,13 @@ class _AdminHomeShellState extends State<AdminHomeShell> {
         const SingleActivator(LogicalKeyboardKey.digit3, meta: true): () => _switchAndFocus(3),
         const SingleActivator(LogicalKeyboardKey.digit4, meta: true): () => _switchAndFocus(4),
         const SingleActivator(LogicalKeyboardKey.digit5, meta: true): () => _switchAndFocus(5),
+        // Logout shortcuts
+        const SingleActivator(LogicalKeyboardKey.keyL, control: true, shift: true): _handleLogout,
+        const SingleActivator(LogicalKeyboardKey.keyL, alt: true): _handleLogout,
+        const SingleActivator(LogicalKeyboardKey.keyQ, control: true, shift: true): _handleLogout,
+        const SingleActivator(LogicalKeyboardKey.keyQ, alt: true): _handleLogout,
+        const SingleActivator(LogicalKeyboardKey.keyL, meta: true, shift: true): _handleLogout,
+        const SingleActivator(LogicalKeyboardKey.keyQ, meta: true, shift: true): _handleLogout,
       },
       child: FocusScope(
         autofocus: true,
