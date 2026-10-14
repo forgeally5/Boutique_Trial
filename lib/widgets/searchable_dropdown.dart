@@ -20,6 +20,7 @@ class SearchableDropdownField extends StatefulWidget {
   final ValueChanged<String?> onChanged;
   final String? error;
   final bool isExpanded;
+  final FocusNode? focusNode;
 
   static const _brown = Color(0xFF3E2723);
   static const _lightBrown = Color(0xFF8D6E63);
@@ -34,6 +35,7 @@ class SearchableDropdownField extends StatefulWidget {
     required this.onChanged,
     this.error,
     this.isExpanded = true,
+    this.focusNode,
   });
 
   @override
@@ -79,6 +81,7 @@ class _SearchableDropdownFieldState extends State<SearchableDropdownField> {
         ),
         const SizedBox(height: 5),
         Focus(
+          focusNode: widget.focusNode,
           onFocusChange: (focused) => setState(() => _isFocused = focused),
           onKeyEvent: (node, event) {
             if (event is KeyDownEvent) {

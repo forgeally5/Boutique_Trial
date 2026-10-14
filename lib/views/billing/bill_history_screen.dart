@@ -49,7 +49,12 @@ class _BillHistoryScreenState extends State<BillHistoryScreen> {
   late DateTime _dateTo;
 
   final _searchCtrl = TextEditingController();
-  final FocusNode _searchFocusNode = FocusNode();
+  late final FocusNode _searchFocusNode;
+  late final FocusNode _paymentModeFocusNode;
+  final ScrollController _scrollCtrl = ScrollController();
+  int _selectedBillIndex = 0;
+  final Map<int, FocusNode> _billFocusNodes = {};
+
   String _paymentModeFilter = 'All';
   String _viewFilter = 'All Invoices'; // 'All Invoices' | 'Balance Due' | 'Advance Bills'
   bool _loading = false;
@@ -78,9 +83,110 @@ class _BillHistoryScreenState extends State<BillHistoryScreen> {
     'Cheque',
   ];
 
+  FocusNode _getBillFocusNode(int index) {
+    return _billFocusNodes.putIfAbsent(
+      index,
+      () => FocusNode(debugLabel: 'bill_tile_$index', skipTraversal: true),
+    );
+  }
+
+  void _clearBillFocusNodes() {
+    for (final n in _billFocusNodes.values) {
+      n.dispose();
+    }
+    _billFocusNodes.clear();
+  }
+
+  List<Map<String, dynamic>> get _displayedBills {
+    if (_viewFilter == 'All Invoices' && _pendingBills.isNotEmpty) {
+      return [..._pendingBills, ..._filtered];
+    }
+    return _filtered;
+  }
+
+  void _selectBillAt(int index, List<Map<String, dynamic>> list) {
+    if (list.isEmpty) return;
+    final clampedIndex = index.clamp(0, list.length - 1);
+    setState(() {
+      _selectedBillIndex = clampedIndex;
+    });
+    _scrollToBill(clampedIndex);
+    final nextNode = _getBillFocusNode(clampedIndex);
+    nextNode.requestFocus();
+  }
+
+  void _scrollToBill(int index) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_scrollCtrl.hasClients) return;
+      const approxTileHeight = 72.0;
+      final hasPending = _viewFilter == 'All Invoices' && _pendingBills.isNotEmpty;
+      double targetOffset = 0;
+      if (hasPending) {
+        if (index < _pendingBills.length) {
+          targetOffset = 60.0 + (index * approxTileHeight);
+        } else {
+          targetOffset = 60.0 + (_pendingBills.length * approxTileHeight) + 90.0 + ((index - _pendingBills.length) * approxTileHeight);
+        }
+      } else {
+        targetOffset = 50.0 + (index * approxTileHeight);
+      }
+
+      final currentOffset = _scrollCtrl.offset;
+      final viewportHeight = _scrollCtrl.position.viewportDimension;
+
+      if (targetOffset < currentOffset) {
+        _scrollCtrl.animateTo(
+          targetOffset.clamp(0.0, _scrollCtrl.position.maxScrollExtent),
+          duration: const Duration(milliseconds: 150),
+          curve: Curves.easeOutCubic,
+        );
+      } else if (targetOffset + approxTileHeight > currentOffset + viewportHeight) {
+        _scrollCtrl.animateTo(
+          (targetOffset + approxTileHeight - viewportHeight + 50).clamp(0.0, _scrollCtrl.position.maxScrollExtent),
+          duration: const Duration(milliseconds: 150),
+          curve: Curves.easeOutCubic,
+        );
+      }
+    });
+  }
+
   @override
   void initState() {
     super.initState();
+    _searchFocusNode = FocusNode(
+      debugLabel: 'bill_history_search',
+      onKeyEvent: (node, event) {
+        if (event is KeyDownEvent) {
+          if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
+            final bills = _displayedBills;
+            if (bills.isNotEmpty) {
+              _selectBillAt(0, bills);
+              return KeyEventResult.handled;
+            }
+          } else if (event.logicalKey == LogicalKeyboardKey.tab &&
+              HardwareKeyboard.instance.isShiftPressed) {
+            _paymentModeFocusNode.requestFocus();
+            return KeyEventResult.handled;
+          }
+        }
+        return KeyEventResult.ignored;
+      },
+    );
+    _paymentModeFocusNode = FocusNode(
+      debugLabel: 'bill_history_payment_mode',
+      onKeyEvent: (node, event) {
+        if (event is KeyDownEvent) {
+          if (event.logicalKey == LogicalKeyboardKey.tab &&
+              !HardwareKeyboard.instance.isShiftPressed) {
+            _searchFocusNode.requestFocus();
+            _searchCtrl.selection = TextSelection.fromPosition(
+                TextPosition(offset: _searchCtrl.text.length));
+            return KeyEventResult.handled;
+          }
+        }
+        return KeyEventResult.ignored;
+      },
+    );
     final now = DateTime.now();
     final fyStart = now.month >= 4 ? DateTime(now.year, 4, 1) : DateTime(now.year - 1, 4, 1);
     _dateFrom = fyStart;
@@ -93,6 +199,9 @@ class _BillHistoryScreenState extends State<BillHistoryScreen> {
   void dispose() {
     _searchCtrl.dispose();
     _searchFocusNode.dispose();
+    _paymentModeFocusNode.dispose();
+    _scrollCtrl.dispose();
+    _clearBillFocusNodes();
     super.dispose();
   }
 
@@ -210,6 +319,7 @@ class _BillHistoryScreenState extends State<BillHistoryScreen> {
   void _applyFilters() {
     final q = _searchCtrl.text.trim().toLowerCase();
     setState(() {
+      _selectedBillIndex = 0;
       _filtered = _bills.where((e) {
         // Search filter
         if (q.isNotEmpty) {
@@ -232,6 +342,7 @@ class _BillHistoryScreenState extends State<BillHistoryScreen> {
         return true;
       }).toList();
     });
+    _clearBillFocusNodes();
   }
 
   Future<void> _pickDate({required bool isFrom}) async {
@@ -442,101 +553,126 @@ class _BillHistoryScreenState extends State<BillHistoryScreen> {
       child: Column(
         children: [
           // Filter Bar
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 20),
-            decoration: const BoxDecoration(
-              color: BoutiqueColors.bgCard,
-              border: Border(bottom: BorderSide(color: BoutiqueColors.border)),
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  flex: 3,
-                  child: TextField(
-                    controller: _searchCtrl,
-                    focusNode: _searchFocusNode,
-                    autofocus: true,
-                    style: const TextStyle(fontSize: 13),
-                    decoration: BoutiqueInputDecoration.field(
-                      hintText: 'Search bill #, customer, mobile...',
-                      prefixIcon: const Icon(Icons.search_rounded, size: 18, color: BoutiqueColors.textSecondary),
-                      suffixIcon: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          if (_searchCtrl.text.isNotEmpty)
-                            IconButton(
-                              icon: const Icon(Icons.close_rounded, size: 16, color: BoutiqueColors.textMuted),
-                              tooltip: 'Clear search',
-                              onPressed: () {
-                                _searchCtrl.clear();
-                                setState(() {});
-                              },
-                            ),
-                          IconButton(
-                            icon: const Icon(Icons.paste_rounded, size: 16, color: BoutiqueColors.accent),
-                            tooltip: 'Paste bill number or text',
-                            onPressed: () async {
-                              final data = await Clipboard.getData(Clipboard.kTextPlain);
-                              if (data?.text != null && data!.text!.isNotEmpty) {
-                                _searchCtrl.text = data.text!.trim();
-                                setState(() {});
-                              }
-                            },
+          FocusTraversalGroup(
+            policy: OrderedTraversalPolicy(),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 20),
+              decoration: const BoxDecoration(
+                color: BoutiqueColors.bgCard,
+                border: Border(bottom: BorderSide(color: BoutiqueColors.border)),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    flex: 3,
+                    child: FocusTraversalOrder(
+                      order: const NumericFocusOrder(1),
+                      child: TextField(
+                        controller: _searchCtrl,
+                        focusNode: _searchFocusNode,
+                        autofocus: true,
+                        style: const TextStyle(fontSize: 13),
+                        decoration: BoutiqueInputDecoration.field(
+                          hintText: 'Search bill #, customer, mobile...',
+                          prefixIcon: const Icon(Icons.search_rounded, size: 18, color: BoutiqueColors.textSecondary),
+                          suffixIcon: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (_searchCtrl.text.isNotEmpty)
+                                Focus(
+                                  skipTraversal: true,
+                                  child: IconButton(
+                                    icon: const Icon(Icons.close_rounded, size: 16, color: BoutiqueColors.textMuted),
+                                    tooltip: 'Clear search',
+                                    onPressed: () {
+                                      _searchCtrl.clear();
+                                      setState(() {});
+                                    },
+                                  ),
+                                ),
+                              Focus(
+                                skipTraversal: true,
+                                child: IconButton(
+                                  icon: const Icon(Icons.paste_rounded, size: 16, color: BoutiqueColors.accent),
+                                  tooltip: 'Paste bill number or text',
+                                  onPressed: () async {
+                                    final data = await Clipboard.getData(Clipboard.kTextPlain);
+                                    if (data?.text != null && data!.text!.isNotEmpty) {
+                                      _searchCtrl.text = data.text!.trim();
+                                      setState(() {});
+                                    }
+                                  },
+                                ),
+                              ),
+                            ],
                           ),
-                        ],
+                        ),
                       ),
                     ),
                   ),
-                ),
-                const SizedBox(width: 16),
-                _DatePillButton(
-                  label: 'From',
-                  date: _dateFrom,
-                  fmt: _fmt,
-                  onTap: () => _pickDate(isFrom: true),
-                ),
-                const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 8),
-                  child: Text('→', style: TextStyle(color: BoutiqueColors.textSecondary)),
-                ),
-                _DatePillButton(
-                  label: 'To',
-                  date: _dateTo,
-                  fmt: _fmt,
-                  onTap: () => _pickDate(isFrom: false),
-                ),
-                const SizedBox(width: 16),
-                // ── View Mode Dropdown ───────────────────────────────
-                Expanded(
-                  flex: 2,
-                  child: _ViewModeDropdownButton(
-                    viewFilter: _viewFilter,
-                    viewOptions: _viewOptions,
-                    viewIcons: _viewIcons,
-                    onSelected: (v) {
-                      setState(() => _viewFilter = v);
-                      _applyFilters();
-                    },
+                  const SizedBox(width: 16),
+                  FocusTraversalOrder(
+                    order: const NumericFocusOrder(2),
+                    child: _DatePillButton(
+                      label: 'From',
+                      date: _dateFrom,
+                      fmt: _fmt,
+                      onTap: () => _pickDate(isFrom: true),
+                    ),
                   ),
-                ),
-                const SizedBox(width: 12),
-                // ── Payment Mode Dropdown ────────────────────────────
-                Expanded(
-                  flex: 2,
-                  child: SearchableDropdownField(
-                    label: 'Payment Mode',
-                    value: _paymentModeFilter,
-                    items: _paymentModes,
-                    onChanged: (v) {
-                      if (v != null) {
-                        setState(() => _paymentModeFilter = v);
-                        _applyFilters();
-                      }
-                    },
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 8),
+                    child: Text('→', style: TextStyle(color: BoutiqueColors.textSecondary)),
                   ),
-                ),
-                const SizedBox(width: 8),
-              ],
+                  FocusTraversalOrder(
+                    order: const NumericFocusOrder(3),
+                    child: _DatePillButton(
+                      label: 'To',
+                      date: _dateTo,
+                      fmt: _fmt,
+                      onTap: () => _pickDate(isFrom: false),
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  // ── View Mode Dropdown ───────────────────────────────
+                  Expanded(
+                    flex: 2,
+                    child: FocusTraversalOrder(
+                      order: const NumericFocusOrder(4),
+                      child: _ViewModeDropdownButton(
+                        viewFilter: _viewFilter,
+                        viewOptions: _viewOptions,
+                        viewIcons: _viewIcons,
+                        onSelected: (v) {
+                          setState(() => _viewFilter = v);
+                          _applyFilters();
+                        },
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  // ── Payment Mode Dropdown ────────────────────────────
+                  Expanded(
+                    flex: 2,
+                    child: FocusTraversalOrder(
+                      order: const NumericFocusOrder(5),
+                      child: SearchableDropdownField(
+                        label: 'Payment Mode',
+                        value: _paymentModeFilter,
+                        items: _paymentModes,
+                        focusNode: _paymentModeFocusNode,
+                        onChanged: (v) {
+                          if (v != null) {
+                            setState(() => _paymentModeFilter = v);
+                            _applyFilters();
+                          }
+                        },
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                ],
+              ),
             ),
           ),
 
@@ -569,6 +705,7 @@ class _BillHistoryScreenState extends State<BillHistoryScreen> {
                         ),
                       )
                     : SingleChildScrollView(
+                        controller: _scrollCtrl,
                         padding: const EdgeInsets.fromLTRB(32, 24, 32, 32),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -604,7 +741,7 @@ class _BillHistoryScreenState extends State<BillHistoryScreen> {
                                     physics: const NeverScrollableScrollPhysics(),
                                     itemCount: _pendingBills.length,
                                     separatorBuilder: (_, _) => const Divider(height: 1, color: Color(0xFFFFF3E0)),
-                                    itemBuilder: (context, idx) => _buildBillTile(_pendingBills[idx]),
+                                    itemBuilder: (context, idx) => _buildBillTile(_pendingBills[idx], idx),
                                   ),
                                 ),
                               ),
@@ -665,7 +802,10 @@ class _BillHistoryScreenState extends State<BillHistoryScreen> {
                                   physics: const NeverScrollableScrollPhysics(),
                                   itemCount: _filtered.length,
                                   separatorBuilder: (_, _) => const Divider(height: 1, color: BoutiqueColors.borderLight),
-                                  itemBuilder: (context, idx) => _buildBillTile(_filtered[idx]),
+                                  itemBuilder: (context, idx) {
+                                    final offset = (_viewFilter == 'All Invoices' && _pendingBills.isNotEmpty) ? _pendingBills.length : 0;
+                                    return _buildBillTile(_filtered[idx], offset + idx);
+                                  },
                                 ),
                               ),
                             ),
@@ -723,17 +863,62 @@ class _BillHistoryScreenState extends State<BillHistoryScreen> {
 
 
   // ── Shared bill list tile ──────────────────────────────────────────────────
-  Widget _buildBillTile(Map<String, dynamic> b) {
+  Widget _buildBillTile(Map<String, dynamic> b, int globalIndex) {
     final perms = context.watch<AuthViewModel>().appUser?.permissions ?? PermissionsModel.adminPreset();
-    return _BillHistoryTile(
-      key: ValueKey(b['_docId'] ?? b['id'] ?? b['billNo'] ?? UniqueKey().toString()),
-      bill: b,
-      perms: perms,
-      fmt: _fmt,
-      onTap: () => _viewBill(b),
-      onSettle: () => _openSettleDialog(b),
-      onDelete: () => _deleteBill(b),
-      onEditBill: widget.onEditBill != null ? () => widget.onEditBill!(b) : null,
+    final focusNode = _getBillFocusNode(globalIndex);
+    final isSelected = _selectedBillIndex == globalIndex;
+
+    return Focus(
+      focusNode: focusNode,
+      skipTraversal: true,
+      onFocusChange: (hasF) {
+        if (hasF && _selectedBillIndex != globalIndex) {
+          setState(() => _selectedBillIndex = globalIndex);
+        }
+      },
+      onKeyEvent: (node, event) {
+        if (event is KeyDownEvent) {
+          final bills = _displayedBills;
+          if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
+            _selectBillAt(globalIndex + 1, bills);
+            return KeyEventResult.handled;
+          } else if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
+            if (globalIndex > 0) {
+              _selectBillAt(globalIndex - 1, bills);
+            } else {
+              _searchFocusNode.requestFocus();
+              _searchCtrl.selection = TextSelection.fromPosition(TextPosition(offset: _searchCtrl.text.length));
+            }
+            return KeyEventResult.handled;
+          } else if (event.logicalKey == LogicalKeyboardKey.tab) {
+            _searchFocusNode.requestFocus();
+            _searchCtrl.selection = TextSelection.fromPosition(TextPosition(offset: _searchCtrl.text.length));
+            return KeyEventResult.handled;
+          } else if (event.logicalKey == LogicalKeyboardKey.enter ||
+              event.logicalKey == LogicalKeyboardKey.space) {
+            _viewBill(b);
+            return KeyEventResult.handled;
+          }
+        }
+        return KeyEventResult.ignored;
+      },
+      child: ListenableBuilder(
+        listenable: focusNode,
+        builder: (context, _) {
+          final isFocused = focusNode.hasFocus || isSelected;
+          return _BillHistoryTile(
+            key: ValueKey(b['_docId'] ?? b['id'] ?? b['billNo'] ?? UniqueKey().toString()),
+            bill: b,
+            perms: perms,
+            fmt: _fmt,
+            isExternallyFocused: isFocused,
+            onTap: () => _viewBill(b),
+            onSettle: () => _openSettleDialog(b),
+            onDelete: () => _deleteBill(b),
+            onEditBill: widget.onEditBill != null ? () => widget.onEditBill!(b) : null,
+          );
+        },
+      ),
     );
   }
 
@@ -778,8 +963,10 @@ class _DatePillButtonState extends State<_DatePillButton> {
         SingleActivator(LogicalKeyboardKey.space): ActivateIntent(),
         SingleActivator(LogicalKeyboardKey.enter): ActivateIntent(),
         SingleActivator(LogicalKeyboardKey.numpadEnter): ActivateIntent(),
+        SingleActivator(LogicalKeyboardKey.arrowDown): ActivateIntent(),
       },
       child: InkWell(
+        canRequestFocus: false,
         onTap: widget.onTap,
         borderRadius: BorderRadius.circular(10),
         child: AnimatedContainer(
@@ -863,6 +1050,7 @@ class _ViewModeDropdownButtonState extends State<_ViewModeDropdownButton> {
         SingleActivator(LogicalKeyboardKey.space): ActivateIntent(),
         SingleActivator(LogicalKeyboardKey.enter): ActivateIntent(),
         SingleActivator(LogicalKeyboardKey.numpadEnter): ActivateIntent(),
+        SingleActivator(LogicalKeyboardKey.arrowDown): ActivateIntent(),
       },
       child: PopupMenuButton<String>(
         key: _popupKey,
@@ -961,6 +1149,7 @@ class _BillHistoryTile extends StatefulWidget {
   final VoidCallback? onSettle;
   final VoidCallback? onDelete;
   final VoidCallback? onEditBill;
+  final bool isExternallyFocused;
 
   const _BillHistoryTile({
     super.key,
@@ -971,6 +1160,7 @@ class _BillHistoryTile extends StatefulWidget {
     this.onSettle,
     this.onDelete,
     this.onEditBill,
+    this.isExternallyFocused = false,
   });
 
   @override
@@ -999,6 +1189,8 @@ class _BillHistoryTileState extends State<_BillHistoryTile> {
         ? b['customerName'].toString().trim()
         : 'Walk-in Customer';
 
+    final isTileFocused = widget.isExternallyFocused || _focused;
+
     return FocusableActionDetector(
       onFocusChange: (f) => setState(() => _focused = f),
       actions: {
@@ -1013,8 +1205,9 @@ class _BillHistoryTileState extends State<_BillHistoryTile> {
         SingleActivator(LogicalKeyboardKey.numpadEnter): ActivateIntent(),
       },
       child: Material(
-        color: _focused ? const Color(0xFFF7E6EB) : Colors.transparent,
+        color: isTileFocused ? const Color(0xFFF7E6EB) : Colors.transparent,
         child: InkWell(
+          canRequestFocus: false,
           onTap: widget.onTap,
           hoverColor: const Color(0xFFF7E6EB),
           splashColor: BoutiqueColors.accent.withAlpha(25),
@@ -1022,7 +1215,7 @@ class _BillHistoryTileState extends State<_BillHistoryTile> {
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
             decoration: BoxDecoration(
-              border: _focused
+              border: isTileFocused
                   ? Border.all(color: BoutiqueColors.accent, width: 1.5)
                   : null,
             ),
@@ -1065,25 +1258,28 @@ class _BillHistoryTileState extends State<_BillHistoryTile> {
                           style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: BoutiqueColors.accent),
                         ),
                         if ((b['billNo']?.toString().trim().isNotEmpty ?? false))
-                          IconButton(
-                            icon: const Icon(Icons.copy_rounded, size: 14, color: BoutiqueColors.accent),
-                            tooltip: 'Copy Bill Number (${b['billNo']})',
-                            padding: const EdgeInsets.symmetric(horizontal: 4),
-                            constraints: const BoxConstraints(),
-                            splashRadius: 16,
-                            onPressed: () {
-                              final billNo = b['billNo'].toString();
-                              Clipboard.setData(ClipboardData(text: billNo));
-                              ScaffoldMessenger.of(context).hideCurrentSnackBar();
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text('Copied "$billNo" to clipboard'),
-                                  duration: const Duration(seconds: 2),
-                                  behavior: SnackBarBehavior.floating,
-                                  width: 260,
-                                ),
-                              );
-                            },
+                          Focus(
+                            skipTraversal: true,
+                            child: IconButton(
+                              icon: const Icon(Icons.copy_rounded, size: 14, color: BoutiqueColors.accent),
+                              tooltip: 'Copy Bill Number (${b['billNo']})',
+                              padding: const EdgeInsets.symmetric(horizontal: 4),
+                              constraints: const BoxConstraints(),
+                              splashRadius: 16,
+                              onPressed: () {
+                                final billNo = b['billNo'].toString();
+                                Clipboard.setData(ClipboardData(text: billNo));
+                                ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text('Copied "$billNo" to clipboard'),
+                                    duration: const Duration(seconds: 2),
+                                    behavior: SnackBarBehavior.floating,
+                                    width: 260,
+                                  ),
+                                );
+                              },
+                            ),
                           ),
                         const SizedBox(width: 8),
                         if (b['isReturned'] == 1 || b['isReturned'] == true || b['isReturned'] == '1')
