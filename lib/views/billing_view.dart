@@ -104,39 +104,53 @@ class _BillingViewState extends State<BillingView> {
             ],
           ),
         ),
-        // Content
+        // Content — Shift+Tab from anywhere inside content returns to the active tab button
         Expanded(
-          child: Stack(
-            children: [
-              if (canCreateBill)
-                Offstage(
-                  offstage: _tab != 0,
-                  child: CreateBillScreen(
-                    key: ValueKey(_billToEdit?['billNo'] ?? 'create'),
+          child: Focus(
+            skipTraversal: true,
+            onKeyEvent: (node, event) {
+              if (event is! KeyDownEvent) return KeyEventResult.ignored;
+              if (event.logicalKey == LogicalKeyboardKey.tab &&
+                  HardwareKeyboard.instance.isShiftPressed) {
+                // Go back to the currently active tab button
+                _tabFocus[_tab].requestFocus();
+                return KeyEventResult.handled;
+              }
+              return KeyEventResult.ignored;
+            },
+            child: Stack(
+              children: [
+                if (canCreateBill)
+                  Offstage(
+                    offstage: _tab != 0,
+                    child: CreateBillScreen(
+                      key: ValueKey(_billToEdit?['billNo'] ?? 'create'),
+                      state: widget.state,
+                      initialBill: _billToEdit,
+                      onSaved: () {
+                        setState(() {
+                          _billToEdit = null;
+                          _tab = 1;
+                        });
+                      },
+                    ),
+                  ),
+                if (_tab == 1 && canViewHistory)
+                  BillHistoryScreen(
                     state: widget.state,
-                    initialBill: _billToEdit,
-                    onSaved: () {
+                    onEditBill: (bill) {
                       setState(() {
-                        _billToEdit = null;
-                        _tab = 1;
+                        _billToEdit = bill;
+                        _tab = 0;
                       });
                     },
                   ),
-                ),
-              if (_tab == 1 && canViewHistory)
-                BillHistoryScreen(
-                  state: widget.state,
-                  onEditBill: (bill) {
-                    setState(() {
-                      _billToEdit = bill;
-                      _tab = 0;
-                    });
-                  },
-                ),
-              if (_tab == 2) CustomerLedgerScreen(state: widget.state),
-            ],
+                if (_tab == 2) CustomerLedgerScreen(state: widget.state),
+              ],
+            ),
           ),
         ),
+
       ],
     );
   }

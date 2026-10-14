@@ -23,8 +23,12 @@ class _CustomerLedgerScreenState extends State<CustomerLedgerScreen> {
 
   String? _selectedCustomerKey;
   String _searchQuery = '';
+  int _highlightedIndex = -1; // index in _filteredCustomerKeys for arrow-key nav
   final TextEditingController _searchCtrl = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
+  final ScrollController _listScrollCtrl = ScrollController();
+  // Focus node for the right-panel content so Tab jumps there
+  final FocusNode _rightPanelFocusNode = FocusNode(debugLabel: 'ledger_right_panel');
 
   @override
   void initState() {
@@ -36,6 +40,8 @@ class _CustomerLedgerScreenState extends State<CustomerLedgerScreen> {
   void dispose() {
     _searchCtrl.dispose();
     _searchFocusNode.dispose();
+    _listScrollCtrl.dispose();
+    _rightPanelFocusNode.dispose();
     super.dispose();
   }
 
@@ -270,52 +276,96 @@ class _CustomerLedgerScreenState extends State<CustomerLedgerScreen> {
                 child: Row(
                   children: [
                     Expanded(
-                      child: TextField(
-                        controller: _searchCtrl,
-                        focusNode: _searchFocusNode,
-                        autofocus: true,
-                        textInputAction: TextInputAction.next,
-                        decoration: BoutiqueInputDecoration.field(
-                          hintText: 'Search customer, mobile or bill #...',
-                          prefixIcon: const Icon(
-                            Icons.search,
-                            size: 20,
-                            color: BoutiqueColors.textSecondary,
-                          ),
-                          suffixIcon: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              if (_searchCtrl.text.isNotEmpty)
+                      child: Focus(
+                        // Intercept arrow keys, Enter, and Tab while typing in the search field
+                        onKeyEvent: (node, event) {
+                          if (event is! KeyDownEvent) return KeyEventResult.ignored;
+                          final keys = _filteredCustomerKeys;
+
+                          if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
+                            if (keys.isEmpty) return KeyEventResult.ignored;
+                            setState(() {
+                              _highlightedIndex =
+                                  (_highlightedIndex + 1).clamp(0, keys.length - 1);
+                            });
+                            _scrollToHighlighted();
+                            return KeyEventResult.handled;
+                          }
+                          if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
+                            if (keys.isEmpty) return KeyEventResult.ignored;
+                            setState(() {
+                              _highlightedIndex =
+                                  (_highlightedIndex - 1).clamp(0, keys.length - 1);
+                            });
+                            _scrollToHighlighted();
+                            return KeyEventResult.handled;
+                          }
+                          if (event.logicalKey == LogicalKeyboardKey.enter ||
+                              event.logicalKey == LogicalKeyboardKey.numpadEnter) {
+                            final idx = _highlightedIndex >= 0 ? _highlightedIndex : 0;
+                            if (idx < keys.length) {
+                              setState(() => _selectedCustomerKey = keys[idx]);
+                              _rightPanelFocusNode.requestFocus();
+                            }
+                            return KeyEventResult.handled;
+                          }
+                          if (event.logicalKey == LogicalKeyboardKey.tab) {
+                            // Tab: jump to right panel, skip the list
+                            _rightPanelFocusNode.requestFocus();
+                            return KeyEventResult.handled;
+                          }
+                          return KeyEventResult.ignored;
+                        },
+                        child: TextField(
+                          controller: _searchCtrl,
+                          focusNode: _searchFocusNode,
+                          autofocus: true,
+                          textInputAction: TextInputAction.none,
+                          decoration: BoutiqueInputDecoration.field(
+                            hintText: 'Search customer, mobile or bill #...',
+                            prefixIcon: const Icon(
+                              Icons.search,
+                              size: 20,
+                              color: BoutiqueColors.textSecondary,
+                            ),
+                            suffixIcon: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                if (_searchCtrl.text.isNotEmpty)
+                                  IconButton(
+                                    icon: const Icon(Icons.close_rounded, size: 16, color: BoutiqueColors.textMuted),
+                                    tooltip: 'Clear search',
+                                    onPressed: () {
+                                      _searchCtrl.clear();
+                                      setState(() {
+                                        _searchQuery = '';
+                                        _highlightedIndex = -1;
+                                      });
+                                    },
+                                  ),
                                 IconButton(
-                                  icon: const Icon(Icons.close_rounded, size: 16, color: BoutiqueColors.textMuted),
-                                  tooltip: 'Clear search',
-                                  onPressed: () {
-                                    _searchCtrl.clear();
-                                    setState(() {
-                                      _searchQuery = '';
-                                    });
+                                  icon: const Icon(Icons.paste_rounded, size: 16, color: BoutiqueColors.accent),
+                                  tooltip: 'Paste bill number or text',
+                                  onPressed: () async {
+                                    final data = await Clipboard.getData(Clipboard.kTextPlain);
+                                    if (data?.text != null && data!.text!.isNotEmpty) {
+                                      final text = data.text!.trim();
+                                      _searchCtrl.text = text;
+                                      setState(() {
+                                        _searchQuery = text;
+                                        _highlightedIndex = -1;
+                                      });
+                                    }
                                   },
                                 ),
-                              IconButton(
-                                icon: const Icon(Icons.paste_rounded, size: 16, color: BoutiqueColors.accent),
-                                tooltip: 'Paste bill number or text',
-                                onPressed: () async {
-                                  final data = await Clipboard.getData(Clipboard.kTextPlain);
-                                  if (data?.text != null && data!.text!.isNotEmpty) {
-                                    final text = data.text!.trim();
-                                    _searchCtrl.text = text;
-                                    setState(() {
-                                      _searchQuery = text;
-                                    });
-                                  }
-                                },
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
+                          onChanged: (v) => setState(() {
+                            _searchQuery = v;
+                            _highlightedIndex = -1;
+                          }),
                         ),
-                        onChanged: (v) => setState(() {
-                          _searchQuery = v;
-                        }),
                       ),
                     ),
                     const SizedBox(width: 8),
@@ -340,6 +390,7 @@ class _CustomerLedgerScreenState extends State<CustomerLedgerScreen> {
                         ),
                       )
                     : ListView.builder(
+                        controller: _listScrollCtrl,
                         itemCount: keys.length,
                         itemBuilder: (ctx, i) {
                           final k = keys[i];
@@ -362,6 +413,7 @@ class _CustomerLedgerScreenState extends State<CustomerLedgerScreen> {
                             (acc, b) => acc + _getPendingAmount(b),
                           );
                           final isSelected = _selectedCustomerKey == k;
+                          final isHighlighted = _highlightedIndex == i;
 
                           return _CustomerLedgerTile(
                             displayName: displayName,
@@ -370,8 +422,14 @@ class _CustomerLedgerScreenState extends State<CustomerLedgerScreen> {
                             totalPending: totalPending,
                             billCount: bills.length,
                             isSelected: isSelected,
-                            onTap: () =>
-                                setState(() => _selectedCustomerKey = k),
+                            isHighlighted: isHighlighted,
+                            onTap: () {
+                              setState(() {
+                                _selectedCustomerKey = k;
+                                _highlightedIndex = i;
+                              });
+                              _rightPanelFocusNode.requestFocus();
+                            },
                           );
                         },
                       ),
@@ -383,8 +441,9 @@ class _CustomerLedgerScreenState extends State<CustomerLedgerScreen> {
 
         // RIGHT: Customer Details & Split / Installment Due Payments
         Expanded(
-          child: FocusTraversalOrder(
-            order: const NumericFocusOrder(2.0),
+          child: Focus(
+            focusNode: _rightPanelFocusNode,
+            skipTraversal: true,
             child: _selectedCustomerKey == null ||
                     !_customerGroups.containsKey(_selectedCustomerKey)
                 ? const Center(
@@ -415,6 +474,20 @@ class _CustomerLedgerScreenState extends State<CustomerLedgerScreen> {
       ],
     ),
   );
+  }
+
+  /// Scrolls the customer list so the highlighted item is visible.
+  void _scrollToHighlighted() {
+    if (!_listScrollCtrl.hasClients) return;
+    // Each tile is approximately 80px tall
+    const tileHeight = 80.0;
+    final offset = (_highlightedIndex * tileHeight)
+        .clamp(0.0, _listScrollCtrl.position.maxScrollExtent);
+    _listScrollCtrl.animateTo(
+      offset,
+      duration: const Duration(milliseconds: 160),
+      curve: Curves.easeOut,
+    );
   }
 
   Widget _buildCustomerDetailPanel(List<Map<String, dynamic>> bills) {
@@ -1878,7 +1951,10 @@ class _CustomerLedgerScreenState extends State<CustomerLedgerScreen> {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (ctx) => StatefulBuilder(
+      builder: (ctx) => PopScope(
+        // Allow Esc to dismiss the dialog
+        canPop: true,
+        child: StatefulBuilder(
         builder: (dialogCtx, setDialogState) {
           double currentPaidNow = 0.0;
           if (!isSplitMode) {
@@ -2443,6 +2519,7 @@ class _CustomerLedgerScreenState extends State<CustomerLedgerScreen> {
         );
         },
       ),
+      ), // closes PopScope
     );
   }
 
@@ -2642,6 +2719,7 @@ class _CustomerLedgerTile extends StatefulWidget {
   final double totalPending;
   final int billCount;
   final bool isSelected;
+  final bool isHighlighted;
   final VoidCallback onTap;
 
   const _CustomerLedgerTile({
@@ -2651,6 +2729,7 @@ class _CustomerLedgerTile extends StatefulWidget {
     required this.totalPending,
     required this.billCount,
     required this.isSelected,
+    required this.isHighlighted,
     required this.onTap,
   });
 
@@ -2659,27 +2738,17 @@ class _CustomerLedgerTile extends StatefulWidget {
 }
 
 class _CustomerLedgerTileState extends State<_CustomerLedgerTile> {
-  bool _focused = false;
-
   @override
   Widget build(BuildContext context) {
-    return FocusableActionDetector(
-      onFocusChange: (f) => setState(() => _focused = f),
-      actions: {
-        ActivateIntent: CallbackAction<ActivateIntent>(onInvoke: (_) {
-          widget.onTap();
-          return null;
-        }),
-      },
-      shortcuts: const {
-        SingleActivator(LogicalKeyboardKey.space): ActivateIntent(),
-        SingleActivator(LogicalKeyboardKey.enter): ActivateIntent(),
-        SingleActivator(LogicalKeyboardKey.numpadEnter): ActivateIntent(),
-      },
+    final isHighlightedOrFocused = widget.isHighlighted;
+    return Focus(
+      // Tiles skip Tab traversal — arrow keys from search field navigate them
+      skipTraversal: true,
+      canRequestFocus: false,
       child: Material(
         color: widget.isSelected
             ? Colors.white
-            : _focused
+            : isHighlightedOrFocused
                 ? const Color(0xFFFBF6EE)
                 : Colors.transparent,
         child: InkWell(
@@ -2694,7 +2763,7 @@ class _CustomerLedgerTileState extends State<_CustomerLedgerTile> {
                 left: BorderSide(
                   color: widget.isSelected
                       ? BoutiqueColors.accent
-                      : _focused
+                      : isHighlightedOrFocused
                           ? BoutiqueColors.accent.withAlpha(150)
                           : Colors.transparent,
                   width: 4,
@@ -2771,5 +2840,6 @@ class _CustomerLedgerTileState extends State<_CustomerLedgerTile> {
     );
   }
 }
+
 
 
