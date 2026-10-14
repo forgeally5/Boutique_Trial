@@ -457,6 +457,7 @@ class ApiService {
     int newQty = 0,
     double oldWeight = 0.0,
     double newWeight = 0.0,
+    DateTime? addedDate,
   }) {
     final isWeight = product.pricingType == 'Weight-Based';
     final rate = isWeight
@@ -464,6 +465,7 @@ class ApiService {
         : (product.sellingPrice > 0 ? product.sellingPrice : product.mrp);
     final qty = isWeight ? (addedQty > 0 ? addedQty : 1) : addedQty;
     final amount = isWeight ? (rate * addedWeight) : (rate * qty);
+    final exactDate = addedDate ?? product.addedDate ?? DateTime.now();
 
     return {
       'tagId': product.tagId,
@@ -478,6 +480,7 @@ class ApiService {
       'newWeight': newWeight,
       'rate': rate,
       'amount': amount,
+      'addedDate': exactDate.toIso8601String(),
     };
   }
 

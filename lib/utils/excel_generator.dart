@@ -68,10 +68,13 @@ class ExcelGenerator {
 
     for (final bill in transactions) {
       final bDate = DateTime.tryParse(bill['billDate'] ?? '') ?? DateTime.now();
-      final dateStr = _dateTimeFmt.format(bDate);
       final items = bill['items'] as List<dynamic>? ?? [];
 
       for (final item in items) {
+        final itemDate = item['addedDate'] != null
+            ? (DateTime.tryParse(item['addedDate'].toString()) ?? bDate)
+            : bDate;
+        final dateStr = _dateTimeFmt.format(itemDate);
         final qty = (item['qty'] as num?)?.toInt() ?? 0;
         final weight = (item['weight'] as num?)?.toDouble() ?? 0.0;
         final amt = (item['amount'] as num?)?.toDouble() ?? 0.0;

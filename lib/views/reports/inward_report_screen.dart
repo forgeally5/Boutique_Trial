@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../models/product.dart';
 import '../../services/api_service.dart';
 import '../../utils/boutique_theme.dart';
 import '../../utils/excel_generator.dart';
@@ -165,32 +166,43 @@ class _InwardReportScreenState extends State<InwardReportScreen> {
         return;
       }
 
-      // Batch missing products in chunks of 50
-      const int chunkSize = 50;
-      for (int i = 0; i < missingProducts.length; i += chunkSize) {
-        final chunk = missingProducts.sublist(
-          i,
-          i + chunkSize > missingProducts.length ? missingProducts.length : i + chunkSize,
-        );
-        final items = chunk.map((p) {
-          final isWeight = p.pricingType == 'Weight-Based';
-          final qty = isWeight ? (p.quantity > 0 ? p.quantity : 1) : p.quantity;
-          return ApiService().createInwardItemMap(
-            product: p,
-            addedQty: qty,
-            addedWeight: p.grossWeight,
-            oldQty: 0,
-            newQty: p.quantity,
-            oldWeight: 0.0,
-            newWeight: p.grossWeight,
-          );
-        }).toList();
+      // Group missing products by their original added_date
+      final Map<String, List<Product>> byDate = {};
+      for (final p in missingProducts) {
+        final dateKey = p.addedDate != null ? p.addedDate!.toIso8601String() : DateTime.now().toIso8601String();
+        byDate.putIfAbsent(dateKey, () => []).add(p);
+      }
 
-        await ApiService().recordInwardBill(
-          items: items,
-          narration: 'Inventory Stock Sync (Catalog)',
-          date: DateTime.now(),
-        );
+      for (final entry in byDate.entries) {
+        final d = DateTime.tryParse(entry.key) ?? DateTime.now();
+        final itemsList = entry.value;
+        const int chunkSize = 50;
+        for (int i = 0; i < itemsList.length; i += chunkSize) {
+          final chunk = itemsList.sublist(
+            i,
+            i + chunkSize > itemsList.length ? itemsList.length : i + chunkSize,
+          );
+          final items = chunk.map((p) {
+            final isWeight = p.pricingType == 'Weight-Based';
+            final qty = isWeight ? (p.quantity > 0 ? p.quantity : 1) : p.quantity;
+            return ApiService().createInwardItemMap(
+              product: p,
+              addedQty: qty,
+              addedWeight: p.grossWeight,
+              oldQty: 0,
+              newQty: p.quantity,
+              oldWeight: 0.0,
+              newWeight: p.grossWeight,
+              addedDate: p.addedDate,
+            );
+          }).toList();
+
+          await ApiService().recordInwardBill(
+            items: items,
+            narration: 'Inventory Stock Sync (Catalog)',
+            date: d,
+          );
+        }
       }
 
       if (mounted) {
@@ -549,13 +561,24 @@ class _InwardReportScreenState extends State<InwardReportScreen> {
         totalInwardWeight += weight;
         totalInwardValue += amt;
 
+        final itemDate = item['addedDate'] != null
+            ? (DateTime.tryParse(item['addedDate'].toString()) ?? date)
+            : date;
+
         flatItems.add({
-          'date': date,
+          'date': itemDate,
           'narration': narration,
           'itemData': item,
         });
       }
     }
+
+    // Sort items by exact date & time descending
+    flatItems.sort((a, b) {
+      final dateA = a['date'] as DateTime;
+      final dateB = b['date'] as DateTime;
+      return dateB.compareTo(dateA);
+    });
 
     final totalStockString = totalInwardWeight > 0 && totalInwardUnits > 0
         ? '$totalInwardUnits pcs | ${totalInwardWeight.toStringAsFixed(1)}g'
@@ -652,21 +675,15 @@ class _InwardReportScreenState extends State<InwardReportScreen> {
               ),
               const Spacer(),
 
-              // Sync Inventory Button
-              ElevatedButton.icon(
+              // Sync Inventory (Subtle icon button)
+              IconButton(
                 icon: _isSyncing
-                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                    : const Icon(Icons.sync_rounded, size: 18),
-                label: Text(_isSyncing ? 'Syncing...' : 'Sync Inventory Stock', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: BoutiqueColors.accent,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                ),
+                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: BoutiqueColors.accent))
+                    : const Icon(Icons.sync_rounded, color: BoutiqueColors.accent),
                 onPressed: _isSyncing ? null : _syncExistingInventory,
+                tooltip: 'Sync Inventory Stock to Inward Report',
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 4),
 
               // Clear All
               TextButton.icon(
