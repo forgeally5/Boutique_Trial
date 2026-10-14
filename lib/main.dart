@@ -303,7 +303,7 @@ class _AdminHomeShellState extends State<AdminHomeShell> {
               _buildSettingsCard(
                 icon: Icons.logout_rounded,
                 title: 'Logout Admin',
-                subtitle: 'Sign out of current boutique session',
+                subtitle: 'Sign out of current session (Ctrl+Shift+L / Alt+L)',
                 isDestructive: true,
                 onTap: _handleLogout,
               ),
@@ -770,7 +770,7 @@ class _AdminHomeShellState extends State<AdminHomeShell> {
                         IconButton(
                           icon: const Icon(Icons.logout_rounded, size: 16, color: BoutiqueColors.textSecondary),
                           onPressed: _handleLogout,
-                          tooltip: 'Logout',
+                          tooltip: 'Logout (Ctrl+Shift+L / Alt+L)',
                         ),
                       ],
                     ),
