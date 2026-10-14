@@ -78,36 +78,50 @@ class _SearchableDropdownFieldState extends State<SearchableDropdownField> {
           ),
         ),
         const SizedBox(height: 5),
-        Material(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(8),
-          child: InkWell(
-            onTap: () => _showSearchableDropdownDialog(context, displayValue),
-            onFocusChange: (focused) => setState(() => _isFocused = focused),
-            focusColor: SearchableDropdownField._brown.withValues(alpha: 0.1),
-            hoverColor: SearchableDropdownField._brown.withValues(alpha: 0.05),
+        Focus(
+          onFocusChange: (focused) => setState(() => _isFocused = focused),
+          onKeyEvent: (node, event) {
+            if (event is KeyDownEvent) {
+              if (event.logicalKey == LogicalKeyboardKey.enter ||
+                  event.logicalKey == LogicalKeyboardKey.space ||
+                  event.logicalKey == LogicalKeyboardKey.arrowDown) {
+                _showSearchableDropdownDialog(context, displayValue);
+                return KeyEventResult.handled;
+              }
+            }
+            return KeyEventResult.ignored;
+          },
+          child: Material(
+            color: Colors.white,
             borderRadius: BorderRadius.circular(8),
-            child: InputDecorator(
-              isFocused: _isFocused,
-              decoration: InputDecoration(
-                filled: false,
-                contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: BorderSide(
-                      color: widget.error != null ? SearchableDropdownField._errorColor : SearchableDropdownField._border),
+            child: InkWell(
+              canRequestFocus: false,
+              onTap: () => _showSearchableDropdownDialog(context, displayValue),
+              focusColor: SearchableDropdownField._brown.withValues(alpha: 0.1),
+              hoverColor: SearchableDropdownField._brown.withValues(alpha: 0.05),
+              borderRadius: BorderRadius.circular(8),
+              child: InputDecorator(
+                isFocused: _isFocused,
+                decoration: InputDecoration(
+                  filled: false,
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: BorderSide(
+                        color: widget.error != null ? SearchableDropdownField._errorColor : SearchableDropdownField._border),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: BorderSide(
+                        color: widget.error != null ? SearchableDropdownField._errorColor : SearchableDropdownField._brown, width: 1.5),
+                  ),
+                  suffixIcon: const Icon(Icons.arrow_drop_down, color: SearchableDropdownField._lightBrown),
                 ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: BorderSide(
-                      color: widget.error != null ? SearchableDropdownField._errorColor : SearchableDropdownField._brown, width: 1.5),
+                child: Text(
+                  displayValue,
+                  style: const TextStyle(color: SearchableDropdownField._brown, fontSize: 14),
+                  overflow: TextOverflow.ellipsis,
                 ),
-                suffixIcon: const Icon(Icons.arrow_drop_down, color: SearchableDropdownField._lightBrown),
-              ),
-              child: Text(
-                displayValue,
-                style: const TextStyle(color: SearchableDropdownField._brown, fontSize: 14),
-                overflow: TextOverflow.ellipsis,
               ),
             ),
           ),

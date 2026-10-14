@@ -43,6 +43,7 @@ class _InventoryViewState extends State<InventoryView> {
   int _selectedProductIndex = 0;
   final ScrollController _listScrollCtrl = ScrollController();
   late final FocusNode _searchFocusNode;
+  late final FocusNode _dateFilterFocusNode;
   final Map<int, FocusNode> _itemFocusNodes = {};
   final Map<int, FocusNode> _qrFocusNodes = {};
   final Map<int, FocusNode> _downloadFocusNodes = {};
@@ -50,7 +51,10 @@ class _InventoryViewState extends State<InventoryView> {
   final Map<int, FocusNode> _deleteFocusNodes = {};
 
   FocusNode _getItemFocusNode(int index) {
-    return _itemFocusNodes.putIfAbsent(index, () => FocusNode(debugLabel: 'product_row_$index'));
+    return _itemFocusNodes.putIfAbsent(
+      index,
+      () => FocusNode(debugLabel: 'product_row_$index', skipTraversal: true),
+    );
   }
 
   FocusNode _getActionFocusNode(int index, ProductAction action) {
@@ -58,13 +62,25 @@ class _InventoryViewState extends State<InventoryView> {
       case ProductAction.row:
         return _getItemFocusNode(index);
       case ProductAction.qr:
-        return _qrFocusNodes.putIfAbsent(index, () => FocusNode(debugLabel: 'qr_$index'));
+        return _qrFocusNodes.putIfAbsent(
+          index,
+          () => FocusNode(debugLabel: 'qr_$index', skipTraversal: true),
+        );
       case ProductAction.download:
-        return _downloadFocusNodes.putIfAbsent(index, () => FocusNode(debugLabel: 'download_$index'));
+        return _downloadFocusNodes.putIfAbsent(
+          index,
+          () => FocusNode(debugLabel: 'download_$index', skipTraversal: true),
+        );
       case ProductAction.edit:
-        return _editFocusNodes.putIfAbsent(index, () => FocusNode(debugLabel: 'edit_$index'));
+        return _editFocusNodes.putIfAbsent(
+          index,
+          () => FocusNode(debugLabel: 'edit_$index', skipTraversal: true),
+        );
       case ProductAction.delete:
-        return _deleteFocusNodes.putIfAbsent(index, () => FocusNode(debugLabel: 'delete_$index'));
+        return _deleteFocusNodes.putIfAbsent(
+          index,
+          () => FocusNode(debugLabel: 'delete_$index', skipTraversal: true),
+        );
     }
   }
 
@@ -170,17 +186,22 @@ class _InventoryViewState extends State<InventoryView> {
   @override
   void initState() {
     super.initState();
+    _dateFilterFocusNode = FocusNode(debugLabel: 'inventory_date_filter');
     _searchFocusNode = FocusNode(
       debugLabel: 'inventory_search',
       onKeyEvent: (node, event) {
         if (event is KeyDownEvent) {
-          if (event.logicalKey == LogicalKeyboardKey.arrowDown ||
-              (event.logicalKey == LogicalKeyboardKey.tab && !HardwareKeyboard.instance.isShiftPressed)) {
+          if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
             final filteredList = _getFilteredList(state.products);
             if (filteredList.isNotEmpty) {
               _selectProductAt(0, filteredList);
               return KeyEventResult.handled;
             }
+          } else if (event.logicalKey == LogicalKeyboardKey.tab &&
+              HardwareKeyboard.instance.isShiftPressed) {
+            // Shift+Tab from search loops back to date filter
+            _dateFilterFocusNode.requestFocus();
+            return KeyEventResult.handled;
           }
         }
         return KeyEventResult.ignored;
@@ -206,10 +227,33 @@ class _InventoryViewState extends State<InventoryView> {
   void dispose() {
     widget.globalSearchCtrl?.removeListener(_onGlobalSearch);
     _searchFocusNode.dispose();
+    _dateFilterFocusNode.dispose();
     _searchCtrl.dispose();
     _listScrollCtrl.dispose();
     _clearItemFocusNodes();
     super.dispose();
+  }
+
+  Future<void> _openDateRangePicker(BuildContext context) async {
+    final picked = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now(),
+      initialDateRange: _selectedDateRange,
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: const ColorScheme.light(
+              primary: BoutiqueColors.accent,
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+    if (picked != null) {
+      setState(() => _selectedDateRange = picked);
+    }
   }
 
   // ── Memoized filter cache ──
@@ -660,57 +704,82 @@ class _InventoryViewState extends State<InventoryView> {
                         flex: 2,
                         child: FocusTraversalOrder(
                           order: const NumericFocusOrder(7),
-                          child: InkWell(
-                            onTap: () async {
-                              final picked = await showDateRangePicker(
-                                context: context,
-                                firstDate: DateTime(2020),
-                                lastDate: DateTime.now(),
-                                initialDateRange: _selectedDateRange,
-                                builder: (context, child) {
-                                  return Theme(
-                                    data: Theme.of(context).copyWith(
-                                      colorScheme: const ColorScheme.light(
-                                        primary: BoutiqueColors.accent,
+                          child: Focus(
+                            focusNode: _dateFilterFocusNode,
+                            onKeyEvent: (node, event) {
+                              if (event is KeyDownEvent) {
+                                if (event.logicalKey == LogicalKeyboardKey.enter ||
+                                    event.logicalKey == LogicalKeyboardKey.space ||
+                                    event.logicalKey == LogicalKeyboardKey.arrowDown) {
+                                  _openDateRangePicker(context);
+                                  return KeyEventResult.handled;
+                                } else if (event.logicalKey == LogicalKeyboardKey.tab &&
+                                    !HardwareKeyboard.instance.isShiftPressed) {
+                                  // Tab loops back to the search input
+                                  _searchFocusNode.requestFocus();
+                                  _searchCtrl.selection = TextSelection.fromPosition(
+                                      TextPosition(offset: _searchCtrl.text.length));
+                                  return KeyEventResult.handled;
+                                }
+                              }
+                              return KeyEventResult.ignored;
+                            },
+                            child: ListenableBuilder(
+                              listenable: _dateFilterFocusNode,
+                              builder: (context, _) {
+                                final isFocused = _dateFilterFocusNode.hasFocus;
+                                return Material(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(10),
+                                  child: InkWell(
+                                    canRequestFocus: false,
+                                    borderRadius: BorderRadius.circular(10),
+                                    onTap: () => _openDateRangePicker(context),
+                                    child: Container(
+                                      height: 48,
+                                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                                      decoration: BoxDecoration(
+                                        color: Colors.white,
+                                        border: Border.all(
+                                          color: isFocused ? BoutiqueColors.accent : BoutiqueColors.border,
+                                          width: isFocused ? 1.5 : 1.0,
+                                        ),
+                                        borderRadius: BorderRadius.circular(10),
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          Icon(
+                                            Icons.calendar_today_rounded,
+                                            size: 18,
+                                            color: isFocused ? BoutiqueColors.accent : BoutiqueColors.textSecondary,
+                                          ),
+                                          const SizedBox(width: 8),
+                                          Expanded(
+                                            child: Text(
+                                              _selectedDateRange == null
+                                                  ? 'Filter by Date Added'
+                                                  : '${_selectedDateRange!.start.day}/${_selectedDateRange!.start.month} - ${_selectedDateRange!.end.day}/${_selectedDateRange!.end.month}',
+                                              style: TextStyle(
+                                                fontSize: 13,
+                                                color: isFocused ? BoutiqueColors.accent : BoutiqueColors.textPrimary,
+                                                fontWeight: isFocused ? FontWeight.w600 : FontWeight.normal,
+                                              ),
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          ),
+                                          if (_selectedDateRange != null)
+                                            IconButton(
+                                              icon: const Icon(Icons.close, size: 16),
+                                              onPressed: () => setState(() => _selectedDateRange = null),
+                                              padding: EdgeInsets.zero,
+                                              constraints: const BoxConstraints(),
+                                            ),
+                                        ],
                                       ),
                                     ),
-                                    child: child!,
-                                  );
-                                },
-                              );
-                              if (picked != null) {
-                                setState(() => _selectedDateRange = picked);
-                              }
-                            },
-                            child: Container(
-                              height: 48,
-                              padding: const EdgeInsets.symmetric(horizontal: 12),
-                              decoration: BoxDecoration(
-                                border: Border.all(color: BoutiqueColors.border),
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              child: Row(
-                                children: [
-                                  const Icon(Icons.calendar_today_rounded, size: 18, color: BoutiqueColors.textSecondary),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: Text(
-                                      _selectedDateRange == null
-                                          ? 'Filter by Date Added'
-                                          : '${_selectedDateRange!.start.day}/${_selectedDateRange!.start.month} - ${_selectedDateRange!.end.day}/${_selectedDateRange!.end.month}',
-                                      style: const TextStyle(fontSize: 13, color: BoutiqueColors.textPrimary),
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
                                   ),
-                                  if (_selectedDateRange != null)
-                                    IconButton(
-                                      icon: const Icon(Icons.close, size: 16),
-                                      onPressed: () => setState(() => _selectedDateRange = null),
-                                      padding: EdgeInsets.zero,
-                                      constraints: const BoxConstraints(),
-                                    ),
-                                ],
-                              ),
+                                );
+                              },
                             ),
                           ),
                         ),
@@ -724,6 +793,7 @@ class _InventoryViewState extends State<InventoryView> {
                 // Main Content View (Table or Grid)
                 Expanded(
                   child: Focus(
+                    skipTraversal: true,
                     onKeyEvent: (node, event) {
                       if (event is KeyDownEvent) {
                         if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
@@ -917,6 +987,7 @@ class _InventoryViewState extends State<InventoryView> {
 
     return Focus(
       focusNode: focusNode,
+      skipTraversal: true,
       onFocusChange: (hasF) {
         if (hasF && _selectedProductIndex != index) {
           setState(() => _selectedProductIndex = index);
@@ -943,26 +1014,8 @@ class _InventoryViewState extends State<InventoryView> {
             return KeyEventResult.handled;
           }
           if (event.logicalKey == LogicalKeyboardKey.tab) {
-            if (HardwareKeyboard.instance.isShiftPressed) {
-              final pos = availableActions.indexOf(action);
-              if (pos > 1) {
-                _focusProductAction(index, availableActions[pos - 1], list);
-              } else {
-                _getItemFocusNode(index).requestFocus();
-              }
-            } else {
-              final pos = availableActions.indexOf(action);
-              if (pos >= 0 && pos < availableActions.length - 1) {
-                _focusProductAction(index, availableActions[pos + 1], list);
-              } else {
-                if (index + 1 < list.length) {
-                  _selectProductAt(index + 1, list);
-                } else {
-                  _searchFocusNode.requestFocus();
-                  _searchCtrl.selection = TextSelection.fromPosition(TextPosition(offset: _searchCtrl.text.length));
-                }
-              }
-            }
+            _searchFocusNode.requestFocus();
+            _searchCtrl.selection = TextSelection.fromPosition(TextPosition(offset: _searchCtrl.text.length));
             return KeyEventResult.handled;
           }
           if (event.logicalKey == LogicalKeyboardKey.arrowRight) {
@@ -1044,6 +1097,7 @@ class _InventoryViewState extends State<InventoryView> {
 
     return Focus(
       focusNode: rowNode,
+      skipTraversal: true,
       onFocusChange: (hasF) {
         if (hasF && _selectedProductIndex != index) {
           setState(() => _selectedProductIndex = index);
@@ -1063,21 +1117,8 @@ class _InventoryViewState extends State<InventoryView> {
             }
             return KeyEventResult.handled;
           } else if (event.logicalKey == LogicalKeyboardKey.tab) {
-            if (HardwareKeyboard.instance.isShiftPressed) {
-              if (index > 0) {
-                final prevActions = _getAvailableActions(perms);
-                _focusProductAction(index - 1, prevActions.last, list);
-              } else {
-                _searchFocusNode.requestFocus();
-                _searchCtrl.selection = TextSelection.fromPosition(TextPosition(offset: _searchCtrl.text.length));
-              }
-            } else {
-              if (availableActions.length > 1) {
-                _focusProductAction(index, availableActions[1], list);
-              } else if (index + 1 < list.length) {
-                _selectProductAt(index + 1, list);
-              }
-            }
+            _searchFocusNode.requestFocus();
+            _searchCtrl.selection = TextSelection.fromPosition(TextPosition(offset: _searchCtrl.text.length));
             return KeyEventResult.handled;
           } else if (event.logicalKey == LogicalKeyboardKey.arrowRight) {
             if (availableActions.length > 1) {
@@ -1259,6 +1300,7 @@ class _InventoryViewState extends State<InventoryView> {
 
     return Focus(
       focusNode: _getItemFocusNode(index),
+      skipTraversal: true,
       onFocusChange: (hasF) {
         if (hasF && _selectedProductIndex != index) {
           setState(() => _selectedProductIndex = index);
@@ -1274,6 +1316,10 @@ class _InventoryViewState extends State<InventoryView> {
               event.logicalKey == LogicalKeyboardKey.arrowUp) {
             _selectProductAt(index - 1, list);
             return KeyEventResult.handled;
+          } else if (event.logicalKey == LogicalKeyboardKey.tab) {
+            _searchFocusNode.requestFocus();
+            _searchCtrl.selection = TextSelection.fromPosition(TextPosition(offset: _searchCtrl.text.length));
+            return KeyEventResult.handled;
           } else if (event.logicalKey == LogicalKeyboardKey.enter ||
               event.logicalKey == LogicalKeyboardKey.space) {
             setState(() => _selectedDrawerProduct = p);
@@ -1283,6 +1329,7 @@ class _InventoryViewState extends State<InventoryView> {
         return KeyEventResult.ignored;
       },
       child: InkWell(
+        canRequestFocus: false,
         onTap: () => _selectProductAt(index, list, openDrawer: true),
         hoverColor: BoutiqueColors.accentSoft.withValues(alpha: 0.3),
         borderRadius: BorderRadius.circular(12),
