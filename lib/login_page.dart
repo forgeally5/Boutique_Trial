@@ -655,34 +655,6 @@ class _LoginPageState extends State<LoginPage> {
                             ),
                           ),
                         ),
-                        const SizedBox(height: 26),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text(
-                              'New here? ',
-                              style: GoogleFonts.workSans(
-                                fontSize: 12.5,
-                                color: inkSoftColor,
-                              ),
-                            ),
-                            GestureDetector(
-                              onTap: () {},
-                              child: Container(
-                                decoration: const BoxDecoration(
-                                  border: Border(bottom: BorderSide(color: inkColor)),
-                                ),
-                                child: Text(
-                                  'Request an account',
-                                  style: GoogleFonts.workSans(
-                                    fontSize: 12.5,
-                                    color: inkColor,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
                       ],
                     ),
                   ),

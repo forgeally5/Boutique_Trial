@@ -12,6 +12,14 @@ import '../utils/qr_pdf_generator.dart';
 import '../dialogs/bulk_upload_dialog.dart';
 import '../widgets/searchable_dropdown.dart';
 
+enum ProductAction {
+  row,
+  qr,
+  download,
+  edit,
+  delete,
+}
+
 class InventoryView extends StatefulWidget {
   final AdminState state;
   final TextEditingController? globalSearchCtrl;
@@ -34,10 +42,45 @@ class _InventoryViewState extends State<InventoryView> {
   DateTimeRange? _selectedDateRange;
   int _selectedProductIndex = 0;
   final ScrollController _listScrollCtrl = ScrollController();
+  late final FocusNode _searchFocusNode;
   final Map<int, FocusNode> _itemFocusNodes = {};
+  final Map<int, FocusNode> _qrFocusNodes = {};
+  final Map<int, FocusNode> _downloadFocusNodes = {};
+  final Map<int, FocusNode> _editFocusNodes = {};
+  final Map<int, FocusNode> _deleteFocusNodes = {};
 
   FocusNode _getItemFocusNode(int index) {
     return _itemFocusNodes.putIfAbsent(index, () => FocusNode(debugLabel: 'product_row_$index'));
+  }
+
+  FocusNode _getActionFocusNode(int index, ProductAction action) {
+    switch (action) {
+      case ProductAction.row:
+        return _getItemFocusNode(index);
+      case ProductAction.qr:
+        return _qrFocusNodes.putIfAbsent(index, () => FocusNode(debugLabel: 'qr_$index'));
+      case ProductAction.download:
+        return _downloadFocusNodes.putIfAbsent(index, () => FocusNode(debugLabel: 'download_$index'));
+      case ProductAction.edit:
+        return _editFocusNodes.putIfAbsent(index, () => FocusNode(debugLabel: 'edit_$index'));
+      case ProductAction.delete:
+        return _deleteFocusNodes.putIfAbsent(index, () => FocusNode(debugLabel: 'delete_$index'));
+    }
+  }
+
+  List<ProductAction> _getAvailableActions(PermissionsModel perms) {
+    final actions = <ProductAction>[ProductAction.row];
+    if (perms.tagBarcodePrint || perms.editTags) {
+      actions.add(ProductAction.qr);
+    }
+    actions.add(ProductAction.download);
+    if (perms.editTags) {
+      actions.add(ProductAction.edit);
+    }
+    if (perms.deleteTags) {
+      actions.add(ProductAction.delete);
+    }
+    return actions;
   }
 
   void _clearItemFocusNodes() {
@@ -45,6 +88,45 @@ class _InventoryViewState extends State<InventoryView> {
       n.dispose();
     }
     _itemFocusNodes.clear();
+    for (final n in _qrFocusNodes.values) {
+      n.dispose();
+    }
+    _qrFocusNodes.clear();
+    for (final n in _downloadFocusNodes.values) {
+      n.dispose();
+    }
+    _downloadFocusNodes.clear();
+    for (final n in _editFocusNodes.values) {
+      n.dispose();
+    }
+    _editFocusNodes.clear();
+    for (final n in _deleteFocusNodes.values) {
+      n.dispose();
+    }
+    _deleteFocusNodes.clear();
+  }
+
+  void _scrollToIndex(int index) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final node = _getItemFocusNode(index);
+      if (node.context != null) {
+        Scrollable.ensureVisible(
+          node.context!,
+          alignment: 0.35,
+          duration: const Duration(milliseconds: 140),
+          curve: Curves.easeOutCubic,
+        );
+      } else if (_listScrollCtrl.hasClients) {
+        final approxItemHeight = _isGridView ? 280.0 : 70.0;
+        final targetOffset = (index * approxItemHeight).clamp(0.0, _listScrollCtrl.position.maxScrollExtent);
+        _listScrollCtrl.animateTo(
+          targetOffset,
+          duration: const Duration(milliseconds: 140),
+          curve: Curves.easeOutCubic,
+        );
+      }
+    });
   }
 
   void _selectProductAt(int targetIndex, List<Product> list, {bool openDrawer = false}) {
@@ -61,19 +143,26 @@ class _InventoryViewState extends State<InventoryView> {
 
     final nextNode = _getItemFocusNode(clampedIndex);
     nextNode.requestFocus();
+    _scrollToIndex(clampedIndex);
+  }
 
-    if (nextNode.context != null) {
+  void _focusProductAction(int index, ProductAction action, List<Product> list) {
+    if (list.isEmpty) return;
+    final clampedIndex = index.clamp(0, list.length - 1);
+    if (_selectedProductIndex != clampedIndex) {
+      setState(() => _selectedProductIndex = clampedIndex);
+    }
+    final node = _getActionFocusNode(clampedIndex, action);
+    node.requestFocus();
+
+    // Ensure row is comfortably visible
+    final rowNode = _getItemFocusNode(clampedIndex);
+    if (rowNode.context != null) {
       Scrollable.ensureVisible(
-        nextNode.context!,
-        alignment: 0.3,
-        duration: const Duration(milliseconds: 80),
-      );
-    } else if (_listScrollCtrl.hasClients) {
-      final approxOffset = (clampedIndex * 64.0).clamp(0.0, _listScrollCtrl.position.maxScrollExtent);
-      _listScrollCtrl.animateTo(
-        approxOffset,
-        duration: const Duration(milliseconds: 80),
-        curve: Curves.easeOut,
+        rowNode.context!,
+        alignment: 0.35,
+        duration: const Duration(milliseconds: 100),
+        curve: Curves.easeOutCubic,
       );
     }
   }
@@ -81,6 +170,22 @@ class _InventoryViewState extends State<InventoryView> {
   @override
   void initState() {
     super.initState();
+    _searchFocusNode = FocusNode(
+      debugLabel: 'inventory_search',
+      onKeyEvent: (node, event) {
+        if (event is KeyDownEvent) {
+          if (event.logicalKey == LogicalKeyboardKey.arrowDown ||
+              (event.logicalKey == LogicalKeyboardKey.tab && !HardwareKeyboard.instance.isShiftPressed)) {
+            final filteredList = _getFilteredList(state.products);
+            if (filteredList.isNotEmpty) {
+              _selectProductAt(0, filteredList);
+              return KeyEventResult.handled;
+            }
+          }
+        }
+        return KeyEventResult.ignored;
+      },
+    );
     // Listen to global search from top bar
     widget.globalSearchCtrl?.addListener(_onGlobalSearch);
   }
@@ -89,13 +194,18 @@ class _InventoryViewState extends State<InventoryView> {
     final q = widget.globalSearchCtrl?.text.trim().toLowerCase() ?? '';
     if (q != _searchQuery) {
       _searchCtrl.text = widget.globalSearchCtrl?.text ?? '';
-      setState(() => _searchQuery = q);
+      setState(() {
+        _searchQuery = q;
+        _selectedProductIndex = 0;
+      });
+      _clearItemFocusNodes();
     }
   }
 
   @override
   void dispose() {
     widget.globalSearchCtrl?.removeListener(_onGlobalSearch);
+    _searchFocusNode.dispose();
     _searchCtrl.dispose();
     _listScrollCtrl.dispose();
     _clearItemFocusNodes();
@@ -483,15 +593,26 @@ class _InventoryViewState extends State<InventoryView> {
                         child: FocusTraversalOrder(
                           order: const NumericFocusOrder(4),
                           child: TextField(
+                            focusNode: _searchFocusNode,
                             controller: _searchCtrl,
-                            textInputAction: TextInputAction.next,
+                            textInputAction: TextInputAction.search,
                             style: const TextStyle(fontSize: 13),
                             decoration: BoutiqueInputDecoration.field(
                               hintText: 'Search product name or tag ID...',
                               prefixIcon: const Icon(Icons.search_rounded, size: 18, color: BoutiqueColors.textSecondary),
                             ),
+                            onSubmitted: (val) {
+                              final filteredList = _getFilteredList(state.products);
+                              if (filteredList.isNotEmpty) {
+                                _selectProductAt(0, filteredList);
+                              }
+                            },
                             onChanged: (val) {
-                              setState(() => _searchQuery = val.toLowerCase());
+                              setState(() {
+                                _searchQuery = val.toLowerCase();
+                                _selectedProductIndex = 0;
+                              });
+                              _clearItemFocusNodes();
                               // Sync back to global search
                               if (widget.globalSearchCtrl != null &&
                                   widget.globalSearchCtrl!.text != val) {
@@ -609,7 +730,16 @@ class _InventoryViewState extends State<InventoryView> {
                           _selectProductAt(_selectedProductIndex + 1, filteredList);
                           return KeyEventResult.handled;
                         } else if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
-                          _selectProductAt(_selectedProductIndex - 1, filteredList);
+                          if (_selectedProductIndex > 0) {
+                            _selectProductAt(_selectedProductIndex - 1, filteredList);
+                          } else {
+                            _searchFocusNode.requestFocus();
+                            _searchCtrl.selection = TextSelection.fromPosition(TextPosition(offset: _searchCtrl.text.length));
+                          }
+                          return KeyEventResult.handled;
+                        } else if (event.logicalKey == LogicalKeyboardKey.escape) {
+                          _searchFocusNode.requestFocus();
+                          _searchCtrl.selection = TextSelection.fromPosition(TextPosition(offset: _searchCtrl.text.length));
                           return KeyEventResult.handled;
                         } else if (event.logicalKey == LogicalKeyboardKey.enter && _selectedDrawerProduct == null) {
                           if (filteredList.isNotEmpty && _selectedProductIndex >= 0 && _selectedProductIndex < filteredList.length) {
@@ -647,10 +777,7 @@ class _InventoryViewState extends State<InventoryView> {
                                   itemCount: filteredList.length,
                                   itemBuilder: (context, index) {
                                     final p = filteredList[index];
-                                    return FocusTraversalOrder(
-                                      order: NumericFocusOrder(8.0 + index),
-                                      child: _buildGridCard(p, index, filteredList),
-                                    );
+                                    return _buildGridCard(p, index, filteredList);
                                   },
                                 )
                               : ListView.separated(
@@ -660,10 +787,7 @@ class _InventoryViewState extends State<InventoryView> {
                                   separatorBuilder: (_, _) => const Divider(height: 1, color: BoutiqueColors.borderLight),
                                   itemBuilder: (context, index) {
                                     final p = filteredList[index];
-                                    return FocusTraversalOrder(
-                                      order: NumericFocusOrder(8.0 + index),
-                                      child: _buildTableRow(p, index, filteredList),
-                                    );
+                                    return _buildTableRow(p, index, filteredList);
                                   },
                                 )),
                     ),
@@ -775,14 +899,151 @@ class _InventoryViewState extends State<InventoryView> {
     );
   }
 
+  Widget _buildRowActionButton({
+    required ProductAction action,
+    required int index,
+    required List<Product> list,
+    required Product product,
+    required PermissionsModel perms,
+    required IconData icon,
+    required Color color,
+    required Color focusBorderColor,
+    required Color focusBgColor,
+    required String tooltip,
+    required VoidCallback onPressed,
+  }) {
+    final focusNode = _getActionFocusNode(index, action);
+    final availableActions = _getAvailableActions(perms);
+
+    return Focus(
+      focusNode: focusNode,
+      onFocusChange: (hasF) {
+        if (hasF && _selectedProductIndex != index) {
+          setState(() => _selectedProductIndex = index);
+        }
+      },
+      onKeyEvent: (node, event) {
+        if (event is KeyDownEvent) {
+          if (event.logicalKey == LogicalKeyboardKey.enter ||
+              event.logicalKey == LogicalKeyboardKey.space) {
+            onPressed();
+            return KeyEventResult.handled;
+          }
+          if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
+            _selectProductAt(index + 1, list);
+            return KeyEventResult.handled;
+          }
+          if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
+            if (index > 0) {
+              _selectProductAt(index - 1, list);
+            } else {
+              _searchFocusNode.requestFocus();
+              _searchCtrl.selection = TextSelection.fromPosition(TextPosition(offset: _searchCtrl.text.length));
+            }
+            return KeyEventResult.handled;
+          }
+          if (event.logicalKey == LogicalKeyboardKey.tab) {
+            if (HardwareKeyboard.instance.isShiftPressed) {
+              final pos = availableActions.indexOf(action);
+              if (pos > 1) {
+                _focusProductAction(index, availableActions[pos - 1], list);
+              } else {
+                _getItemFocusNode(index).requestFocus();
+              }
+            } else {
+              final pos = availableActions.indexOf(action);
+              if (pos >= 0 && pos < availableActions.length - 1) {
+                _focusProductAction(index, availableActions[pos + 1], list);
+              } else {
+                if (index + 1 < list.length) {
+                  _selectProductAt(index + 1, list);
+                } else {
+                  _searchFocusNode.requestFocus();
+                  _searchCtrl.selection = TextSelection.fromPosition(TextPosition(offset: _searchCtrl.text.length));
+                }
+              }
+            }
+            return KeyEventResult.handled;
+          }
+          if (event.logicalKey == LogicalKeyboardKey.arrowRight) {
+            final pos = availableActions.indexOf(action);
+            if (pos >= 0 && pos < availableActions.length - 1) {
+              _focusProductAction(index, availableActions[pos + 1], list);
+              return KeyEventResult.handled;
+            } else if (index + 1 < list.length) {
+              _selectProductAt(index + 1, list);
+              return KeyEventResult.handled;
+            }
+          }
+          if (event.logicalKey == LogicalKeyboardKey.arrowLeft) {
+            final pos = availableActions.indexOf(action);
+            if (pos > 1) {
+              _focusProductAction(index, availableActions[pos - 1], list);
+            } else {
+              _getItemFocusNode(index).requestFocus();
+            }
+            return KeyEventResult.handled;
+          }
+        }
+        return KeyEventResult.ignored;
+      },
+      child: ListenableBuilder(
+        listenable: focusNode,
+        builder: (context, _) {
+          final isFocused = focusNode.hasFocus;
+          return Tooltip(
+            message: '$tooltip (Enter)',
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: onPressed,
+                borderRadius: BorderRadius.circular(8),
+                hoverColor: focusBgColor.withValues(alpha: 0.6),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 150),
+                  padding: const EdgeInsets.all(7),
+                  margin: const EdgeInsets.symmetric(horizontal: 2),
+                  decoration: BoxDecoration(
+                    color: isFocused ? focusBgColor : Colors.transparent,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: isFocused ? focusBorderColor : Colors.transparent,
+                      width: 1.5,
+                    ),
+                    boxShadow: isFocused
+                        ? [
+                            BoxShadow(
+                              color: focusBorderColor.withValues(alpha: 0.3),
+                              blurRadius: 4,
+                              spreadRadius: 1,
+                            ),
+                          ]
+                        : null,
+                  ),
+                  child: Icon(
+                    icon,
+                    color: isFocused ? focusBorderColor : color,
+                    size: 20,
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   Widget _buildTableRow(Product p, int index, List<Product> list) {
     final isOutOfStock = p.quantity <= 0;
     final isLowStock = p.quantity > 0 && p.quantity < 5;
     final matStr = p.material.isNotEmpty ? ' • ${p.material}' : '';
     final isSelected = _selectedProductIndex == index;
+    final rowNode = _getItemFocusNode(index);
+    final availableActions = _getAvailableActions(perms);
 
     return Focus(
-      focusNode: _getItemFocusNode(index),
+      focusNode: rowNode,
       onFocusChange: (hasF) {
         if (hasF && _selectedProductIndex != index) {
           setState(() => _selectedProductIndex = index);
@@ -794,8 +1055,35 @@ class _InventoryViewState extends State<InventoryView> {
             _selectProductAt(index + 1, list);
             return KeyEventResult.handled;
           } else if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
-            _selectProductAt(index - 1, list);
+            if (index > 0) {
+              _selectProductAt(index - 1, list);
+            } else {
+              _searchFocusNode.requestFocus();
+              _searchCtrl.selection = TextSelection.fromPosition(TextPosition(offset: _searchCtrl.text.length));
+            }
             return KeyEventResult.handled;
+          } else if (event.logicalKey == LogicalKeyboardKey.tab) {
+            if (HardwareKeyboard.instance.isShiftPressed) {
+              if (index > 0) {
+                final prevActions = _getAvailableActions(perms);
+                _focusProductAction(index - 1, prevActions.last, list);
+              } else {
+                _searchFocusNode.requestFocus();
+                _searchCtrl.selection = TextSelection.fromPosition(TextPosition(offset: _searchCtrl.text.length));
+              }
+            } else {
+              if (availableActions.length > 1) {
+                _focusProductAction(index, availableActions[1], list);
+              } else if (index + 1 < list.length) {
+                _selectProductAt(index + 1, list);
+              }
+            }
+            return KeyEventResult.handled;
+          } else if (event.logicalKey == LogicalKeyboardKey.arrowRight) {
+            if (availableActions.length > 1) {
+              _focusProductAction(index, availableActions[1], list);
+              return KeyEventResult.handled;
+            }
           } else if (event.logicalKey == LogicalKeyboardKey.enter ||
               event.logicalKey == LogicalKeyboardKey.space) {
             setState(() => _selectedDrawerProduct = p);
@@ -804,109 +1092,162 @@ class _InventoryViewState extends State<InventoryView> {
         }
         return KeyEventResult.ignored;
       },
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 120),
-        decoration: BoxDecoration(
-          color: isSelected ? BoutiqueColors.accentSoft : Colors.transparent,
-          border: Border(
-            left: BorderSide(
-              color: isSelected ? BoutiqueColors.accent : Colors.transparent,
-              width: 4,
-            ),
-          ),
-        ),
-        child: Material(
-          color: Colors.transparent,
-          child: ListTile(
-            selected: isSelected,
-            selectedTileColor: BoutiqueColors.accentSoft,
-            onTap: () {
-              _selectProductAt(index, list, openDrawer: true);
-            },
-            hoverColor: BoutiqueColors.accentSoft.withValues(alpha: 0.4),
-            contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 6),
-            leading: ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: Container(
-                width: 42,
-                height: 42,
-                color: isSelected ? BoutiqueColors.bgCard : BoutiqueColors.accentSoft,
-                child: p.imageUrl.isNotEmpty 
-                    ? Image.network(
-                        p.imageUrl,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, _, _) => const Center(
-                          child: Icon(Icons.inventory_2_outlined, color: BoutiqueColors.accent, size: 22),
-                        ),
-                      )
-                    : const Center(
-                        child: Icon(Icons.inventory_2_outlined, color: BoutiqueColors.accent, size: 22),
+      child: ListenableBuilder(
+        listenable: rowNode,
+        builder: (context, _) {
+          final isRowFocused = rowNode.hasFocus;
+          return AnimatedContainer(
+            duration: const Duration(milliseconds: 120),
+            decoration: BoxDecoration(
+              color: isSelected
+                  ? (isRowFocused
+                      ? BoutiqueColors.accentSoft
+                      : BoutiqueColors.accentSoft.withValues(alpha: 0.6))
+                  : Colors.transparent,
+              border: Border(
+                left: BorderSide(
+                  color: isSelected ? BoutiqueColors.accent : Colors.transparent,
+                  width: 4,
+                ),
+              ),
+              boxShadow: (isSelected && isRowFocused)
+                  ? [
+                      BoxShadow(
+                        color: BoutiqueColors.accent.withValues(alpha: 0.08),
+                        blurRadius: 4,
+                        offset: const Offset(0, 1),
                       ),
+                    ]
+                  : null,
+            ),
+            child: Material(
+              color: Colors.transparent,
+              child: ListTile(
+                selected: isSelected,
+                selectedTileColor: Colors.transparent,
+                onTap: () {
+                  _selectProductAt(index, list, openDrawer: true);
+                },
+                hoverColor: BoutiqueColors.accentSoft.withValues(alpha: 0.4),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 6),
+                leading: ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: Container(
+                    width: 42,
+                    height: 42,
+                    color: isSelected ? BoutiqueColors.bgCard : BoutiqueColors.accentSoft,
+                    child: p.imageUrl.isNotEmpty 
+                        ? Image.network(
+                            p.imageUrl,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, _, _) => const Center(
+                              child: Icon(Icons.inventory_2_outlined, color: BoutiqueColors.accent, size: 22),
+                            ),
+                          )
+                        : const Center(
+                            child: Icon(Icons.inventory_2_outlined, color: BoutiqueColors.accent, size: 22),
+                          ),
+                  ),
+                ),
+                title: Row(
+                  children: [
+                    Text(p.tagId, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: BoutiqueColors.accent)),
+                    const SizedBox(width: 10),
+                    Text(p.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: BoutiqueColors.textPrimary)),
+                    if (isOutOfStock) ...[
+                      const SizedBox(width: 10),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFFEBEE),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: const Text('Out of Stock', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFFD32F2F))),
+                      ),
+                    ] else if (isLowStock) ...[
+                      const SizedBox(width: 10),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(color: BoutiqueColors.lowStockBg, borderRadius: BorderRadius.circular(4)),
+                        child: const Text('Low Stock', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFFD97706))),
+                      ),
+                    ],
+                  ],
+                ),
+                subtitle: Text(
+                  '${p.category}$matStr • Qty: ${p.sellableQuantity} ${p.unit}${p.reservedQuantity > 0 ? ' (Res: ${p.reservedQuantity})' : ''}',
+                  style: const TextStyle(fontSize: 12, color: BoutiqueColors.textSecondary),
+                ),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _buildPriceDisplay(p),
+                    const SizedBox(width: 12),
+                    if (perms.tagBarcodePrint || perms.editTags)
+                      _buildRowActionButton(
+                        action: ProductAction.qr,
+                        index: index,
+                        list: list,
+                        product: p,
+                        perms: perms,
+                        icon: Icons.qr_code_2_rounded,
+                        color: BoutiqueColors.accent,
+                        focusBorderColor: BoutiqueColors.accent,
+                        focusBgColor: BoutiqueColors.accentSoft,
+                        tooltip: 'Print QR Label',
+                        onPressed: () => QrPdfGenerator.printProductQr(p),
+                      ),
+                    _buildRowActionButton(
+                      action: ProductAction.download,
+                      index: index,
+                      list: list,
+                      product: p,
+                      perms: perms,
+                      icon: Icons.download_rounded,
+                      color: const Color(0xFF1E7E34),
+                      focusBorderColor: const Color(0xFF1E7E34),
+                      focusBgColor: const Color(0xFFE8F5E9),
+                      tooltip: 'Download Inward Bill (.xlsx)',
+                      onPressed: () async {
+                        await ExcelGenerator.downloadInwardBillExcel(products: [p]);
+                        if (!mounted) return;
+                        BoutiqueToast.showSuccess(context, 'Inward Bill (.xlsx) downloaded for ${p.tagId}!');
+                      },
+                    ),
+                    if (perms.editTags)
+                      _buildRowActionButton(
+                        action: ProductAction.edit,
+                        index: index,
+                        list: list,
+                        product: p,
+                        perms: perms,
+                        icon: Icons.edit_outlined,
+                        color: BoutiqueColors.textSecondary,
+                        focusBorderColor: BoutiqueColors.accent,
+                        focusBgColor: const Color(0xFFF1F5F9),
+                        tooltip: 'Edit Product',
+                        onPressed: () => _showEditProductDialog(context, p),
+                      ),
+                    if (perms.deleteTags)
+                      _buildRowActionButton(
+                        action: ProductAction.delete,
+                        index: index,
+                        list: list,
+                        product: p,
+                        perms: perms,
+                        icon: Icons.delete_outline_rounded,
+                        color: BoutiqueColors.destructive,
+                        focusBorderColor: BoutiqueColors.destructive,
+                        focusBgColor: const Color(0xFFFFEBEE),
+                        tooltip: 'Delete Product',
+                        onPressed: () => _confirmDeleteProduct(context, p.tagId),
+                      ),
+                  ],
+                ),
               ),
             ),
-            title: Row(
-              children: [
-                Text(p.tagId, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: BoutiqueColors.accent)),
-                const SizedBox(width: 10),
-                Text(p.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: BoutiqueColors.textPrimary)),
-                if (isOutOfStock) ...[
-                  const SizedBox(width: 10),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFFFEBEE),
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: const Text('Out of Stock', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFFD32F2F))),
-                  ),
-                ] else if (isLowStock) ...[
-                  const SizedBox(width: 10),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                    decoration: BoxDecoration(color: BoutiqueColors.lowStockBg, borderRadius: BorderRadius.circular(4)),
-                    child: const Text('Low Stock', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFFD97706))),
-                  ),
-                ],
-              ],
-            ),
-            subtitle: Text(
-              '${p.category}$matStr • Qty: ${p.sellableQuantity} ${p.unit}${p.reservedQuantity > 0 ? ' (Res: ${p.reservedQuantity})' : ''}',
-              style: const TextStyle(fontSize: 12, color: BoutiqueColors.textSecondary),
-            ),
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _buildPriceDisplay(p),
-                const SizedBox(width: 12),
-                if (perms.tagBarcodePrint || perms.editTags)
-                  IconButton(
-                    tooltip: 'Print QR Label',
-                    icon: const Icon(Icons.qr_code_2_rounded, color: BoutiqueColors.accent, size: 20),
-                    onPressed: () => QrPdfGenerator.printProductQr(p),
-                  ),
-                IconButton(
-                  tooltip: 'Download Inward Bill (.xlsx)',
-                  icon: const Icon(Icons.download_rounded, color: Color(0xFF1E7E34), size: 20),
-                  onPressed: () async {
-                    await ExcelGenerator.downloadInwardBillExcel(products: [p]);
-                    if (!mounted) return;
-                    BoutiqueToast.showSuccess(context, 'Inward Bill (.xlsx) downloaded for ${p.tagId}!');
-                  },
-                ),
-                if (perms.editTags)
-                  IconButton(
-                    icon: const Icon(Icons.edit_outlined, color: BoutiqueColors.textSecondary, size: 20),
-                    onPressed: () => _showEditProductDialog(context, p),
-                  ),
-                if (perms.deleteTags)
-                  IconButton(
-                    icon: const Icon(Icons.delete_outline_rounded, color: BoutiqueColors.destructive, size: 20),
-                    onPressed: () => _confirmDeleteProduct(context, p.tagId),
-                  ),
-              ],
-            ),
-          ),
-        ),
+          );
+        },
       ),
     );
   }
