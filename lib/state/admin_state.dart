@@ -878,7 +878,7 @@ class AdminState extends ChangeNotifier {
     }
   }
 
-  Future<void> addProduct(Product product) async {
+  Future<void> addProduct(Product product, {bool recordInward = false}) async {
     final docId = product.tagId.trim().isNotEmpty
         ? product.tagId.trim()
         : 'TAG_${DateTime.now().millisecondsSinceEpoch}';
@@ -889,6 +889,27 @@ class AdminState extends ChangeNotifier {
       await ApiService().saveProduct(updatedProduct);
     } catch (e) {
       debugPrint('Hostinger saveProduct error: $e');
+    }
+
+    if (recordInward && (updatedProduct.quantity > 0 || updatedProduct.grossWeight > 0)) {
+      try {
+        final itemMap = ApiService().createInwardItemMap(
+          product: updatedProduct,
+          addedQty: updatedProduct.quantity,
+          addedWeight: updatedProduct.grossWeight,
+          oldQty: 0,
+          newQty: updatedProduct.quantity,
+          oldWeight: 0.0,
+          newWeight: updatedProduct.grossWeight,
+        );
+        await ApiService().recordInwardBill(
+          items: [itemMap],
+          narration: 'New Product Added',
+          date: updatedProduct.addedDate ?? DateTime.now(),
+        );
+      } catch (e) {
+        debugPrint('Failed to record inward bill in addProduct: $e');
+      }
     }
 
     final key = docId.toLowerCase();

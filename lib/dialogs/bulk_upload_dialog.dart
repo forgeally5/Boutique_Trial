@@ -8,6 +8,7 @@ import 'package:archive/archive.dart';
 import 'package:xml/xml.dart';
 import '../state/admin_state.dart';
 import '../models/product.dart';
+import '../services/api_service.dart';
 import '../utils/boutique_theme.dart';
 import '../utils/file_downloader.dart';
 
@@ -566,6 +567,7 @@ class _BulkUploadDialogState extends State<BulkUploadDialog> {
       }
 
       // Upload all non-conflicting products immediately
+      final List<Product> successfulImports = [];
       for (int i = 0; i < directUploadList.length; i++) {
         final prod = directUploadList[i];
         setState(() {
@@ -574,10 +576,18 @@ class _BulkUploadDialogState extends State<BulkUploadDialog> {
         try {
           await adminState.addProduct(prod);
           _successCount++;
+          successfulImports.add(prod);
         } catch (e) {
           _errorCount++;
           _errorLog.add('Error adding ${prod.name}: $e');
         }
+      }
+
+      if (successfulImports.isNotEmpty) {
+        setState(() {
+          _status = 'Recording inward transactions for ${successfulImports.length} imported products...';
+        });
+        await _recordBulkInwardBills(successfulImports, narration: 'Bulk Import');
       }
 
       if (detectedConflicts.isNotEmpty) {
@@ -601,6 +611,36 @@ class _BulkUploadDialogState extends State<BulkUploadDialog> {
     }
   }
 
+  Future<void> _recordBulkInwardBills(List<Product> products, {required String narration}) async {
+    const int chunkSize = 50;
+    for (int i = 0; i < products.length; i += chunkSize) {
+      final chunk = products.sublist(i, i + chunkSize > products.length ? products.length : i + chunkSize);
+      final items = chunk.map((p) {
+        final isWeight = p.pricingType == 'Weight-Based';
+        final qty = isWeight ? (p.quantity > 0 ? p.quantity : 1) : p.quantity;
+        return ApiService().createInwardItemMap(
+          product: p,
+          addedQty: qty,
+          addedWeight: p.grossWeight,
+          oldQty: 0,
+          newQty: p.quantity,
+          oldWeight: 0.0,
+          newWeight: p.grossWeight,
+        );
+      }).toList();
+
+      try {
+        await ApiService().recordInwardBill(
+          items: items,
+          narration: products.length > chunkSize ? '$narration (Batch ${(i ~/ chunkSize) + 1})' : narration,
+          date: DateTime.now(),
+        );
+      } catch (e) {
+        debugPrint('Error recording bulk inward chunk: $e');
+      }
+    }
+  }
+
   Future<void> _applyConflictResolutions() async {
     final adminState = context.read<AdminState>();
 
@@ -611,6 +651,8 @@ class _BulkUploadDialogState extends State<BulkUploadDialog> {
 
     int currentMaxTagVal = _calculateMaxTagNumber(adminState.allTagIds);
     int resolvedCount = 0;
+    final List<Map<String, dynamic>> inwardAddedStockItems = [];
+    final List<Product> inwardRenamedProducts = [];
 
     for (int i = 0; i < _conflicts.length; i++) {
       final conflict = _conflicts[i];
@@ -659,6 +701,29 @@ class _BulkUploadDialogState extends State<BulkUploadDialog> {
           await adminState.updateProduct(updatedProduct);
           _successCount++;
           resolvedCount++;
+
+          if (conflict.importedQuantity > 0 || conflict.importedGrossWeight > 0) {
+            final isWeight = existing.pricingType == 'Weight-Based';
+            final rate = isWeight ? updatedRatePerGram : updatedPrice;
+            final qty = isWeight ? 1 : conflict.importedQuantity;
+            final weight = conflict.importedGrossWeight;
+            final amount = isWeight ? (rate * weight) : (rate * qty);
+
+            inwardAddedStockItems.add({
+              'tagId': existing.tagId,
+              'name': existing.name,
+              'category': existing.category,
+              'pricingType': existing.pricingType,
+              'qty': qty,
+              'weight': weight,
+              'oldQty': existing.quantity,
+              'newQty': updatedQty,
+              'oldWeight': existing.grossWeight,
+              'newWeight': updatedGrossWeight,
+              'rate': rate,
+              'amount': amount,
+            });
+          }
         } catch (e) {
           _errorCount++;
           _errorLog.add('Error updating stock for "${conflict.originalName}": $e');
@@ -703,11 +768,28 @@ class _BulkUploadDialogState extends State<BulkUploadDialog> {
           await adminState.addProduct(productData);
           _successCount++;
           resolvedCount++;
+          inwardRenamedProducts.add(productData);
         } catch (e) {
           _errorCount++;
           _errorLog.add('Error adding renamed product "$newName": $e');
         }
       }
+    }
+
+    if (inwardAddedStockItems.isNotEmpty) {
+      try {
+        await ApiService().recordInwardBill(
+          items: inwardAddedStockItems,
+          narration: 'Bulk Import (Stock Added to Existing Items)',
+          date: DateTime.now(),
+        );
+      } catch (e) {
+        debugPrint('Error recording conflict inward added stock: $e');
+      }
+    }
+
+    if (inwardRenamedProducts.isNotEmpty) {
+      await _recordBulkInwardBills(inwardRenamedProducts, narration: 'Bulk Import (Renamed Duplicates)');
     }
 
     setState(() {

@@ -409,6 +409,9 @@ class _ItemDialogState extends State<ItemDialog> {
       setState(() => _isUploading = false);
     }
 
+    final int initialProductQty = widget.initialProduct?.quantity ?? 0;
+    final double initialProductWeight = widget.initialProduct?.grossWeight ?? 0.0;
+
     final int oldQty = int.tryParse(_quantityCtrl.text) ?? 0;
     final int addedQty = int.tryParse(_addQuantityCtrl.text) ?? 0;
     final int newQty = widget.initialProduct != null ? oldQty + addedQty : oldQty;
@@ -416,6 +419,13 @@ class _ItemDialogState extends State<ItemDialog> {
     final double oldGrossWeight = double.tryParse(_grossWeightCtrl.text) ?? 0.0;
     final double addedGrossWeight = double.tryParse(_addWeightCtrl.text) ?? 0.0;
     final double newGrossWeight = widget.initialProduct != null ? oldGrossWeight + addedGrossWeight : oldGrossWeight;
+
+    final int effectiveAddedQty = widget.initialProduct != null
+        ? (newQty > initialProductQty ? newQty - initialProductQty : (addedQty > 0 ? addedQty : 0))
+        : newQty;
+    final double effectiveAddedWeight = widget.initialProduct != null
+        ? (newGrossWeight > initialProductWeight ? newGrossWeight - initialProductWeight : (addedGrossWeight > 0 ? addedGrossWeight : 0.0))
+        : newGrossWeight;
 
     final product = Product(
       tagId: _tagIdCtrl.text.trim().toUpperCase(),
@@ -450,7 +460,7 @@ class _ItemDialogState extends State<ItemDialog> {
 
     try {
       if (widget.initialProduct == null) {
-        await widget.adminState.addProduct(product);
+        await widget.adminState.addProduct(product, recordInward: true);
         if (mounted) {
           if (downloadInwardExcel) {
             await ExcelGenerator.downloadInwardBillExcel(products: [product]);
@@ -461,36 +471,23 @@ class _ItemDialogState extends State<ItemDialog> {
         }
       } else {
         await widget.adminState.updateProduct(product);
-        if (addedQty > 0 || addedGrossWeight > 0) {
+        if (effectiveAddedQty > 0 || effectiveAddedWeight > 0) {
           try {
             final now = DateTime.now();
-            final docId = 'INW_${now.millisecondsSinceEpoch}_${product.tagId}';
-            final billNo = 'INW-${now.millisecondsSinceEpoch.toString().substring(5)}';
-            await ApiService().createBill({
-              'docId': docId,
-              'billNo': billNo,
-              'billType': 'Inward',
-              'billDate': now.toIso8601String(),
-              'customerName': 'Stock Inward',
-              'paymentStatus': 'Paid',
-              'isFullyPaid': true,
-              'items': [
-                {
-                  'tagId': product.tagId,
-                  'name': product.name,
-                  'category': product.category,
-                  'pricingType': product.pricingType,
-                  'qty': addedQty > 0 ? addedQty : (_pricingType == 'Weight-Based' ? 1 : 0),
-                  'weight': addedGrossWeight,
-                  'oldQty': oldQty,
-                  'newQty': newQty,
-                  'oldWeight': oldGrossWeight,
-                  'newWeight': newGrossWeight,
-                  'rate': _pricingType == 'Quantity-Based' ? product.sellingPrice : product.ratePerGram,
-                  'amount': _pricingType == 'Quantity-Based' ? (product.sellingPrice * addedQty) : (product.ratePerGram * addedGrossWeight),
-                }
-              ]
-            });
+            final itemMap = ApiService().createInwardItemMap(
+              product: product,
+              addedQty: effectiveAddedQty,
+              addedWeight: effectiveAddedWeight,
+              oldQty: initialProductQty,
+              newQty: newQty,
+              oldWeight: initialProductWeight,
+              newWeight: newGrossWeight,
+            );
+            await ApiService().recordInwardBill(
+              items: [itemMap],
+              narration: 'Stock Update / Inward',
+              date: now,
+            );
           } catch (e) {
             debugPrint('Failed to log inward transaction: $e');
           }

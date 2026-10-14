@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../models/product.dart';
@@ -169,6 +170,9 @@ class ApiService {
           isReserved: map['is_reserved'] == 1 || map['is_reserved'] == true,
           reservedFor: map['reserved_for']?.toString() ?? '',
           imageUrl: map['image_url']?.toString() ?? '',
+          addedDate: map['added_date'] != null
+              ? DateTime.tryParse(map['added_date'].toString())
+              : (map['created_at'] != null ? DateTime.tryParse(map['created_at'].toString()) : null),
           rawJson: (map['raw_json'] is Map<String, dynamic>)
               ? map['raw_json'] as Map<String, dynamic>
               : map is Map<String, dynamic>
@@ -443,6 +447,76 @@ class ApiService {
     if (res.statusCode != 200 && res.statusCode != 201) {
       throw Exception(data['message'] ?? 'Failed to create bill');
     }
+  }
+
+  Map<String, dynamic> createInwardItemMap({
+    required Product product,
+    required int addedQty,
+    required double addedWeight,
+    int oldQty = 0,
+    int newQty = 0,
+    double oldWeight = 0.0,
+    double newWeight = 0.0,
+  }) {
+    final isWeight = product.pricingType == 'Weight-Based';
+    final rate = isWeight
+        ? product.ratePerGram
+        : (product.sellingPrice > 0 ? product.sellingPrice : product.mrp);
+    final qty = isWeight ? (addedQty > 0 ? addedQty : 1) : addedQty;
+    final amount = isWeight ? (rate * addedWeight) : (rate * qty);
+
+    return {
+      'tagId': product.tagId,
+      'name': product.name,
+      'category': product.category,
+      'pricingType': product.pricingType,
+      'qty': qty,
+      'weight': addedWeight,
+      'oldQty': oldQty,
+      'newQty': newQty,
+      'oldWeight': oldWeight,
+      'newWeight': newWeight,
+      'rate': rate,
+      'amount': amount,
+    };
+  }
+
+  Future<void> recordInwardBill({
+    required List<Map<String, dynamic>> items,
+    String narration = 'Stock Inward',
+    DateTime? date,
+    String? referenceNo,
+  }) async {
+    if (items.isEmpty) return;
+    final now = date ?? DateTime.now();
+    final timestamp = now.millisecondsSinceEpoch;
+    final rand = Random().nextInt(9000) + 1000;
+    final docId = 'INW_${timestamp}_$rand';
+    final billNo = referenceNo ?? 'INW-${timestamp.toString().substring(5)}-$rand';
+
+    double totalAmount = 0.0;
+    for (final it in items) {
+      totalAmount += (it['amount'] as num?)?.toDouble() ?? 0.0;
+    }
+
+    final billData = {
+      'docId': docId,
+      'billNo': billNo,
+      'billType': 'Inward',
+      'billDate': now.toIso8601String(),
+      'customerName': 'Stock Inward',
+      'narration': narration,
+      'paymentStatus': 'Paid',
+      'isFullyPaid': true,
+      'paymentMode': 'Internal',
+      'subtotal': totalAmount,
+      'totalPayable': totalAmount,
+      'amountReceived': totalAmount,
+      'pendingBalance': 0.0,
+      'items': items,
+    };
+
+    await createBill(billData);
   }
 
   Future<void> updateBill(String docId, Map<String, dynamic> updates) async {
