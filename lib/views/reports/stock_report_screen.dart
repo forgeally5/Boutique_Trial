@@ -7,9 +7,11 @@ import '../../utils/pdf_report_generator.dart';
 import '../../utils/excel_generator.dart';
 import '../../widgets/report_export_dialog.dart';
 import '../../widgets/searchable_dropdown.dart';
+import '../../widgets/report_filter_widgets.dart';
 
 class StockReportScreen extends StatefulWidget {
-  const StockReportScreen({super.key});
+  final FocusNode? searchFocusNode;
+  const StockReportScreen({super.key, this.searchFocusNode});
 
   @override
   State<StockReportScreen> createState() => _StockReportScreenState();
@@ -20,6 +22,8 @@ class _StockReportScreenState extends State<StockReportScreen> {
 
   // Product-wise filters
   final _searchCtrl = TextEditingController();
+  late FocusNode _searchFocusNode;
+  bool _ownSearchFocusNode = false;
   String _categoryFilter = 'All';
   String _statusFilter = 'All';
 
@@ -54,15 +58,27 @@ class _StockReportScreenState extends State<StockReportScreen> {
   @override
   void initState() {
     super.initState();
+    if (widget.searchFocusNode != null) {
+      _searchFocusNode = widget.searchFocusNode!;
+    } else {
+      _searchFocusNode = FocusNode(debugLabel: 'stock_report_search');
+      _ownSearchFocusNode = true;
+    }
     _load();
     _searchCtrl.addListener(_applyFilters);
     _catSearchCtrl.addListener(_applyCategoryFilters);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _searchFocusNode.requestFocus();
+    });
   }
 
   @override
   void dispose() {
     _searchCtrl.dispose();
     _catSearchCtrl.dispose();
+    if (_ownSearchFocusNode) {
+      _searchFocusNode.dispose();
+    }
     super.dispose();
   }
 
@@ -567,6 +583,7 @@ class _StockReportScreenState extends State<StockReportScreen> {
               Expanded(
                 flex: 3,
                 child: TextField(
+                  focusNode: _searchFocusNode,
                   controller: _searchCtrl,
                   autofocus: true,
                   style: const TextStyle(fontSize: 13),

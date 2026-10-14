@@ -175,13 +175,11 @@ class _CustomerLedgerScreenState extends State<CustomerLedgerScreen> {
       _allPendingBills = bills;
       _groupBills();
 
+      // If the previously selected customer no longer exists (e.g. paid off), reset.
+      // Do NOT auto-select the first customer — user must explicitly select one.
       if (_selectedCustomerKey != null &&
           !_customerGroups.containsKey(_selectedCustomerKey)) {
-        _selectedCustomerKey =
-            _customerGroups.keys.isNotEmpty ? _customerGroups.keys.first : null;
-      } else if (_selectedCustomerKey == null &&
-          _customerGroups.keys.isNotEmpty) {
-        _selectedCustomerKey = _customerGroups.keys.first;
+        _selectedCustomerKey = null;
       }
     } catch (e) {
       debugPrint('Error fetching ledger: $e');
@@ -1279,10 +1277,10 @@ class _CustomerLedgerScreenState extends State<CustomerLedgerScreen> {
   }
 
   /// Shows a boutique-styled Due Receipt Preview modal matching the PDF receipt.
-  void _showDueReceiptPreviewDialog(
+  Future<void> _showDueReceiptPreviewDialog(
     Map<String, dynamic> bill,
     Map<String, dynamic> receipt,
-  ) {
+  ) async {
     const bgColor = Color(0xFFF9F6F0);
     const maroon = Color(0xFF5A121A);
     const goldLine = Color(0xFFC7B492);
@@ -1339,12 +1337,36 @@ class _CustomerLedgerScreenState extends State<CustomerLedgerScreen> {
       );
     }
 
-    showDialog(
-      context: context,
-      builder: (ctx) => Dialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        backgroundColor: Colors.white,
-        child: Container(
+    bool isClosed = false;
+    void closeDialog() {
+      if (!isClosed && mounted) {
+        isClosed = true;
+        Navigator.of(context, rootNavigator: true).pop();
+      }
+    }
+
+    bool keyHandler(KeyEvent event) {
+      if (event is KeyDownEvent && event.logicalKey == LogicalKeyboardKey.escape) {
+        closeDialog();
+        return true;
+      }
+      return false;
+    }
+    HardwareKeyboard.instance.addHandler(keyHandler);
+
+    try {
+      await showDialog(
+        context: context,
+        barrierDismissible: true,
+        builder: (ctx) => PopScope(
+          canPop: true,
+          onPopInvokedWithResult: (didPop, _) {
+            if (didPop) isClosed = true;
+          },
+          child: Dialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            backgroundColor: Colors.white,
+            child: Container(
           width: 560,
           constraints: const BoxConstraints(maxHeight: 760),
           padding: const EdgeInsets.all(20),
@@ -1914,10 +1936,14 @@ class _CustomerLedgerScreenState extends State<CustomerLedgerScreen> {
           ),
         ),
       ),
+      ),
     );
+    } finally {
+      HardwareKeyboard.instance.removeHandler(keyHandler);
+    }
   }
 
-  void _showPaymentDialog({
+  Future<void> _showPaymentDialog({
     required String title,
     required String subtitle,
     required double maxDue,
@@ -1926,7 +1952,7 @@ class _CustomerLedgerScreenState extends State<CustomerLedgerScreen> {
       List<Map<String, dynamic>> splitBreakdown,
     )
     onConfirm,
-  }) {
+  }) async {
     bool isSplitMode = false;
     String singleMode = 'Cash';
     final singleAmountCtrl = TextEditingController(
@@ -1948,14 +1974,35 @@ class _CustomerLedgerScreenState extends State<CustomerLedgerScreen> {
     final nextDrPreview =
         'DR-${(_getMaxDueReceiptNumber() + 1).toString().padLeft(3, '0')}';
 
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => PopScope(
-        // Allow Esc to dismiss the dialog
-        canPop: true,
-        child: StatefulBuilder(
-        builder: (dialogCtx, setDialogState) {
+    bool isClosed = false;
+    void closeDialog() {
+      if (!isClosed && mounted) {
+        isClosed = true;
+        Navigator.of(context, rootNavigator: true).pop();
+      }
+    }
+
+    bool keyHandler(KeyEvent event) {
+      if (event is KeyDownEvent && event.logicalKey == LogicalKeyboardKey.escape) {
+        closeDialog();
+        return true;
+      }
+      return false;
+    }
+    HardwareKeyboard.instance.addHandler(keyHandler);
+
+    try {
+      await showDialog(
+        context: context,
+        barrierDismissible: true,
+        builder: (ctx) => PopScope(
+          // Allow Esc to dismiss the dialog
+          canPop: true,
+          onPopInvokedWithResult: (didPop, _) {
+            if (didPop) isClosed = true;
+          },
+          child: StatefulBuilder(
+          builder: (dialogCtx, setDialogState) {
           double currentPaidNow = 0.0;
           if (!isSplitMode) {
             currentPaidNow = double.tryParse(singleAmountCtrl.text) ?? 0.0;
@@ -1976,9 +2023,15 @@ class _CustomerLedgerScreenState extends State<CustomerLedgerScreen> {
               borderRadius: BorderRadius.circular(16),
             ),
             backgroundColor: BoutiqueColors.bgCard,
-            child: FocusTraversalGroup(
-              policy: OrderedTraversalPolicy(),
-              child: Container(
+            child: CallbackShortcuts(
+              bindings: {
+                const SingleActivator(LogicalKeyboardKey.escape): () {
+                  Navigator.pop(ctx);
+                },
+              },
+              child: FocusTraversalGroup(
+                policy: OrderedTraversalPolicy(),
+                child: Container(
                 width: 480,
                 padding: const EdgeInsets.all(24),
                 child: SingleChildScrollView(
@@ -2516,11 +2569,15 @@ class _CustomerLedgerScreenState extends State<CustomerLedgerScreen> {
               ),
             ),
           ),
-        );
-        },
-      ),
-      ), // closes PopScope
-    );
+        ),
+      );
+          },
+        ),
+        ), // PopScope
+      ); // showDialog
+    } finally {
+      HardwareKeyboard.instance.removeHandler(keyHandler);
+    }
   }
 
   Future<Map<String, dynamic>> _processSingleBillPayment(

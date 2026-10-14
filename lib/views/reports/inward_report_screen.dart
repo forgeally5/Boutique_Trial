@@ -6,7 +6,8 @@ import '../../utils/excel_generator.dart';
 import 'package:intl/intl.dart';
 
 class InwardReportScreen extends StatefulWidget {
-  const InwardReportScreen({super.key});
+  final FocusNode? searchFocusNode;
+  const InwardReportScreen({super.key, this.searchFocusNode});
 
   @override
   State<InwardReportScreen> createState() => _InwardReportScreenState();
@@ -15,6 +16,8 @@ class InwardReportScreen extends StatefulWidget {
 class _InwardReportScreenState extends State<InwardReportScreen> {
   final _currencyFmt = NumberFormat('#,##,##0.00', 'en_IN');
   final _searchCtrl = TextEditingController();
+  late FocusNode _searchFocusNode;
+  bool _ownSearchFocusNode = false;
 
   bool _isLoading = true;
   bool _isSyncing = false;
@@ -29,12 +32,24 @@ class _InwardReportScreenState extends State<InwardReportScreen> {
   @override
   void initState() {
     super.initState();
+    if (widget.searchFocusNode != null) {
+      _searchFocusNode = widget.searchFocusNode!;
+    } else {
+      _searchFocusNode = FocusNode(debugLabel: 'inward_report_search');
+      _ownSearchFocusNode = true;
+    }
     _fetchInwardTransactions();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _searchFocusNode.requestFocus();
+    });
   }
 
   @override
   void dispose() {
     _searchCtrl.dispose();
+    if (_ownSearchFocusNode) {
+      _searchFocusNode.dispose();
+    }
     super.dispose();
   }
 
@@ -601,7 +616,9 @@ class _InwardReportScreenState extends State<InwardReportScreen> {
               SizedBox(
                 width: 260,
                 child: TextField(
+                  focusNode: _searchFocusNode,
                   controller: _searchCtrl,
+                  autofocus: true,
                   decoration: InputDecoration(
                     hintText: 'Search by item name, tag, category...',
                     hintStyle: const TextStyle(fontSize: 12, color: BoutiqueColors.textSecondary),

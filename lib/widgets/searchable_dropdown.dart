@@ -94,36 +94,51 @@ class _SearchableDropdownFieldState extends State<SearchableDropdownField> {
             }
             return KeyEventResult.ignored;
           },
-          child: Material(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(8),
-            child: InkWell(
-              canRequestFocus: false,
-              onTap: () => _showSearchableDropdownDialog(context, displayValue),
-              focusColor: SearchableDropdownField._brown.withValues(alpha: 0.1),
-              hoverColor: SearchableDropdownField._brown.withValues(alpha: 0.05),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 150),
+            decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(8),
-              child: InputDecorator(
-                isFocused: _isFocused,
-                decoration: InputDecoration(
-                  filled: false,
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: BorderSide(
-                        color: widget.error != null ? SearchableDropdownField._errorColor : SearchableDropdownField._border),
+              boxShadow: _isFocused
+                  ? [
+                      BoxShadow(
+                        color: const Color(0xFF6A1B29).withValues(alpha: 0.25),
+                        blurRadius: 6,
+                        spreadRadius: 1,
+                      ),
+                    ]
+                  : null,
+            ),
+            child: Material(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(8),
+              child: InkWell(
+                canRequestFocus: false,
+                onTap: () => _showSearchableDropdownDialog(context, displayValue),
+                focusColor: SearchableDropdownField._brown.withValues(alpha: 0.1),
+                hoverColor: SearchableDropdownField._brown.withValues(alpha: 0.05),
+                borderRadius: BorderRadius.circular(8),
+                child: InputDecorator(
+                  isFocused: _isFocused,
+                  decoration: InputDecoration(
+                    filled: false,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(
+                          color: widget.error != null ? SearchableDropdownField._errorColor : SearchableDropdownField._border),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(
+                          color: widget.error != null ? SearchableDropdownField._errorColor : const Color(0xFF6A1B29), width: 2.0),
+                    ),
+                    suffixIcon: const Icon(Icons.arrow_drop_down, color: SearchableDropdownField._lightBrown),
                   ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: BorderSide(
-                        color: widget.error != null ? SearchableDropdownField._errorColor : SearchableDropdownField._brown, width: 1.5),
+                  child: Text(
+                    displayValue,
+                    style: const TextStyle(color: SearchableDropdownField._brown, fontSize: 14),
+                    overflow: TextOverflow.ellipsis,
                   ),
-                  suffixIcon: const Icon(Icons.arrow_drop_down, color: SearchableDropdownField._lightBrown),
-                ),
-                child: Text(
-                  displayValue,
-                  style: const TextStyle(color: SearchableDropdownField._brown, fontSize: 14),
-                  overflow: TextOverflow.ellipsis,
                 ),
               ),
             ),

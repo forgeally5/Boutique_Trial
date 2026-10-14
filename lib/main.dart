@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -31,6 +32,7 @@ Future<void> main() async {
 // ─── Root App ──────────────────────────────────────────────────────────────────
 
 class TrilokAdminApp extends StatelessWidget {
+  static final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
   const TrilokAdminApp({super.key});
 
   @override
@@ -38,6 +40,7 @@ class TrilokAdminApp extends StatelessWidget {
     return FocusTraversalGroup(
       policy: WidgetOrderTraversalPolicy(),
       child: MaterialApp(
+        navigatorKey: navigatorKey,
         title: 'RituMita Boutique',
         debugShowCheckedModeBanner: false,
         theme: ThemeData(
@@ -50,8 +53,116 @@ class TrilokAdminApp extends StatelessWidget {
             surface: BoutiqueColors.bgCard,
           ),
         ),
+        builder: (context, child) {
+          return SessionTimeoutWatcher(
+            timeout: const Duration(minutes: 15),
+            child: child ?? const SizedBox.shrink(),
+          );
+        },
         home: const AuthGate(),
       ),
+    );
+  }
+}
+
+// ─── Inactivity / Auto-Logout Watcher (15 minutes idle timeout) ───────────────
+
+class SessionTimeoutWatcher extends StatefulWidget {
+  final Widget child;
+  final Duration timeout;
+
+  const SessionTimeoutWatcher({
+    super.key,
+    required this.child,
+    this.timeout = const Duration(minutes: 15),
+  });
+
+  @override
+  State<SessionTimeoutWatcher> createState() => _SessionTimeoutWatcherState();
+}
+
+class _SessionTimeoutWatcherState extends State<SessionTimeoutWatcher> {
+  Timer? _timer;
+  DateTime _lastActivity = DateTime.now();
+
+  @override
+  void initState() {
+    super.initState();
+    HardwareKeyboard.instance.addHandler(_handleKeyEvent);
+  }
+
+  @override
+  void dispose() {
+    HardwareKeyboard.instance.removeHandler(_handleKeyEvent);
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  bool _handleKeyEvent(KeyEvent event) {
+    _recordActivity();
+    return false; // Do not consume the key event
+  }
+
+  void _recordActivity() {
+    final now = DateTime.now();
+    // Throttle activity recording to at most once per second
+    if (now.difference(_lastActivity).inSeconds >= 1) {
+      _lastActivity = now;
+      _startTimer();
+    }
+  }
+
+  void _startTimer() {
+    _timer?.cancel();
+    final authVM = context.read<AuthViewModel>();
+    if (!authVM.isAuthenticated) {
+      _timer = null;
+      return;
+    }
+    _timer = Timer(widget.timeout, _handleTimeout);
+  }
+
+  Future<void> _handleTimeout() async {
+    final authVM = context.read<AuthViewModel>();
+    if (!authVM.isAuthenticated || !mounted) return;
+
+    debugPrint('[AutoLogout] 15 minutes of inactivity detected. Logging out user...');
+
+    // Pop any open modal dialogs so they don't block the login screen
+    TrilokAdminApp.navigatorKey.currentState?.popUntil((route) => route.isFirst);
+
+    // Save active tab as Billing for next login
+    LocalDbService().saveActiveTab(2);
+
+    await authVM.logout();
+
+    final currentCtx = TrilokAdminApp.navigatorKey.currentContext;
+    if (currentCtx != null && currentCtx.mounted) {
+      BoutiqueToast.showWarning(
+        currentCtx,
+        'Logged out automatically due to 15 minutes of inactivity.',
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isAuthenticated = context.select<AuthViewModel, bool>((vm) => vm.isAuthenticated);
+    if (!isAuthenticated) {
+      _timer?.cancel();
+      _timer = null;
+    } else if (_timer == null || !_timer!.isActive) {
+      _lastActivity = DateTime.now();
+      _startTimer();
+    }
+
+    return Listener(
+      behavior: HitTestBehavior.translucent,
+      onPointerDown: (_) => _recordActivity(),
+      onPointerMove: (_) => _recordActivity(),
+      onPointerHover: (_) => _recordActivity(),
+      onPointerSignal: (_) => _recordActivity(),
+      child: widget.child,
     );
   }
 }
@@ -146,7 +257,7 @@ class AdminHomeShell extends StatefulWidget {
 
 class _AdminHomeShellState extends State<AdminHomeShell> {
   final AdminState _state = AdminState();
-  int _activeTabIndex = 0; // 0 = uninitialized
+  int _activeTabIndex = 2; // Default to Billing / POS on login
   String _selectedBillingSection = 'A Sales Entry';
   final TextEditingController _globalSearchCtrl = TextEditingController();
   final FocusScopeNode _mainContentFocusScopeNode = FocusScopeNode(debugLabel: 'MainContentFocusScope');
@@ -194,15 +305,13 @@ class _AdminHomeShellState extends State<AdminHomeShell> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final perms = context.read<AuthViewModel>().appUser?.permissions ?? PermissionsModel.adminPreset();
-      if (mounted && _activeTabIndex == 0) {
+      if (mounted) {
         setState(() {
-          final savedTab = LocalDbService().getActiveTab();
-          if (savedTab != null) {
-            _activeTabIndex = savedTab;
+          // Whenever user logs in, prioritize Billing / POS (tab 2)
+          if (perms.salesEntry) {
+            _activeTabIndex = 2;
           } else if (perms.viewInventory) {
             _activeTabIndex = 1;
-          } else if (perms.salesEntry) {
-            _activeTabIndex = 2;
           } else if (perms.viewReports) {
             _activeTabIndex = 3;
           } else if (perms.manageUsers) {
@@ -210,6 +319,8 @@ class _AdminHomeShellState extends State<AdminHomeShell> {
           } else {
             _activeTabIndex = 5;
           }
+          _selectedBillingSection = 'A Sales Entry';
+          LocalDbService().saveActiveTab(_activeTabIndex);
         });
       }
     });

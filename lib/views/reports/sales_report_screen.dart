@@ -11,7 +11,8 @@ import '../../widgets/report_export_dialog.dart';
 import '../../widgets/searchable_dropdown.dart';
 
 class SalesReportScreen extends StatefulWidget {
-  const SalesReportScreen({super.key});
+  final FocusNode? searchFocusNode;
+  const SalesReportScreen({super.key, this.searchFocusNode});
 
   @override
   State<SalesReportScreen> createState() => _SalesReportScreenState();
@@ -67,9 +68,9 @@ class _SalesReportScreenState extends State<SalesReportScreen>
         Expanded(
           child: TabBarView(
             controller: _tabController,
-            children: const [
-              _ProductWiseSalesTab(),
-              _TotalSalesTab(),
+            children: [
+              _ProductWiseSalesTab(searchFocusNode: widget.searchFocusNode),
+              const _TotalSalesTab(),
             ],
           ),
         ),
@@ -1193,7 +1194,8 @@ class _TotalSalesTabState extends State<_TotalSalesTab> {
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 class _ProductWiseSalesTab extends StatefulWidget {
-  const _ProductWiseSalesTab();
+  final FocusNode? searchFocusNode;
+  const _ProductWiseSalesTab({this.searchFocusNode});
 
   @override
   State<_ProductWiseSalesTab> createState() => _ProductWiseSalesTabState();
@@ -1206,6 +1208,8 @@ class _ProductWiseSalesTabState extends State<_ProductWiseSalesTab> {
   late DateTime _dateFrom;
   late DateTime _dateTo;
   final _searchCtrl = TextEditingController();
+  late FocusNode _searchFocusNode;
+  bool _ownSearchFocusNode = false;
   String _paymentFilter = 'All';
   String _categoryFilter = 'All';
   bool _loading = false;
@@ -1224,6 +1228,12 @@ class _ProductWiseSalesTabState extends State<_ProductWiseSalesTab> {
   @override
   void initState() {
     super.initState();
+    if (widget.searchFocusNode != null) {
+      _searchFocusNode = widget.searchFocusNode!;
+    } else {
+      _searchFocusNode = FocusNode(debugLabel: 'sales_report_search');
+      _ownSearchFocusNode = true;
+    }
     final now = DateTime.now();
     final fyStart = now.month >= 4
         ? DateTime(now.year, 4, 1)
@@ -1232,11 +1242,17 @@ class _ProductWiseSalesTabState extends State<_ProductWiseSalesTab> {
     _dateTo = now;
     _load();
     _searchCtrl.addListener(_applyFilters);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _searchFocusNode.requestFocus();
+    });
   }
 
   @override
   void dispose() {
     _searchCtrl.dispose();
+    if (_ownSearchFocusNode) {
+      _searchFocusNode.dispose();
+    }
     super.dispose();
   }
 
@@ -1485,7 +1501,9 @@ class _ProductWiseSalesTabState extends State<_ProductWiseSalesTab> {
                 Expanded(
                   flex: 3,
                   child: TextField(
+                    focusNode: _searchFocusNode,
                     controller: _searchCtrl,
+                    autofocus: true,
                     style: const TextStyle(fontSize: 13),
                     decoration: BoutiqueInputDecoration.field(
                       hintText: 'Search product name or tag ID…',

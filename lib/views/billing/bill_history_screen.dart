@@ -52,7 +52,7 @@ class _BillHistoryScreenState extends State<BillHistoryScreen> {
   late final FocusNode _searchFocusNode;
   late final FocusNode _paymentModeFocusNode;
   final ScrollController _scrollCtrl = ScrollController();
-  int _selectedBillIndex = 0;
+  int _selectedBillIndex = -1;
   final Map<int, FocusNode> _billFocusNodes = {};
 
   String _paymentModeFilter = 'All';
@@ -319,7 +319,7 @@ class _BillHistoryScreenState extends State<BillHistoryScreen> {
   void _applyFilters() {
     final q = _searchCtrl.text.trim().toLowerCase();
     setState(() {
-      _selectedBillIndex = 0;
+      _selectedBillIndex = -1;
       _filtered = _bills.where((e) {
         // Search filter
         if (q.isNotEmpty) {
@@ -886,11 +886,13 @@ class _BillHistoryScreenState extends State<BillHistoryScreen> {
             if (globalIndex > 0) {
               _selectBillAt(globalIndex - 1, bills);
             } else {
+              setState(() => _selectedBillIndex = -1);
               _searchFocusNode.requestFocus();
               _searchCtrl.selection = TextSelection.fromPosition(TextPosition(offset: _searchCtrl.text.length));
             }
             return KeyEventResult.handled;
           } else if (event.logicalKey == LogicalKeyboardKey.tab) {
+            setState(() => _selectedBillIndex = -1);
             _searchFocusNode.requestFocus();
             _searchCtrl.selection = TextSelection.fromPosition(TextPosition(offset: _searchCtrl.text.length));
             return KeyEventResult.handled;
@@ -1771,7 +1773,13 @@ class _BillDetailDialogState extends State<_BillDetailDialog> {
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       backgroundColor: BoutiqueColors.bgCard,
-      child: Container(
+      child: CallbackShortcuts(
+        bindings: {
+          const SingleActivator(LogicalKeyboardKey.escape): () {
+            Navigator.pop(context);
+          },
+        },
+        child: Container(
         width: 680,
         constraints: const BoxConstraints(maxHeight: 860),
         padding: const EdgeInsets.all(24),
@@ -2411,6 +2419,7 @@ class _BillDetailDialogState extends State<_BillDetailDialog> {
           ],
         ),
       ),
+      ),
     );
   }
 }
@@ -2723,7 +2732,13 @@ class _SettleBalanceDialogState extends State<_SettleBalanceDialog> {
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       backgroundColor: BoutiqueColors.bgCard,
-      child: Container(
+      child: CallbackShortcuts(
+        bindings: {
+          const SingleActivator(LogicalKeyboardKey.escape): () {
+            Navigator.pop(context);
+          },
+        },
+        child: Container(
         width: 540,
         padding: const EdgeInsets.all(28),
         child: SingleChildScrollView(
@@ -3128,6 +3143,7 @@ class _SettleBalanceDialogState extends State<_SettleBalanceDialog> {
             ],
           ),
         ),
+      ),
       ),
     );
   }
