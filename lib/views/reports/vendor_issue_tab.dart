@@ -8,6 +8,7 @@ import '../../widgets/searchable_dropdown.dart';
 import '../../dialogs/vendor_issue_dialog.dart';
 import '../../models/vendor_issue.dart';
 import '../../utils/excel_generator.dart';
+import '../../widgets/report_filter_widgets.dart';
 
 class VendorIssueTab extends StatefulWidget {
   const VendorIssueTab({super.key});
@@ -115,7 +116,7 @@ class _VendorIssueTabState extends State<VendorIssueTab> {
 
   Future<void> _pickDate({required bool isFrom}) async {
     final initial = isFrom ? _dateFrom : _dateTo;
-    final picked = await showDatePicker(
+    final picked = await showBoutiqueDatePicker(
       context: context,
       initialDate: initial,
       firstDate: DateTime(2020),

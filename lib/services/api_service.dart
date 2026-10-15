@@ -464,8 +464,29 @@ class ApiService {
         ? product.ratePerGram
         : (product.sellingPrice > 0 ? product.sellingPrice : product.mrp);
     final qty = isWeight ? (addedQty > 0 ? addedQty : 1) : addedQty;
-    final amount = isWeight ? (rate * addedWeight) : (rate * qty);
-    final exactDate = addedDate ?? product.addedDate ?? DateTime.now();
+
+    final double amount;
+    if (isWeight) {
+      if (addedWeight > 0) {
+        amount = rate * addedWeight;
+      } else if (product.grossWeight > 0 && product.quantity > 0) {
+        final avgWeight = product.grossWeight / product.quantity;
+        amount = rate * (avgWeight * (addedQty > 0 ? addedQty : 1));
+      } else if (product.sellingPrice > 0) {
+        amount = product.sellingPrice * (addedQty > 0 ? addedQty : 1);
+      } else if (product.mrp > 0) {
+        amount = product.mrp * (addedQty > 0 ? addedQty : 1);
+      } else {
+        amount = rate * (addedQty > 0 ? addedQty : 1);
+      }
+    } else {
+      amount = rate * qty;
+    }
+
+    final exactDate = addedDate ??
+        ((oldQty > 0 || newQty > 0 || oldWeight > 0 || newWeight > 0)
+            ? DateTime.now()
+            : (product.addedDate ?? DateTime.now()));
 
     return {
       'tagId': product.tagId,

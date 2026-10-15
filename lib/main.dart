@@ -827,11 +827,11 @@ class _AdminHomeShellState extends State<AdminHomeShell> {
                     child: ListView(
                       padding: const EdgeInsets.symmetric(horizontal: 14),
                       children: [
-                        if (canViewInventory) _buildNavItem(1, Icons.inventory_2_outlined, 'Inventory'),
-                        if (canViewBilling) _buildNavItem(2, Icons.point_of_sale_rounded, 'Billing / POS'),
-                        if (canViewReports) _buildNavItem(3, Icons.analytics_outlined, 'Reports'),
-                        if (canManageUsers) _buildNavItem(4, Icons.manage_accounts_outlined, 'Users'),
-                        if (canViewSettings) _buildNavItem(5, Icons.settings_outlined, 'Settings'),
+                        if (canViewInventory) _buildNavItem(1, Icons.inventory_2_outlined, 'Inventory', shortcut: 'Ctrl+1'),
+                        if (canViewBilling) _buildNavItem(2, Icons.point_of_sale_rounded, 'Billing / POS', shortcut: 'Ctrl+2'),
+                        if (canViewReports) _buildNavItem(3, Icons.analytics_outlined, 'Reports', shortcut: 'Ctrl+3'),
+                        if (canManageUsers) _buildNavItem(4, Icons.manage_accounts_outlined, 'Users', shortcut: 'Ctrl+4'),
+                        if (canViewSettings) _buildNavItem(5, Icons.settings_outlined, 'Settings', shortcut: 'Ctrl+5'),
                       ],
                     ),
                   ),
@@ -970,7 +970,7 @@ class _AdminHomeShellState extends State<AdminHomeShell> {
                           // Index 2: Reports
                           ExcludeFocus(
                             excluding: _stackIndex != 2,
-                            child: const ReportsView(),
+                            child: ReportsView(isActive: _stackIndex == 2),
                           ),
                           // Index 3: Users
                           ExcludeFocus(
@@ -997,11 +997,12 @@ class _AdminHomeShellState extends State<AdminHomeShell> {
     );
   }
 
-  Widget _buildNavItem(int index, IconData icon, String label) {
+  Widget _buildNavItem(int index, IconData icon, String label, {String? shortcut}) {
     return _SidebarNavItem(
       index: index,
       icon: icon,
       label: label,
+      shortcut: shortcut,
       isSelected: _activeTabIndex == index,
       onTap: () {
         _switchTab(index);
@@ -1019,6 +1020,7 @@ class _SidebarNavItem extends StatefulWidget {
   final int index;
   final IconData icon;
   final String label;
+  final String? shortcut;
   final bool isSelected;
   final VoidCallback onTap;
   final VoidCallback onEnterOrRight;
@@ -1027,6 +1029,7 @@ class _SidebarNavItem extends StatefulWidget {
     required this.index,
     required this.icon,
     required this.label,
+    this.shortcut,
     required this.isSelected,
     required this.onTap,
     required this.onEnterOrRight,
@@ -1099,12 +1102,34 @@ class _SidebarNavItemState extends State<_SidebarNavItem> {
                     color: showHighlight ? BoutiqueColors.accent : BoutiqueColors.textSecondary,
                   ),
                   const SizedBox(width: 14),
-                  Text(
-                    widget.label,
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: widget.isSelected || _isFocused ? FontWeight.bold : FontWeight.w500,
-                      color: showHighlight ? BoutiqueColors.accent : BoutiqueColors.textPrimary,
+                  Expanded(
+                    child: Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            widget.label,
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: widget.isSelected || _isFocused ? FontWeight.bold : FontWeight.w500,
+                              color: showHighlight ? BoutiqueColors.accent : BoutiqueColors.textPrimary,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        if (widget.shortcut != null) ...[
+                          const SizedBox(width: 6),
+                          Text(
+                            '(${widget.shortcut})',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w500,
+                              color: showHighlight
+                                  ? BoutiqueColors.accent.withValues(alpha: 0.8)
+                                  : BoutiqueColors.textSecondary.withValues(alpha: 0.7),
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                   ),
                 ],

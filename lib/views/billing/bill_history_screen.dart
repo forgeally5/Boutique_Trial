@@ -11,6 +11,7 @@ import '../../utils/boutique_theme.dart';
 import '../../utils/boutique_pdf_generator.dart';
 import '../../widgets/searchable_dropdown.dart';
 import '../../services/api_service.dart';
+import '../../widgets/report_filter_widgets.dart';
 
 DateTime _parseBillDate(dynamic raw) {
   if (raw == null) return DateTime.now();
@@ -462,7 +463,7 @@ class _BillHistoryScreenState extends State<BillHistoryScreen> {
         ? initial
         : firstOfMonth;
 
-    return showDatePicker(
+    return showBoutiqueDatePicker(
       context: ctx,
       initialDate: clampedInitial,
       firstDate: firstOfMonth,
@@ -2480,7 +2481,7 @@ class _SettleBalanceDialogState extends State<_SettleBalanceDialog> {
   }
 
   Future<void> _pickPaymentDate() async {
-    final picked = await showDatePicker(
+    final picked = await showBoutiqueDatePicker(
       context: context,
       initialDate: _paymentDate,
       firstDate: DateTime(2020),

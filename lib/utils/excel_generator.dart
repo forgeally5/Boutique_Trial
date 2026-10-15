@@ -1386,4 +1386,168 @@ class ExcelGenerator {
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     );
   }
+
+  /// Generate & download inward history for a specific single product
+  static Future<void> downloadProductInwardHistoryExcel({
+    required String productName,
+    required String tagId,
+    required String category,
+    required List<Map<String, dynamic>> historyRows,
+  }) async {
+    final Workbook workbook = Workbook();
+    final Worksheet sheet = workbook.worksheets[0];
+    sheet.name = 'Inward History';
+
+    final nowStr = _dateTimeFmt.format(DateTime.now());
+
+    // ── Title Banner ──────────────────────────────────────────────────
+    final titleRange = sheet.getRangeByName('A1:G1');
+    titleRange.merge();
+    titleRange.setText('PRODUCT INWARD HISTORY');
+    titleRange.cellStyle.bold = true;
+    titleRange.cellStyle.fontSize = 14;
+    titleRange.cellStyle.backColor = '#5A3B22';
+    titleRange.cellStyle.fontColor = '#FFFFFF';
+    titleRange.cellStyle.hAlign = HAlignType.center;
+    titleRange.cellStyle.vAlign = VAlignType.center;
+
+    // ── Metadata Rows ─────────────────────────────────────────────────
+    final metaRange1 = sheet.getRangeByName('A2:G2');
+    metaRange1.merge();
+    metaRange1.setText('Product: $productName | Tag ID: $tagId | Category: $category');
+    metaRange1.cellStyle.bold = true;
+    metaRange1.cellStyle.fontSize = 10;
+    metaRange1.cellStyle.backColor = '#F5ECE4';
+    metaRange1.cellStyle.hAlign = HAlignType.left;
+    metaRange1.cellStyle.vAlign = VAlignType.center;
+
+    final metaRange2 = sheet.getRangeByName('A3:G3');
+    metaRange2.merge();
+    metaRange2.setText('Export Date: $nowStr | Total Batches: ${historyRows.length}');
+    metaRange2.cellStyle.bold = false;
+    metaRange2.cellStyle.fontSize = 9;
+    metaRange2.cellStyle.backColor = '#F5ECE4';
+    metaRange2.cellStyle.hAlign = HAlignType.left;
+    metaRange2.cellStyle.vAlign = VAlignType.center;
+
+    // ── Headers ───────────────────────────────────────────────────────
+    final headers = [
+      'S.No',
+      'Date & Time',
+      'Narration / Source',
+      'Added Qty',
+      'Added Weight (g)',
+      'Rate (₹)',
+      'Total Value (₹)',
+    ];
+
+    for (int col = 0; col < headers.length; col++) {
+      final cell = sheet.getRangeByIndex(4, col + 1);
+      cell.setText(headers[col]);
+      cell.cellStyle.bold = true;
+      cell.cellStyle.fontSize = 10;
+      cell.cellStyle.backColor = '#8C6246';
+      cell.cellStyle.fontColor = '#FFFFFF';
+      cell.cellStyle.hAlign = (col == 0 || col == 3 || col == 4)
+          ? HAlignType.center
+          : (col >= 5 ? HAlignType.right : HAlignType.left);
+      cell.cellStyle.vAlign = VAlignType.center;
+    }
+
+    // ── Data Rows ─────────────────────────────────────────────────────
+    int rowIndex = 5;
+    int totalQty = 0;
+    double totalWeight = 0.0;
+    double totalValue = 0.0;
+
+    for (int i = 0; i < historyRows.length; i++) {
+      final r = historyRows[i];
+      final dt = r['date'] is DateTime
+          ? r['date'] as DateTime
+          : (DateTime.tryParse(r['date']?.toString() ?? '') ?? DateTime.now());
+      final narration = r['narration']?.toString() ?? 'Stock Inward';
+      final item = r['itemData'] as Map<String, dynamic>? ?? r;
+      final q = (item['qty'] as num?)?.toInt() ?? 0;
+      final w = (item['weight'] as num?)?.toDouble() ?? 0.0;
+      final rate = (item['rate'] as num?)?.toDouble() ?? 0.0;
+      var amt = (item['amount'] as num?)?.toDouble() ?? 0.0;
+      if (amt <= 0 && rate > 0) {
+        amt = w > 0 ? (rate * w) : (rate * q);
+      }
+
+      totalQty += q;
+      totalWeight += w;
+      totalValue += amt;
+
+      sheet.getRangeByIndex(rowIndex, 1).setNumber((i + 1).toDouble());
+      sheet.getRangeByIndex(rowIndex, 1).cellStyle.hAlign = HAlignType.center;
+
+      sheet.getRangeByIndex(rowIndex, 2).setText(_dateTimeFmt.format(dt));
+
+      sheet.getRangeByIndex(rowIndex, 3).setText(narration);
+
+      sheet.getRangeByIndex(rowIndex, 4).setNumber(q.toDouble());
+      sheet.getRangeByIndex(rowIndex, 4).cellStyle.hAlign = HAlignType.center;
+
+      sheet.getRangeByIndex(rowIndex, 5).setNumber(w);
+      sheet.getRangeByIndex(rowIndex, 5).cellStyle.hAlign = HAlignType.center;
+
+      sheet.getRangeByIndex(rowIndex, 6).setNumber(rate);
+      sheet.getRangeByIndex(rowIndex, 6).cellStyle.hAlign = HAlignType.right;
+
+      sheet.getRangeByIndex(rowIndex, 7).setNumber(amt);
+      sheet.getRangeByIndex(rowIndex, 7).cellStyle.hAlign = HAlignType.right;
+
+      if (i % 2 == 1) {
+        sheet.getRangeByIndex(rowIndex, 1, rowIndex, 7).cellStyle.backColor =
+            '#FBF8F5';
+      }
+
+      rowIndex++;
+    }
+
+    // ── Total Footer ──────────────────────────────────────────────────
+    final totalRange = sheet.getRangeByIndex(rowIndex, 1, rowIndex, 3);
+    totalRange.merge();
+    totalRange.setText('TOTAL INWARD');
+    totalRange.cellStyle.bold = true;
+    totalRange.cellStyle.hAlign = HAlignType.right;
+
+    sheet.getRangeByIndex(rowIndex, 4).setNumber(totalQty.toDouble());
+    sheet.getRangeByIndex(rowIndex, 4).cellStyle.bold = true;
+    sheet.getRangeByIndex(rowIndex, 4).cellStyle.hAlign = HAlignType.center;
+
+    sheet.getRangeByIndex(rowIndex, 5).setNumber(totalWeight);
+    sheet.getRangeByIndex(rowIndex, 5).cellStyle.bold = true;
+    sheet.getRangeByIndex(rowIndex, 5).cellStyle.hAlign = HAlignType.center;
+
+    sheet.getRangeByIndex(rowIndex, 6).setText('-');
+    sheet.getRangeByIndex(rowIndex, 6).cellStyle.hAlign = HAlignType.center;
+
+    sheet.getRangeByIndex(rowIndex, 7).setNumber(totalValue);
+    sheet.getRangeByIndex(rowIndex, 7).cellStyle.bold = true;
+    sheet.getRangeByIndex(rowIndex, 7).cellStyle.hAlign = HAlignType.right;
+
+    sheet.getRangeByIndex(rowIndex, 1, rowIndex, 7).cellStyle.backColor =
+        '#F0E5D8';
+
+    // Set column widths
+    sheet.getRangeByIndex(1, 1).columnWidth = 8.0;
+    sheet.getRangeByIndex(1, 2).columnWidth = 22.0;
+    sheet.getRangeByIndex(1, 3).columnWidth = 28.0;
+    sheet.getRangeByIndex(1, 4).columnWidth = 14.0;
+    sheet.getRangeByIndex(1, 5).columnWidth = 16.0;
+    sheet.getRangeByIndex(1, 6).columnWidth = 14.0;
+    sheet.getRangeByIndex(1, 7).columnWidth = 18.0;
+
+    final List<int> bytes = workbook.saveAsStream();
+    workbook.dispose();
+
+    final safeTag = tagId.replaceAll(RegExp(r'[^a-zA-Z0-9_\-]'), '_');
+    await downloadFile(
+      bytes,
+      'inward_history_${safeTag}_${DateTime.now().millisecondsSinceEpoch}.xlsx',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
+  }
 }

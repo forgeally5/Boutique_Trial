@@ -14,6 +14,7 @@ import '../../utils/boutique_theme.dart';
 import '../../utils/excel_generator.dart';
 import '../../widgets/report_export_dialog.dart';
 import '../../widgets/searchable_dropdown.dart';
+import '../../widgets/report_filter_widgets.dart';
 
 class IssueReportScreen extends StatefulWidget {
   final FocusNode? searchFocusNode;
@@ -68,9 +69,11 @@ class _IssueReportScreenState extends State<IssueReportScreen> {
     _dateTo = now;
     _load();
     _searchCtrl.addListener(_applyFilters);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _searchFocusNode.requestFocus();
-    });
+    if (widget.searchFocusNode == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _searchFocusNode.requestFocus();
+      });
+    }
   }
 
   @override
@@ -251,7 +254,7 @@ class _IssueReportScreenState extends State<IssueReportScreen> {
   // ── Date picker ────────────────────────────────────────────────────────────
   Future<void> _pickDate({required bool isFrom}) async {
     final initial = isFrom ? _dateFrom : _dateTo;
-    final picked = await showDatePicker(
+    final picked = await showBoutiqueDatePicker(
       context: context,
       initialDate: initial,
       firstDate: DateTime(2020),

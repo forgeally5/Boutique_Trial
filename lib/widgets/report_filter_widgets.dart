@@ -129,6 +129,8 @@ class ReportDatePill extends StatefulWidget {
   final double order;
   final DateFormat fmt;
 
+  final FocusNode? focusNode;
+
   const ReportDatePill({
     super.key,
     required this.label,
@@ -136,6 +138,7 @@ class ReportDatePill extends StatefulWidget {
     required this.onTap,
     required this.order,
     required this.fmt,
+    this.focusNode,
   });
 
   @override
@@ -143,13 +146,36 @@ class ReportDatePill extends StatefulWidget {
 }
 
 class _ReportDatePillState extends State<ReportDatePill> {
+  late FocusNode _focusNode;
+  bool _ownFocusNode = false;
   bool _isFocused = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.focusNode != null) {
+      _focusNode = widget.focusNode!;
+    } else {
+      _focusNode = FocusNode(debugLabel: 'date_pill_${widget.label}');
+      _ownFocusNode = true;
+    }
+  }
+
+  @override
+  void dispose() {
+    if (_ownFocusNode) {
+      _focusNode.dispose();
+    }
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return FocusTraversalOrder(
       order: NumericFocusOrder(widget.order),
       child: Focus(
+        focusNode: _focusNode,
+        canRequestFocus: true,
         onFocusChange: (focused) {
           if (mounted) setState(() => _isFocused = focused);
         },
@@ -312,4 +338,100 @@ class _ReportActionIconButtonState extends State<ReportActionIconButton> {
       ),
     );
   }
+}
+
+// ── 4. Reusable Keyboard-Accessible Date Picker with Escape & Arrow Support ────
+
+Future<DateTime?> showBoutiqueDatePicker({
+  required BuildContext context,
+  required DateTime initialDate,
+  required DateTime firstDate,
+  required DateTime lastDate,
+  DatePickerEntryMode initialEntryMode = DatePickerEntryMode.calendar,
+  String? helpText,
+}) async {
+  return showDatePicker(
+    context: context,
+    initialDate: initialDate,
+    firstDate: firstDate,
+    lastDate: lastDate,
+    initialEntryMode: initialEntryMode,
+    helpText: helpText,
+    barrierDismissible: true,
+    builder: (BuildContext dialogContext, Widget? child) {
+      return Theme(
+        data: Theme.of(dialogContext).copyWith(
+          colorScheme: const ColorScheme.light(
+            primary: BoutiqueColors.accent,
+            onPrimary: Colors.white,
+            surface: BoutiqueColors.bgCard,
+            onSurface: BoutiqueColors.textPrimary,
+          ),
+          textButtonTheme: TextButtonThemeData(
+            style: TextButton.styleFrom(
+              foregroundColor: BoutiqueColors.accent,
+              textStyle: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+          ),
+        ),
+        child: FocusScope(
+          autofocus: true,
+          child: Focus(
+            autofocus: true,
+            onKeyEvent: (node, event) {
+              if (event is KeyDownEvent &&
+                  event.logicalKey == LogicalKeyboardKey.escape) {
+                Navigator.of(dialogContext).pop(null);
+                return KeyEventResult.handled;
+              }
+              return KeyEventResult.ignored;
+            },
+            child: child!,
+          ),
+        ),
+      );
+    },
+  );
+}
+
+Future<DateTimeRange?> showBoutiqueDateRangePicker({
+  required BuildContext context,
+  required DateTime firstDate,
+  required DateTime lastDate,
+  DateTimeRange? initialDateRange,
+}) async {
+  return showDateRangePicker(
+    context: context,
+    firstDate: firstDate,
+    lastDate: lastDate,
+    initialDateRange: initialDateRange,
+    barrierDismissible: true,
+    builder: (BuildContext dialogContext, Widget? child) {
+      return Theme(
+        data: Theme.of(dialogContext).copyWith(
+          colorScheme: const ColorScheme.light(
+            primary: BoutiqueColors.accent,
+            onPrimary: Colors.white,
+            surface: BoutiqueColors.bgCard,
+            onSurface: BoutiqueColors.textPrimary,
+          ),
+        ),
+        child: FocusScope(
+          autofocus: true,
+          child: Focus(
+            autofocus: true,
+            onKeyEvent: (node, event) {
+              if (event is KeyDownEvent &&
+                  event.logicalKey == LogicalKeyboardKey.escape) {
+                Navigator.of(dialogContext).pop(null);
+                return KeyEventResult.handled;
+              }
+              return KeyEventResult.ignored;
+            },
+            child: child!,
+          ),
+        ),
+      );
+    },
+  );
 }

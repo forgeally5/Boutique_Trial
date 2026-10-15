@@ -11,6 +11,7 @@ import '../../utils/boutique_pdf_generator.dart';
 import '../widgets/scanner_dialog.dart';
 import '../widgets/batch_scanner_dialog.dart';
 import '../../services/api_service.dart';
+import '../../widgets/report_filter_widgets.dart';
 
 class CreateBillScreen extends StatefulWidget {
   final AdminState state;
@@ -1731,7 +1732,7 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
   }
 
   Future<void> _pickDate() async {
-    final picked = await showDatePicker(
+    final picked = await showBoutiqueDatePicker(
       context: context,
       initialDate: _billDate,
       firstDate: DateTime(2000),

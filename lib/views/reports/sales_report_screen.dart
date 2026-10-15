@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../services/api_service.dart';
 import 'package:intl/intl.dart';
 import 'package:printing/printing.dart';
@@ -9,6 +10,7 @@ import '../../utils/boutique_theme.dart';
 import '../../utils/excel_generator.dart';
 import '../../widgets/report_export_dialog.dart';
 import '../../widgets/searchable_dropdown.dart';
+import '../../widgets/report_filter_widgets.dart';
 
 class SalesReportScreen extends StatefulWidget {
   final FocusNode? searchFocusNode;
@@ -21,60 +23,280 @@ class SalesReportScreen extends StatefulWidget {
 class _SalesReportScreenState extends State<SalesReportScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
+  int _currentTab = 0;
+
+  late FocusNode _productWiseTabFocusNode;
+  bool _ownProductWiseTabFocusNode = false;
+  final FocusNode _totalSalesTabFocusNode =
+      FocusNode(debugLabel: 'subtab_total_sales');
+
+  final FocusNode _productWiseSearchFocusNode =
+      FocusNode(debugLabel: 'sales_prod_search');
+  final FocusNode _totalSalesSearchFocusNode =
+      FocusNode(debugLabel: 'sales_total_search');
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    _tabController.addListener(() {
+      if (_tabController.indexIsChanging || _tabController.index != _currentTab) {
+        setState(() => _currentTab = _tabController.index);
+      }
+    });
+
+    if (widget.searchFocusNode != null) {
+      _productWiseTabFocusNode = widget.searchFocusNode!;
+    } else {
+      _productWiseTabFocusNode =
+          FocusNode(debugLabel: 'subtab_product_wise_sales');
+      _ownProductWiseTabFocusNode = true;
+    }
+  }
+
+  void _selectSubTab(int index) {
+    if (_currentTab != index) {
+      setState(() => _currentTab = index);
+      _tabController.animateTo(index);
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (index == 0) {
+        _productWiseSearchFocusNode.requestFocus();
+      } else {
+        _totalSalesSearchFocusNode.requestFocus();
+      }
+    });
   }
 
   @override
   void dispose() {
+    if (_ownProductWiseTabFocusNode) {
+      _productWiseTabFocusNode.dispose();
+    }
+    _totalSalesTabFocusNode.dispose();
+    _productWiseSearchFocusNode.dispose();
+    _totalSalesSearchFocusNode.dispose();
     _tabController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        // ── Sub-Tab bar ──────────────────────────────────────────────
-        Container(
-          color: BoutiqueColors.bgCard,
-          child: TabBar(
-            controller: _tabController,
-            labelColor: BoutiqueColors.accent,
-            unselectedLabelColor: BoutiqueColors.textSecondary,
-            indicatorColor: BoutiqueColors.accent,
-            indicatorWeight: 2.5,
-            labelStyle: const TextStyle(
-                fontSize: 13, fontWeight: FontWeight.bold),
-            unselectedLabelStyle: const TextStyle(fontSize: 13),
-            tabs: const [
-              Tab(
-                icon: Icon(Icons.category_rounded, size: 16),
-                text: 'Product-wise Sales Summary',
-                iconMargin: EdgeInsets.only(bottom: 4),
+    return Container(
+      color: BoutiqueColors.bgMain,
+      child: Column(
+        children: [
+          // ── Sub-Tab Bar (Product-wise Sales vs Total Sales) ──
+          Container(
+            decoration: const BoxDecoration(
+              color: BoutiqueColors.bgCard,
+              border: Border(
+                bottom: BorderSide(color: BoutiqueColors.border, width: 1),
               ),
-              Tab(
-                icon: Icon(Icons.bar_chart_rounded, size: 16),
-                text: 'Total Sales Summary',
-                iconMargin: EdgeInsets.only(bottom: 4),
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Row(
+              children: [
+                _SalesSubTabButton(
+                  focusNode: _productWiseTabFocusNode,
+                  index: 0,
+                  icon: Icons.category_rounded,
+                  label: 'Product-wise Sales Summary',
+                  isSelected: _currentTab == 0,
+                  order: 1.0,
+                  onSelect: () => _selectSubTab(0),
+                  onArrowRight: () => _totalSalesTabFocusNode.requestFocus(),
+                  onArrowLeft: null,
+                ),
+                const SizedBox(width: 6),
+                _SalesSubTabButton(
+                  focusNode: _totalSalesTabFocusNode,
+                  index: 1,
+                  icon: Icons.bar_chart_rounded,
+                  label: 'Total Sales Summary',
+                  isSelected: _currentTab == 1,
+                  order: 2.0,
+                  onSelect: () => _selectSubTab(1),
+                  onArrowRight: null,
+                  onArrowLeft: () => _productWiseTabFocusNode.requestFocus(),
+                ),
+              ],
+            ),
+          ),
+          // ── Tab Content ──────────────────────────────────────────────
+          Expanded(
+            child: TabBarView(
+              controller: _tabController,
+              children: [
+                Focus(
+                  onKeyEvent: (node, event) {
+                    if (event is KeyDownEvent &&
+                        event.logicalKey == LogicalKeyboardKey.escape) {
+                      _productWiseTabFocusNode.requestFocus();
+                      return KeyEventResult.handled;
+                    }
+                    return KeyEventResult.ignored;
+                  },
+                  child: _ProductWiseSalesTab(
+                    searchFocusNode: _productWiseSearchFocusNode,
+                  ),
+                ),
+                Focus(
+                  onKeyEvent: (node, event) {
+                    if (event is KeyDownEvent &&
+                        event.logicalKey == LogicalKeyboardKey.escape) {
+                      _totalSalesTabFocusNode.requestFocus();
+                      return KeyEventResult.handled;
+                    }
+                    return KeyEventResult.ignored;
+                  },
+                  child: _TotalSalesTab(
+                    searchFocusNode: _totalSalesSearchFocusNode,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Focusable Sales Sub-Tab Button with Visible Focus Border ──────────────────
+
+class _SalesSubTabButton extends StatefulWidget {
+  final FocusNode focusNode;
+  final int index;
+  final IconData icon;
+  final String label;
+  final bool isSelected;
+  final double order;
+  final VoidCallback onSelect;
+  final VoidCallback? onArrowRight;
+  final VoidCallback? onArrowLeft;
+
+  const _SalesSubTabButton({
+    required this.focusNode,
+    required this.index,
+    required this.icon,
+    required this.label,
+    required this.isSelected,
+    required this.order,
+    required this.onSelect,
+    this.onArrowRight,
+    this.onArrowLeft,
+  });
+
+  @override
+  State<_SalesSubTabButton> createState() => _SalesSubTabButtonState();
+}
+
+class _SalesSubTabButtonState extends State<_SalesSubTabButton> {
+  bool _isFocused = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final isSelected = widget.isSelected;
+    const accent = BoutiqueColors.accent;
+
+    return FocusTraversalOrder(
+      order: NumericFocusOrder(widget.order),
+      child: Focus(
+        focusNode: widget.focusNode,
+        canRequestFocus: true,
+        onFocusChange: (focused) {
+          if (mounted) setState(() => _isFocused = focused);
+        },
+        onKeyEvent: (node, event) {
+          if (event is KeyDownEvent) {
+            if (event.logicalKey == LogicalKeyboardKey.enter ||
+                event.logicalKey == LogicalKeyboardKey.numpadEnter ||
+                event.logicalKey == LogicalKeyboardKey.space) {
+              widget.onSelect();
+              return KeyEventResult.handled;
+            }
+            if (event.logicalKey == LogicalKeyboardKey.arrowRight &&
+                widget.onArrowRight != null) {
+              widget.onArrowRight!();
+              return KeyEventResult.handled;
+            }
+            if (event.logicalKey == LogicalKeyboardKey.arrowLeft &&
+                widget.onArrowLeft != null) {
+              widget.onArrowLeft!();
+              return KeyEventResult.handled;
+            }
+          }
+          return KeyEventResult.ignored;
+        },
+        child: InkWell(
+          canRequestFocus: false,
+          onTap: widget.onSelect,
+          borderRadius: BorderRadius.circular(6),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 150),
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+            decoration: BoxDecoration(
+              color: _isFocused
+                  ? accent.withAlpha(25)
+                  : (isSelected
+                      ? BoutiqueColors.accentSoft.withAlpha(60)
+                      : Colors.transparent),
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(
+                color: _isFocused ? accent : Colors.transparent,
+                width: _isFocused ? 2.0 : 1.0,
               ),
-            ],
+              boxShadow: _isFocused
+                  ? [
+                      BoxShadow(
+                        color: accent.withAlpha(60),
+                        blurRadius: 6,
+                        spreadRadius: 1,
+                      ),
+                    ]
+                  : null,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      widget.icon,
+                      size: 16,
+                      color: isSelected ? accent : BoutiqueColors.textSecondary,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      widget.label,
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight:
+                            isSelected ? FontWeight.bold : FontWeight.w500,
+                        color:
+                            isSelected ? accent : BoutiqueColors.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 180),
+                  height: 2.5,
+                  width: isSelected ? 48 : 0,
+                  decoration: BoxDecoration(
+                    color: isSelected ? accent : Colors.transparent,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
-        // ── Tab Content ──────────────────────────────────────────────
-        Expanded(
-          child: TabBarView(
-            controller: _tabController,
-            children: [
-              _ProductWiseSalesTab(searchFocusNode: widget.searchFocusNode),
-              const _TotalSalesTab(),
-            ],
-          ),
-        ),
-      ],
+      ),
     );
   }
 }
@@ -236,7 +458,7 @@ class _IndividualSalesTabState extends State<_IndividualSalesTab> {
 
   Future<void> _pickDate({required bool isFrom}) async {
     final initial = isFrom ? _dateFrom : _dateTo;
-    final picked = await showDatePicker(
+    final picked = await showBoutiqueDatePicker(
       context: context,
       initialDate: initial,
       firstDate: DateTime(2020),
@@ -610,7 +832,8 @@ class _IndividualSalesTabState extends State<_IndividualSalesTab> {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 class _TotalSalesTab extends StatefulWidget {
-  const _TotalSalesTab();
+  final FocusNode? searchFocusNode;
+  const _TotalSalesTab({this.searchFocusNode});
 
   @override
   State<_TotalSalesTab> createState() => _TotalSalesTabState();
@@ -623,6 +846,8 @@ class _TotalSalesTabState extends State<_TotalSalesTab> {
   late DateTime _dateFrom;
   late DateTime _dateTo;
   final _searchCtrl = TextEditingController();
+  late FocusNode _searchFocusNode;
+  bool _ownSearchFocusNode = false;
   String _paymentFilter = 'All';
   bool _loading = false;
 
@@ -636,6 +861,12 @@ class _TotalSalesTabState extends State<_TotalSalesTab> {
   @override
   void initState() {
     super.initState();
+    if (widget.searchFocusNode != null) {
+      _searchFocusNode = widget.searchFocusNode!;
+    } else {
+      _searchFocusNode = FocusNode(debugLabel: 'total_sales_search');
+      _ownSearchFocusNode = true;
+    }
     final now = DateTime.now();
     final fyStart = now.month >= 4
         ? DateTime(now.year, 4, 1)
@@ -649,6 +880,9 @@ class _TotalSalesTabState extends State<_TotalSalesTab> {
   @override
   void dispose() {
     _searchCtrl.dispose();
+    if (_ownSearchFocusNode) {
+      _searchFocusNode.dispose();
+    }
     super.dispose();
   }
 
@@ -747,7 +981,7 @@ class _TotalSalesTabState extends State<_TotalSalesTab> {
 
   Future<void> _pickDate({required bool isFrom}) async {
     final initial = isFrom ? _dateFrom : _dateTo;
-    final picked = await showDatePicker(
+    final picked = await showBoutiqueDatePicker(
       context: context,
       initialDate: initial,
       firstDate: DateTime(2020),
@@ -830,8 +1064,8 @@ class _TotalSalesTabState extends State<_TotalSalesTab> {
                 Expanded(
                   flex: 3,
                   child: TextField(
+                    focusNode: _searchFocusNode,
                     controller: _searchCtrl,
-                    autofocus: true,
                     style: const TextStyle(fontSize: 13),
                     decoration: BoutiqueInputDecoration.field(
                       hintText: 'Search bill no, customer, mobile…',
@@ -841,13 +1075,25 @@ class _TotalSalesTabState extends State<_TotalSalesTab> {
                   ),
                 ),
                 const SizedBox(width: 12),
-                _datePill('From', _dateFrom, () => _pickDate(isFrom: true)),
+                ReportDatePill(
+                  label: 'From',
+                  dt: _dateFrom,
+                  order: 6.0,
+                  fmt: _fmt,
+                  onTap: () => _pickDate(isFrom: true),
+                ),
                 const Padding(
                   padding: EdgeInsets.symmetric(horizontal: 8),
                   child: Text('→',
                       style: TextStyle(color: BoutiqueColors.textSecondary)),
                 ),
-                _datePill('To', _dateTo, () => _pickDate(isFrom: false)),
+                ReportDatePill(
+                  label: 'To',
+                  dt: _dateTo,
+                  order: 7.0,
+                  fmt: _fmt,
+                  onTap: () => _pickDate(isFrom: false),
+                ),
                 const SizedBox(width: 12),
                 Expanded(
                   flex: 2,
@@ -1118,32 +1364,7 @@ class _TotalSalesTabState extends State<_TotalSalesTab> {
     );
   }
 
-  Widget _datePill(String label, DateTime dt, VoidCallback onTap) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(10),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        decoration: BoxDecoration(
-          color: BoutiqueColors.bgSubtle,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: BoutiqueColors.border),
-        ),
-        child: Row(
-          children: [
-            Text('$label: ',
-                style: const TextStyle(
-                    fontSize: 12, color: BoutiqueColors.textSecondary)),
-            Text(DateFormat('dd/MM/yyyy').format(dt),
-                style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                    color: BoutiqueColors.textPrimary)),
-          ],
-        ),
-      ),
-    );
-  }
+
 
   Widget _statCard(
       String label, String value, IconData icon, Color color) {
@@ -1242,9 +1463,11 @@ class _ProductWiseSalesTabState extends State<_ProductWiseSalesTab> {
     _dateTo = now;
     _load();
     _searchCtrl.addListener(_applyFilters);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _searchFocusNode.requestFocus();
-    });
+    if (widget.searchFocusNode == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _searchFocusNode.requestFocus();
+      });
+    }
   }
 
   @override
@@ -1424,7 +1647,7 @@ class _ProductWiseSalesTabState extends State<_ProductWiseSalesTab> {
 
   Future<void> _pickDate({required bool isFrom}) async {
     final initial = isFrom ? _dateFrom : _dateTo;
-    final picked = await showDatePicker(
+    final picked = await showBoutiqueDatePicker(
       context: context,
       initialDate: initial,
       firstDate: DateTime(2020),
@@ -1503,7 +1726,6 @@ class _ProductWiseSalesTabState extends State<_ProductWiseSalesTab> {
                   child: TextField(
                     focusNode: _searchFocusNode,
                     controller: _searchCtrl,
-                    autofocus: true,
                     style: const TextStyle(fontSize: 13),
                     decoration: BoutiqueInputDecoration.field(
                       hintText: 'Search product name or tag ID…',
@@ -1513,13 +1735,25 @@ class _ProductWiseSalesTabState extends State<_ProductWiseSalesTab> {
                   ),
                 ),
                 const SizedBox(width: 12),
-                _datePill('From', _dateFrom, () => _pickDate(isFrom: true)),
+                ReportDatePill(
+                  label: 'From',
+                  dt: _dateFrom,
+                  order: 6.0,
+                  fmt: _fmt,
+                  onTap: () => _pickDate(isFrom: true),
+                ),
                 const Padding(
                   padding: EdgeInsets.symmetric(horizontal: 8),
                   child: Text('→',
                       style: TextStyle(color: BoutiqueColors.textSecondary)),
                 ),
-                _datePill('To', _dateTo, () => _pickDate(isFrom: false)),
+                ReportDatePill(
+                  label: 'To',
+                  dt: _dateTo,
+                  order: 7.0,
+                  fmt: _fmt,
+                  onTap: () => _pickDate(isFrom: false),
+                ),
                 const SizedBox(width: 12),
                 Expanded(
                   flex: 2,
@@ -1713,27 +1947,7 @@ class _ProductWiseSalesTabState extends State<_ProductWiseSalesTab> {
     );
   }
 
-  Widget _datePill(String label, DateTime dt, VoidCallback onTap) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(10),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        decoration: BoxDecoration(
-          color: BoutiqueColors.bgSubtle,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: BoutiqueColors.border),
-        ),
-        child: Row(
-          children: [
-            Text('$label: ', style: const TextStyle(fontSize: 12, color: BoutiqueColors.textSecondary)),
-            Text(DateFormat('dd/MM/yyyy').format(dt),
-                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: BoutiqueColors.textPrimary)),
-          ],
-        ),
-      ),
-    );
-  }
+
 
   Widget _chip(IconData icon, String label, String value) {
     return Row(

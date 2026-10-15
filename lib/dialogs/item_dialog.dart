@@ -29,6 +29,9 @@ class ItemDialog extends StatefulWidget {
 }
 
 class _ItemDialogState extends State<ItemDialog> {
+  // FocusNodes
+  final FocusNode _firstFieldFocusNode = FocusNode();
+
   // Controllers
   late TextEditingController _tagIdCtrl;
   late TextEditingController _nameCtrl;
@@ -265,10 +268,17 @@ class _ItemDialogState extends State<ItemDialog> {
     }
 
     widget.adminState.addListener(_onAdminStateChanged);
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _firstFieldFocusNode.requestFocus();
+      }
+    });
   }
 
   @override
   void dispose() {
+    _firstFieldFocusNode.dispose();
     widget.adminState.removeListener(_onAdminStateChanged);
     _tagIdCtrl.dispose();
     _nameCtrl.dispose();
@@ -482,6 +492,7 @@ class _ItemDialogState extends State<ItemDialog> {
               newQty: newQty,
               oldWeight: initialProductWeight,
               newWeight: newGrossWeight,
+              addedDate: now,
             );
             await ApiService().recordInwardBill(
               items: [itemMap],
@@ -513,14 +524,22 @@ class _ItemDialogState extends State<ItemDialog> {
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       backgroundColor: _bg,
-      child: FocusTraversalGroup(
-        policy: WidgetOrderTraversalPolicy(),
-        child: Container(
-          width: 860,
-          constraints: const BoxConstraints(maxHeight: 680),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-          children: [
+      child: CallbackShortcuts(
+        bindings: {
+          const SingleActivator(LogicalKeyboardKey.escape): () {
+            if (mounted) Navigator.pop(context);
+          },
+        },
+        child: FocusScope(
+          autofocus: true,
+          child: FocusTraversalGroup(
+            policy: WidgetOrderTraversalPolicy(),
+            child: Container(
+              width: 860,
+              constraints: const BoxConstraints(maxHeight: 680),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+              children: [
             // Header
             Container(
               padding: const EdgeInsets.fromLTRB(28, 20, 20, 20),
@@ -647,6 +666,8 @@ class _ItemDialogState extends State<ItemDialog> {
                         child: _field(
                           label: 'Tag ID / SKU *',
                           controller: _tagIdCtrl,
+                          focusNode: _firstFieldFocusNode,
+                          autofocus: true,
                           error: _tagIdError(),
                           hint: 'e.g. IDOL-001',
                           onChanged: (_) => setState(() => _tagIdTouched = true),
@@ -1366,6 +1387,8 @@ class _ItemDialogState extends State<ItemDialog> {
         ),
         ),
       ),
+      ),
+      ),
     );
   }
 
@@ -1435,10 +1458,14 @@ class _ItemDialogState extends State<ItemDialog> {
     TextInputAction textInputAction = TextInputAction.next,
     double? focusOrder,
     bool readOnly = false,
+    FocusNode? focusNode,
+    bool autofocus = false,
   }) {
     final hasError = error != null;
     Widget textField = TextField(
       controller: controller,
+      focusNode: focusNode,
+      autofocus: autofocus,
       readOnly: readOnly,
       maxLines: maxLines,
       onChanged: onChanged,

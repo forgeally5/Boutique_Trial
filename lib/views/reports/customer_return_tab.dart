@@ -7,6 +7,8 @@ import '../../utils/pdf_report_generator.dart';
 import '../../widgets/searchable_dropdown.dart';
 import '../../utils/excel_generator.dart';
 
+import '../../widgets/report_filter_widgets.dart';
+
 class CustomerReturnTab extends StatefulWidget {
   const CustomerReturnTab({super.key});
 
@@ -143,7 +145,7 @@ class _CustomerReturnTabState extends State<CustomerReturnTab> {
 
   Future<void> _pickDate({required bool isFrom}) async {
     final initial = isFrom ? _dateFrom : _dateTo;
-    final picked = await showDatePicker(
+    final picked = await showBoutiqueDatePicker(
       context: context,
       initialDate: initial,
       firstDate: DateTime(2020),

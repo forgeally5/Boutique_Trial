@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../services/api_service.dart';
 import 'package:intl/intl.dart';
 import 'package:printing/printing.dart';
@@ -17,18 +18,33 @@ class StockReportScreen extends StatefulWidget {
   State<StockReportScreen> createState() => _StockReportScreenState();
 }
 
-class _StockReportScreenState extends State<StockReportScreen> {
+class _StockReportScreenState extends State<StockReportScreen>
+    with SingleTickerProviderStateMixin {
   final _numFmt = NumberFormat('#,##,##0.00', 'en_IN');
+  final _fmt = DateFormat('dd/MM/yyyy');
+
+  late DateTime _dateFrom;
+  late DateTime _dateTo;
+
+  late TabController _subTabController;
+  int _currentSubTab = 0;
+
+  late FocusNode _productWiseTabFocusNode;
+  bool _ownProductWiseTabFocusNode = false;
+  final FocusNode _closingStockTabFocusNode =
+      FocusNode(debugLabel: 'subtab_closing_stock');
 
   // Product-wise filters
   final _searchCtrl = TextEditingController();
-  late FocusNode _searchFocusNode;
-  bool _ownSearchFocusNode = false;
+  final FocusNode _searchFocusNode =
+      FocusNode(debugLabel: 'stock_prod_search');
   String _categoryFilter = 'All';
   String _statusFilter = 'All';
 
   // Category-wise Closing Stock filters
   final _catSearchCtrl = TextEditingController();
+  final FocusNode _catSearchFocusNode =
+      FocusNode(debugLabel: 'stock_cat_search');
   String _catStatusFilter = 'All';
   final Set<String> _expandedCategories = {};
 
@@ -58,17 +74,59 @@ class _StockReportScreenState extends State<StockReportScreen> {
   @override
   void initState() {
     super.initState();
+    _subTabController = TabController(length: 2, vsync: this);
+    _subTabController.addListener(() {
+      if (_subTabController.indexIsChanging ||
+          _subTabController.index != _currentSubTab) {
+        setState(() => _currentSubTab = _subTabController.index);
+      }
+    });
+
     if (widget.searchFocusNode != null) {
-      _searchFocusNode = widget.searchFocusNode!;
+      _productWiseTabFocusNode = widget.searchFocusNode!;
     } else {
-      _searchFocusNode = FocusNode(debugLabel: 'stock_report_search');
-      _ownSearchFocusNode = true;
+      _productWiseTabFocusNode =
+          FocusNode(debugLabel: 'subtab_product_wise');
+      _ownProductWiseTabFocusNode = true;
     }
+
+    final now = DateTime.now();
+    final fyStart = now.month >= 4
+        ? DateTime(now.year, 4, 1)
+        : DateTime(now.year - 1, 4, 1);
+    _dateFrom = fyStart;
+    _dateTo = now;
     _load();
     _searchCtrl.addListener(_applyFilters);
     _catSearchCtrl.addListener(_applyCategoryFilters);
+  }
+
+  Future<void> _pickDate({required bool isFrom}) async {
+    final initial = isFrom ? _dateFrom : _dateTo;
+    final picked = await showBoutiqueDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2035),
+    );
+    if (picked != null) {
+      setState(() => isFrom ? _dateFrom = picked : _dateTo = picked);
+      _applyFilters();
+    }
+  }
+
+  void _selectSubTab(int index) {
+    if (_currentSubTab != index) {
+      setState(() => _currentSubTab = index);
+      _subTabController.animateTo(index);
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _searchFocusNode.requestFocus();
+      if (!mounted) return;
+      if (index == 0) {
+        _searchFocusNode.requestFocus();
+      } else {
+        _catSearchFocusNode.requestFocus();
+      }
     });
   }
 
@@ -76,9 +134,13 @@ class _StockReportScreenState extends State<StockReportScreen> {
   void dispose() {
     _searchCtrl.dispose();
     _catSearchCtrl.dispose();
-    if (_ownSearchFocusNode) {
-      _searchFocusNode.dispose();
+    _searchFocusNode.dispose();
+    _catSearchFocusNode.dispose();
+    _closingStockTabFocusNode.dispose();
+    if (_ownProductWiseTabFocusNode) {
+      _productWiseTabFocusNode.dispose();
     }
+    _subTabController.dispose();
     super.dispose();
   }
 
@@ -136,6 +198,7 @@ class _StockReportScreenState extends State<StockReportScreen> {
           'netWeight': p.netWeight,
           'weightUnit': p.weightUnit,
           'vendor': p.vendor,
+          'addedDate': p.addedDate,
         };
         data['_docId'] = p.tagId;
 
@@ -326,6 +389,18 @@ class _StockReportScreenState extends State<StockReportScreen> {
             r['status']?.toString() != _statusFilter) {
           return false;
         }
+        if (r['addedDate'] != null) {
+          final dt = r['addedDate'] is DateTime
+              ? r['addedDate'] as DateTime
+              : DateTime.tryParse(r['addedDate'].toString());
+          if (dt != null) {
+            final fromDt = DateTime(_dateFrom.year, _dateFrom.month, _dateFrom.day);
+            final toDt = DateTime(_dateTo.year, _dateTo.month, _dateTo.day, 23, 59, 59);
+            if (dt.isBefore(fromDt) || dt.isAfter(toDt)) {
+              return false;
+            }
+          }
+        }
         return true;
       }).toList();
     });
@@ -502,64 +577,59 @@ class _StockReportScreenState extends State<StockReportScreen> {
         }
       });
     }
-    return DefaultTabController(
-      length: 2,
-      child: Container(
-        color: BoutiqueColors.bgMain,
-        child: Column(
-          children: [
-            // ── Sub-Tab Bar (Product-Wise vs Category-Wise Closing Stock) ──
-            Container(
-              decoration: const BoxDecoration(
-                color: BoutiqueColors.bgCard,
-                border: Border(
-                  bottom: BorderSide(color: BoutiqueColors.border, width: 1),
+    return Container(
+      color: BoutiqueColors.bgMain,
+      child: Column(
+        children: [
+          // ── Sub-Tab Bar (Product-Wise vs Category-Wise Closing Stock) ──
+          Container(
+            decoration: const BoxDecoration(
+              color: BoutiqueColors.bgCard,
+              border: Border(
+                bottom: BorderSide(color: BoutiqueColors.border, width: 1),
+              ),
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Row(
+              children: [
+                _StockSubTabButton(
+                  focusNode: _productWiseTabFocusNode,
+                  index: 0,
+                  icon: Icons.list_alt_rounded,
+                  label: 'Product-Wise Stock Report',
+                  isSelected: _currentSubTab == 0,
+                  order: 1.0,
+                  onSelect: () => _selectSubTab(0),
+                  onArrowRight: () => _closingStockTabFocusNode.requestFocus(),
+                  onArrowLeft: null,
                 ),
-              ),
-              child: const TabBar(
-                labelColor: BoutiqueColors.accent,
-                unselectedLabelColor: BoutiqueColors.textSecondary,
-                indicatorColor: BoutiqueColors.accent,
-                indicatorWeight: 2.5,
-                labelStyle:
-                    TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
-                unselectedLabelStyle: TextStyle(fontSize: 13),
-                tabs: [
-                  Tab(
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.list_alt_rounded, size: 16),
-                        SizedBox(width: 8),
-                        Text('Product-Wise Stock Report'),
-                      ],
-                    ),
-                  ),
-                  Tab(
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.category_outlined, size: 16),
-                        SizedBox(width: 8),
-                        Text('Closing Stock Report (Category-Wise)'),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
+                const SizedBox(width: 6),
+                _StockSubTabButton(
+                  focusNode: _closingStockTabFocusNode,
+                  index: 1,
+                  icon: Icons.category_outlined,
+                  label: 'Closing Stock Report (Category-Wise)',
+                  isSelected: _currentSubTab == 1,
+                  order: 2.0,
+                  onSelect: () => _selectSubTab(1),
+                  onArrowRight: null,
+                  onArrowLeft: () => _productWiseTabFocusNode.requestFocus(),
+                ),
+              ],
             ),
+          ),
 
-            // ── Sub-Tab Views ──────────────────────────────────────────────
-            Expanded(
-              child: TabBarView(
-                children: [
-                  _buildProductWiseView(),
-                  _buildCategoryWiseClosingView(),
-                ],
-              ),
+          // ── Sub-Tab Views ──────────────────────────────────────────────
+          Expanded(
+            child: TabBarView(
+              controller: _subTabController,
+              children: [
+                _buildProductWiseView(),
+                _buildCategoryWiseClosingView(),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -582,68 +652,107 @@ class _StockReportScreenState extends State<StockReportScreen> {
               // Search
               Expanded(
                 flex: 3,
-                child: TextField(
-                  focusNode: _searchFocusNode,
-                  controller: _searchCtrl,
-                  autofocus: true,
-                  style: const TextStyle(fontSize: 13),
-                  decoration: BoutiqueInputDecoration.field(
-                    hintText: 'Search tag ID or product name…',
-                    prefixIcon: const Icon(Icons.search_rounded,
-                        size: 18, color: BoutiqueColors.textSecondary),
+                child: FocusTraversalOrder(
+                  order: const NumericFocusOrder(3.0),
+                  child: TextField(
+                    focusNode: _searchFocusNode,
+                    controller: _searchCtrl,
+                    style: const TextStyle(fontSize: 13),
+                    decoration: BoutiqueInputDecoration.field(
+                      hintText: 'Search tag ID or product name…',
+                      prefixIcon: const Icon(Icons.search_rounded,
+                          size: 18, color: BoutiqueColors.textSecondary),
+                    ),
                   ),
                 ),
+              ),
+              const SizedBox(width: 12),
+              // Date From
+              ReportDatePill(
+                label: 'From',
+                dt: _dateFrom,
+                order: 4.0,
+                fmt: _fmt,
+                onTap: () => _pickDate(isFrom: true),
+              ),
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 8),
+                child: Text('→',
+                    style: TextStyle(color: BoutiqueColors.textSecondary)),
+              ),
+              // Date To
+              ReportDatePill(
+                label: 'To',
+                dt: _dateTo,
+                order: 5.0,
+                fmt: _fmt,
+                onTap: () => _pickDate(isFrom: false),
               ),
               const SizedBox(width: 12),
               // Category
               Expanded(
                 flex: 2,
-                child: SearchableDropdownField(
-                  label: 'Category',
-                  value: _categoryFilter,
-                  items: _categories,
-                  onChanged: (v) {
-                    if (v != null) {
-                      setState(() => _categoryFilter = v);
-                      _applyFilters();
-                    }
-                  },
+                child: FocusTraversalOrder(
+                  order: const NumericFocusOrder(6.0),
+                  child: SearchableDropdownField(
+                    label: 'Category',
+                    value: _categoryFilter,
+                    items: _categories,
+                    onChanged: (v) {
+                      if (v != null) {
+                        setState(() => _categoryFilter = v);
+                        _applyFilters();
+                      }
+                    },
+                  ),
                 ),
               ),
               const SizedBox(width: 12),
               // Status
               Expanded(
                 flex: 2,
-                child: SearchableDropdownField(
-                  label: 'Status',
-                  value: _statusFilter,
-                  items: _statusOptions,
-                  onChanged: (v) {
-                    if (v != null) {
-                      setState(() => _statusFilter = v);
-                      _applyFilters();
-                    }
-                  },
+                child: FocusTraversalOrder(
+                  order: const NumericFocusOrder(7.0),
+                  child: SearchableDropdownField(
+                    label: 'Status',
+                    value: _statusFilter,
+                    items: _statusOptions,
+                    onChanged: (v) {
+                      if (v != null) {
+                        setState(() => _statusFilter = v);
+                        _applyFilters();
+                      }
+                    },
+                  ),
                 ),
               ),
               const SizedBox(width: 8),
-              IconButton(
-                icon: const Icon(Icons.refresh_rounded,
-                    color: BoutiqueColors.accent),
-                onPressed: _load,
-                tooltip: 'Refresh',
+              FocusTraversalOrder(
+                order: const NumericFocusOrder(8.0),
+                child: IconButton(
+                  icon: const Icon(Icons.refresh_rounded,
+                      color: BoutiqueColors.accent),
+                  onPressed: _load,
+                  tooltip: 'Refresh',
+                ),
               ),
-              IconButton(
-                icon: const Icon(Icons.print_outlined,
-                    color: BoutiqueColors.accent),
-                onPressed: _handlePrint,
-                tooltip: 'Print Report',
+              FocusTraversalOrder(
+                order: const NumericFocusOrder(9.0),
+                child: IconButton(
+                  icon: const Icon(Icons.print_outlined,
+                      color: BoutiqueColors.accent),
+                  onPressed: _handlePrint,
+                  tooltip: 'Print Report',
+                ),
               ),
-              IconButton(
-                icon: const Icon(Icons.download_outlined,
-                    color: BoutiqueColors.accent),
-                onPressed: _handleDownload,
-                tooltip: 'Download PDF',
+              FocusTraversalOrder(
+                order: const NumericFocusOrder(10.0),
+                child: IconButton(
+                  icon: const Icon(Icons.download_outlined,
+                      color: BoutiqueColors.accent),
+                  onPressed: _handleDownload,
+                  tooltip: 'Download PDF',
+                ),
               ),
             ],
           ),
@@ -752,14 +861,17 @@ class _StockReportScreenState extends State<StockReportScreen> {
               // Search Category
               Expanded(
                 flex: 4,
-                child: TextField(
-                  controller: _catSearchCtrl,
-                  autofocus: true,
-                  style: const TextStyle(fontSize: 13),
-                  decoration: BoutiqueInputDecoration.field(
-                    hintText: 'Search category name…',
-                    prefixIcon: const Icon(Icons.search_rounded,
-                        size: 18, color: BoutiqueColors.textSecondary),
+                child: FocusTraversalOrder(
+                  order: const NumericFocusOrder(3.0),
+                  child: TextField(
+                    focusNode: _catSearchFocusNode,
+                    controller: _catSearchCtrl,
+                    style: const TextStyle(fontSize: 13),
+                    decoration: BoutiqueInputDecoration.field(
+                      hintText: 'Search category name…',
+                      prefixIcon: const Icon(Icons.search_rounded,
+                          size: 18, color: BoutiqueColors.textSecondary),
+                    ),
                   ),
                 ),
               ),
@@ -767,76 +879,91 @@ class _StockReportScreenState extends State<StockReportScreen> {
               // Status Filter
               Expanded(
                 flex: 2,
-                child: SearchableDropdownField(
-                  label: 'Closing Status',
-                  value: _catStatusFilter,
-                  items: _catStatusOptions,
-                  onChanged: (v) {
-                    if (v != null) {
-                      setState(() => _catStatusFilter = v);
-                      _applyCategoryFilters();
-                    }
-                  },
+                child: FocusTraversalOrder(
+                  order: const NumericFocusOrder(4.0),
+                  child: SearchableDropdownField(
+                    label: 'Closing Status',
+                    value: _catStatusFilter,
+                    items: _catStatusOptions,
+                    onChanged: (v) {
+                      if (v != null) {
+                        setState(() => _catStatusFilter = v);
+                        _applyCategoryFilters();
+                      }
+                    },
+                  ),
                 ),
               ),
               const SizedBox(width: 12),
               // Expand/Collapse All button
-              OutlinedButton.icon(
-                onPressed: () {
-                  setState(() {
-                    if (_expandedCategories.length ==
-                        _filteredCategoryRows.length) {
-                      _expandedCategories.clear();
-                    } else {
-                      _expandedCategories.addAll(_filteredCategoryRows
-                          .map((e) => e['category'].toString()));
-                    }
-                  });
-                },
-                icon: Icon(
-                  _expandedCategories.length == _filteredCategoryRows.length &&
-                          _filteredCategoryRows.isNotEmpty
-                      ? Icons.unfold_less_rounded
-                      : Icons.unfold_more_rounded,
-                  size: 16,
-                  color: BoutiqueColors.accent,
-                ),
-                label: Text(
-                  _expandedCategories.length == _filteredCategoryRows.length &&
-                          _filteredCategoryRows.isNotEmpty
-                      ? 'Collapse All'
-                      : 'Expand Products',
-                  style: const TextStyle(
-                      fontSize: 12,
-                      color: BoutiqueColors.accent,
-                      fontWeight: FontWeight.w600),
-                ),
-                style: OutlinedButton.styleFrom(
-                  side: const BorderSide(color: BoutiqueColors.border),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8)),
+              FocusTraversalOrder(
+                order: const NumericFocusOrder(5.0),
+                child: OutlinedButton.icon(
+                  onPressed: () {
+                    setState(() {
+                      if (_expandedCategories.length ==
+                          _filteredCategoryRows.length) {
+                        _expandedCategories.clear();
+                      } else {
+                        _expandedCategories.addAll(_filteredCategoryRows
+                            .map((e) => e['category'].toString()));
+                      }
+                    });
+                  },
+                  icon: Icon(
+                    _expandedCategories.length == _filteredCategoryRows.length &&
+                            _filteredCategoryRows.isNotEmpty
+                        ? Icons.unfold_less_rounded
+                        : Icons.unfold_more_rounded,
+                    size: 16,
+                    color: BoutiqueColors.accent,
+                  ),
+                  label: Text(
+                    _expandedCategories.length == _filteredCategoryRows.length &&
+                            _filteredCategoryRows.isNotEmpty
+                        ? 'Collapse All'
+                        : 'Expand Products',
+                    style: const TextStyle(
+                        fontSize: 12,
+                        color: BoutiqueColors.accent,
+                        fontWeight: FontWeight.w600),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: BoutiqueColors.border),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8)),
+                  ),
                 ),
               ),
               const SizedBox(width: 8),
-              IconButton(
-                icon: const Icon(Icons.refresh_rounded,
-                    color: BoutiqueColors.accent),
-                onPressed: _load,
-                tooltip: 'Refresh',
+              FocusTraversalOrder(
+                order: const NumericFocusOrder(6.0),
+                child: IconButton(
+                  icon: const Icon(Icons.refresh_rounded,
+                      color: BoutiqueColors.accent),
+                  onPressed: _load,
+                  tooltip: 'Refresh',
+                ),
               ),
-              IconButton(
-                icon: const Icon(Icons.print_outlined,
-                    color: BoutiqueColors.accent),
-                onPressed: _handleCatPrint,
-                tooltip: 'Print Closing Stock Report',
+              FocusTraversalOrder(
+                order: const NumericFocusOrder(7.0),
+                child: IconButton(
+                  icon: const Icon(Icons.print_outlined,
+                      color: BoutiqueColors.accent),
+                  onPressed: _handleCatPrint,
+                  tooltip: 'Print Closing Stock Report',
+                ),
               ),
-              IconButton(
-                icon: const Icon(Icons.download_outlined,
-                    color: BoutiqueColors.accent),
-                onPressed: _handleCatDownload,
-                tooltip: 'Download Closing Stock PDF',
+              FocusTraversalOrder(
+                order: const NumericFocusOrder(8.0),
+                child: IconButton(
+                  icon: const Icon(Icons.download_outlined,
+                      color: BoutiqueColors.accent),
+                  onPressed: _handleCatDownload,
+                  tooltip: 'Download Closing Stock PDF',
+                ),
               ),
             ],
           ),
@@ -1580,6 +1707,143 @@ class _StockReportScreenState extends State<StockReportScreen> {
               style: const TextStyle(
                   color: BoutiqueColors.textSecondary, fontSize: 14)),
         ],
+      ),
+    );
+  }
+}
+
+// ── Sub-Tab Button for Stock Report with Keyboard Traversal & Visible Highlight ──
+
+class _StockSubTabButton extends StatefulWidget {
+  final FocusNode focusNode;
+  final int index;
+  final IconData icon;
+  final String label;
+  final bool isSelected;
+  final double order;
+  final VoidCallback onSelect;
+  final VoidCallback? onArrowRight;
+  final VoidCallback? onArrowLeft;
+
+  const _StockSubTabButton({
+    required this.focusNode,
+    required this.index,
+    required this.icon,
+    required this.label,
+    required this.isSelected,
+    required this.order,
+    required this.onSelect,
+    this.onArrowRight,
+    this.onArrowLeft,
+  });
+
+  @override
+  State<_StockSubTabButton> createState() => _StockSubTabButtonState();
+}
+
+class _StockSubTabButtonState extends State<_StockSubTabButton> {
+  bool _isFocused = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final isSelected = widget.isSelected;
+    const accent = BoutiqueColors.accent;
+
+    return FocusTraversalOrder(
+      order: NumericFocusOrder(widget.order),
+      child: Focus(
+        focusNode: widget.focusNode,
+        canRequestFocus: true,
+        onFocusChange: (focused) {
+          if (mounted) setState(() => _isFocused = focused);
+        },
+        onKeyEvent: (node, event) {
+          if (event is KeyDownEvent) {
+            if (event.logicalKey == LogicalKeyboardKey.enter ||
+                event.logicalKey == LogicalKeyboardKey.numpadEnter ||
+                event.logicalKey == LogicalKeyboardKey.space) {
+              widget.onSelect();
+              return KeyEventResult.handled;
+            }
+            if (event.logicalKey == LogicalKeyboardKey.arrowRight &&
+                widget.onArrowRight != null) {
+              widget.onArrowRight!();
+              return KeyEventResult.handled;
+            }
+            if (event.logicalKey == LogicalKeyboardKey.arrowLeft &&
+                widget.onArrowLeft != null) {
+              widget.onArrowLeft!();
+              return KeyEventResult.handled;
+            }
+          }
+          return KeyEventResult.ignored;
+        },
+        child: InkWell(
+          canRequestFocus: false,
+          onTap: widget.onSelect,
+          borderRadius: BorderRadius.circular(6),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 150),
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+            decoration: BoxDecoration(
+              color: _isFocused
+                  ? accent.withAlpha(25)
+                  : (isSelected
+                      ? BoutiqueColors.accentSoft.withAlpha(60)
+                      : Colors.transparent),
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(
+                color: _isFocused ? accent : Colors.transparent,
+                width: _isFocused ? 2.0 : 1.0,
+              ),
+              boxShadow: _isFocused
+                  ? [
+                      BoxShadow(
+                        color: accent.withAlpha(60),
+                        blurRadius: 6,
+                        spreadRadius: 1,
+                      ),
+                    ]
+                  : null,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      widget.icon,
+                      size: 16,
+                      color: isSelected ? accent : BoutiqueColors.textSecondary,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      widget.label,
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight:
+                            isSelected ? FontWeight.bold : FontWeight.w500,
+                        color:
+                            isSelected ? accent : BoutiqueColors.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 180),
+                  height: 2.5,
+                  width: isSelected ? 48 : 0,
+                  decoration: BoxDecoration(
+                    color: isSelected ? accent : Colors.transparent,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }

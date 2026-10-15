@@ -5,6 +5,7 @@ import '../models/vendor_issue.dart';
 import '../state/admin_state.dart';
 import '../utils/boutique_theme.dart';
 import '../utils/excel_generator.dart';
+import '../widgets/report_filter_widgets.dart';
 
 class VendorIssueDialog extends StatefulWidget {
   final AdminState state;
@@ -84,7 +85,7 @@ class _VendorIssueDialogState extends State<VendorIssueDialog> {
   }
 
   Future<void> _pickDate() async {
-    final picked = await showDatePicker(
+    final picked = await showBoutiqueDatePicker(
       context: context,
       initialDate: _dateReported,
       firstDate: DateTime(2000),

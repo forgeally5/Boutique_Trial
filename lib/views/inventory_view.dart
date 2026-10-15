@@ -197,11 +197,6 @@ class _InventoryViewState extends State<InventoryView> {
               _selectProductAt(0, filteredList);
               return KeyEventResult.handled;
             }
-          } else if (event.logicalKey == LogicalKeyboardKey.tab &&
-              HardwareKeyboard.instance.isShiftPressed) {
-            // Shift+Tab from search loops back to date filter
-            _dateFilterFocusNode.requestFocus();
-            return KeyEventResult.handled;
           }
         }
         return KeyEventResult.ignored;
@@ -240,14 +235,29 @@ class _InventoryViewState extends State<InventoryView> {
       firstDate: DateTime(2020),
       lastDate: DateTime.now(),
       initialDateRange: _selectedDateRange,
-      builder: (context, child) {
+      barrierDismissible: true,
+      builder: (dialogContext, child) {
         return Theme(
-          data: Theme.of(context).copyWith(
+          data: Theme.of(dialogContext).copyWith(
             colorScheme: const ColorScheme.light(
               primary: BoutiqueColors.accent,
             ),
           ),
-          child: child!,
+          child: FocusScope(
+            autofocus: true,
+            child: Focus(
+              autofocus: true,
+              onKeyEvent: (node, event) {
+                if (event is KeyDownEvent &&
+                    event.logicalKey == LogicalKeyboardKey.escape) {
+                  Navigator.of(dialogContext).pop(null);
+                  return KeyEventResult.handled;
+                }
+                return KeyEventResult.ignored;
+              },
+              child: child!,
+            ),
+          ),
         );
       },
     );
@@ -713,13 +723,6 @@ class _InventoryViewState extends State<InventoryView> {
                                     event.logicalKey == LogicalKeyboardKey.arrowDown) {
                                   _openDateRangePicker(context);
                                   return KeyEventResult.handled;
-                                } else if (event.logicalKey == LogicalKeyboardKey.tab &&
-                                    !HardwareKeyboard.instance.isShiftPressed) {
-                                  // Tab loops back to the search input
-                                  _searchFocusNode.requestFocus();
-                                  _searchCtrl.selection = TextSelection.fromPosition(
-                                      TextPosition(offset: _searchCtrl.text.length));
-                                  return KeyEventResult.handled;
                                 }
                               }
                               return KeyEventResult.ignored;
@@ -792,74 +795,87 @@ class _InventoryViewState extends State<InventoryView> {
 
                 // Main Content View (Table or Grid)
                 Expanded(
-                  child: Focus(
-                    skipTraversal: true,
-                    onKeyEvent: (node, event) {
-                      if (event is KeyDownEvent) {
-                        if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
-                          _selectProductAt(_selectedProductIndex + 1, filteredList);
-                          return KeyEventResult.handled;
-                        } else if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
-                          if (_selectedProductIndex > 0) {
-                            _selectProductAt(_selectedProductIndex - 1, filteredList);
-                          } else {
-                            _searchFocusNode.requestFocus();
-                            _searchCtrl.selection = TextSelection.fromPosition(TextPosition(offset: _searchCtrl.text.length));
+                  child: FocusTraversalOrder(
+                    order: const NumericFocusOrder(8),
+                    child: FocusTraversalGroup(
+                      policy: WidgetOrderTraversalPolicy(),
+                      child: Focus(
+                        canRequestFocus: false,
+                        skipTraversal: true,
+                        onKeyEvent: (node, event) {
+                          if (event is KeyDownEvent) {
+                            if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
+                              _selectProductAt(_selectedProductIndex + 1, filteredList);
+                              return KeyEventResult.handled;
+                            } else if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
+                              if (_selectedProductIndex > 0) {
+                                _selectProductAt(_selectedProductIndex - 1, filteredList);
+                              } else {
+                                _searchFocusNode.requestFocus();
+                                _searchCtrl.selection = TextSelection.fromPosition(TextPosition(offset: _searchCtrl.text.length));
+                              }
+                              return KeyEventResult.handled;
+                            } else if (event.logicalKey == LogicalKeyboardKey.arrowRight) {
+                              final availableActions = _getAvailableActions(perms);
+                              if (availableActions.length > 1 && filteredList.isNotEmpty) {
+                                _focusProductAction(_selectedProductIndex, availableActions[1], filteredList);
+                                return KeyEventResult.handled;
+                              }
+                            } else if (event.logicalKey == LogicalKeyboardKey.escape) {
+                              _searchFocusNode.requestFocus();
+                              _searchCtrl.selection = TextSelection.fromPosition(TextPosition(offset: _searchCtrl.text.length));
+                              return KeyEventResult.handled;
+                            } else if (event.logicalKey == LogicalKeyboardKey.enter && _selectedDrawerProduct == null) {
+                              if (filteredList.isNotEmpty && _selectedProductIndex >= 0 && _selectedProductIndex < filteredList.length) {
+                                setState(() => _selectedDrawerProduct = filteredList[_selectedProductIndex]);
+                                return KeyEventResult.handled;
+                              }
+                            }
                           }
-                          return KeyEventResult.handled;
-                        } else if (event.logicalKey == LogicalKeyboardKey.escape) {
-                          _searchFocusNode.requestFocus();
-                          _searchCtrl.selection = TextSelection.fromPosition(TextPosition(offset: _searchCtrl.text.length));
-                          return KeyEventResult.handled;
-                        } else if (event.logicalKey == LogicalKeyboardKey.enter && _selectedDrawerProduct == null) {
-                          if (filteredList.isNotEmpty && _selectedProductIndex >= 0 && _selectedProductIndex < filteredList.length) {
-                            setState(() => _selectedDrawerProduct = filteredList[_selectedProductIndex]);
-                            return KeyEventResult.handled;
-                          }
-                        }
-                      }
-                      return KeyEventResult.ignored;
-                    },
-                    child: Container(
-                      margin: const EdgeInsets.symmetric(horizontal: 32, vertical: 8),
-                      decoration: BoutiqueDecoration.card(),
-                      child: filteredList.isEmpty
-                          ? const Center(
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(Icons.inventory_outlined, size: 48, color: BoutiqueColors.textMuted),
-                                  SizedBox(height: 12),
-                                  Text('No matching items found in catalog.', style: TextStyle(color: BoutiqueColors.textSecondary, fontSize: 14)),
-                                ],
-                              ),
-                            )
-                          : (_isGridView
-                              ? GridView.builder(
-                                  controller: _listScrollCtrl,
-                                  padding: const EdgeInsets.all(20),
-                                  gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                                    maxCrossAxisExtent: 260,
-                                    childAspectRatio: 0.85,
-                                    crossAxisSpacing: 16,
-                                    mainAxisSpacing: 16,
+                          return KeyEventResult.ignored;
+                        },
+                        child: Container(
+                          margin: const EdgeInsets.symmetric(horizontal: 32, vertical: 8),
+                          decoration: BoutiqueDecoration.card(),
+                          child: filteredList.isEmpty
+                              ? const Center(
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.inventory_outlined, size: 48, color: BoutiqueColors.textMuted),
+                                      SizedBox(height: 12),
+                                      Text('No matching items found in catalog.', style: TextStyle(color: BoutiqueColors.textSecondary, fontSize: 14)),
+                                    ],
                                   ),
-                                  itemCount: filteredList.length,
-                                  itemBuilder: (context, index) {
-                                    final p = filteredList[index];
-                                    return _buildGridCard(p, index, filteredList);
-                                  },
                                 )
-                              : ListView.separated(
-                                  controller: _listScrollCtrl,
-                                  padding: const EdgeInsets.symmetric(vertical: 8),
-                                  itemCount: filteredList.length,
-                                  separatorBuilder: (_, _) => const Divider(height: 1, color: BoutiqueColors.borderLight),
-                                  itemBuilder: (context, index) {
-                                    final p = filteredList[index];
-                                    return _buildTableRow(p, index, filteredList);
-                                  },
-                                )),
+                              : (_isGridView
+                                  ? GridView.builder(
+                                      controller: _listScrollCtrl,
+                                      padding: const EdgeInsets.all(20),
+                                      gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                                        maxCrossAxisExtent: 260,
+                                        childAspectRatio: 0.85,
+                                        crossAxisSpacing: 16,
+                                        mainAxisSpacing: 16,
+                                      ),
+                                      itemCount: filteredList.length,
+                                      itemBuilder: (context, index) {
+                                        final p = filteredList[index];
+                                        return _buildGridCard(p, index, filteredList);
+                                      },
+                                    )
+                                  : ListView.separated(
+                                      controller: _listScrollCtrl,
+                                      padding: const EdgeInsets.symmetric(vertical: 8),
+                                      itemCount: filteredList.length,
+                                      separatorBuilder: (_, _) => const Divider(height: 1, color: BoutiqueColors.borderLight),
+                                      itemBuilder: (context, index) {
+                                        final p = filteredList[index];
+                                        return _buildTableRow(p, index, filteredList);
+                                      },
+                                    )),
+                        ),
+                      ),
                     ),
                   ),
                 ),
@@ -987,16 +1003,20 @@ class _InventoryViewState extends State<InventoryView> {
 
     return Focus(
       focusNode: focusNode,
-      skipTraversal: true,
+      skipTraversal: false,
       onFocusChange: (hasF) {
-        if (hasF && _selectedProductIndex != index) {
-          setState(() => _selectedProductIndex = index);
+        if (hasF) {
+          if (_selectedProductIndex != index) {
+            setState(() => _selectedProductIndex = index);
+          }
+          _scrollToIndex(index);
         }
       },
       onKeyEvent: (node, event) {
         if (event is KeyDownEvent) {
           if (event.logicalKey == LogicalKeyboardKey.enter ||
-              event.logicalKey == LogicalKeyboardKey.space) {
+              event.logicalKey == LogicalKeyboardKey.space ||
+              event.logicalKey == LogicalKeyboardKey.numpadEnter) {
             onPressed();
             return KeyEventResult.handled;
           }
@@ -1013,20 +1033,13 @@ class _InventoryViewState extends State<InventoryView> {
             }
             return KeyEventResult.handled;
           }
-          if (event.logicalKey == LogicalKeyboardKey.tab) {
-            _searchFocusNode.requestFocus();
-            _searchCtrl.selection = TextSelection.fromPosition(TextPosition(offset: _searchCtrl.text.length));
-            return KeyEventResult.handled;
-          }
           if (event.logicalKey == LogicalKeyboardKey.arrowRight) {
             final pos = availableActions.indexOf(action);
             if (pos >= 0 && pos < availableActions.length - 1) {
               _focusProductAction(index, availableActions[pos + 1], list);
               return KeyEventResult.handled;
-            } else if (index + 1 < list.length) {
-              _selectProductAt(index + 1, list);
-              return KeyEventResult.handled;
             }
+            return KeyEventResult.handled;
           }
           if (event.logicalKey == LogicalKeyboardKey.arrowLeft) {
             final pos = availableActions.indexOf(action);
@@ -1049,6 +1062,7 @@ class _InventoryViewState extends State<InventoryView> {
             child: Material(
               color: Colors.transparent,
               child: InkWell(
+                canRequestFocus: false,
                 onTap: onPressed,
                 borderRadius: BorderRadius.circular(8),
                 hoverColor: focusBgColor.withValues(alpha: 0.6),
@@ -1057,25 +1071,25 @@ class _InventoryViewState extends State<InventoryView> {
                   padding: const EdgeInsets.all(7),
                   margin: const EdgeInsets.symmetric(horizontal: 2),
                   decoration: BoxDecoration(
-                    color: isFocused ? focusBgColor : Colors.transparent,
+                    color: isFocused ? focusBorderColor : Colors.transparent,
                     borderRadius: BorderRadius.circular(8),
                     border: Border.all(
                       color: isFocused ? focusBorderColor : Colors.transparent,
-                      width: 1.5,
+                      width: 2.0,
                     ),
                     boxShadow: isFocused
                         ? [
                             BoxShadow(
-                              color: focusBorderColor.withValues(alpha: 0.3),
-                              blurRadius: 4,
-                              spreadRadius: 1,
+                              color: focusBorderColor.withValues(alpha: 0.45),
+                              blurRadius: 8,
+                              spreadRadius: 2,
                             ),
                           ]
                         : null,
                   ),
                   child: Icon(
                     icon,
-                    color: isFocused ? focusBorderColor : color,
+                    color: isFocused ? Colors.white : color,
                     size: 20,
                   ),
                 ),
@@ -1097,10 +1111,13 @@ class _InventoryViewState extends State<InventoryView> {
 
     return Focus(
       focusNode: rowNode,
-      skipTraversal: true,
+      skipTraversal: false,
       onFocusChange: (hasF) {
-        if (hasF && _selectedProductIndex != index) {
-          setState(() => _selectedProductIndex = index);
+        if (hasF) {
+          if (_selectedProductIndex != index) {
+            setState(() => _selectedProductIndex = index);
+          }
+          _scrollToIndex(index);
         }
       },
       onKeyEvent: (node, event) {
@@ -1115,10 +1132,6 @@ class _InventoryViewState extends State<InventoryView> {
               _searchFocusNode.requestFocus();
               _searchCtrl.selection = TextSelection.fromPosition(TextPosition(offset: _searchCtrl.text.length));
             }
-            return KeyEventResult.handled;
-          } else if (event.logicalKey == LogicalKeyboardKey.tab) {
-            _searchFocusNode.requestFocus();
-            _searchCtrl.selection = TextSelection.fromPosition(TextPosition(offset: _searchCtrl.text.length));
             return KeyEventResult.handled;
           } else if (event.logicalKey == LogicalKeyboardKey.arrowRight) {
             if (availableActions.length > 1) {
@@ -1251,7 +1264,7 @@ class _InventoryViewState extends State<InventoryView> {
                       tooltip: 'Download Inward Bill (.xlsx)',
                       onPressed: () async {
                         await ExcelGenerator.downloadInwardBillExcel(products: [p]);
-                        if (!mounted) return;
+                        if (!context.mounted) return;
                         BoutiqueToast.showSuccess(context, 'Inward Bill (.xlsx) downloaded for ${p.tagId}!');
                       },
                     ),
@@ -1300,10 +1313,13 @@ class _InventoryViewState extends State<InventoryView> {
 
     return Focus(
       focusNode: _getItemFocusNode(index),
-      skipTraversal: true,
+      skipTraversal: false,
       onFocusChange: (hasF) {
-        if (hasF && _selectedProductIndex != index) {
-          setState(() => _selectedProductIndex = index);
+        if (hasF) {
+          if (_selectedProductIndex != index) {
+            setState(() => _selectedProductIndex = index);
+          }
+          _scrollToIndex(index);
         }
       },
       onKeyEvent: (node, event) {
@@ -1315,10 +1331,6 @@ class _InventoryViewState extends State<InventoryView> {
           } else if (event.logicalKey == LogicalKeyboardKey.arrowLeft ||
               event.logicalKey == LogicalKeyboardKey.arrowUp) {
             _selectProductAt(index - 1, list);
-            return KeyEventResult.handled;
-          } else if (event.logicalKey == LogicalKeyboardKey.tab) {
-            _searchFocusNode.requestFocus();
-            _searchCtrl.selection = TextSelection.fromPosition(TextPosition(offset: _searchCtrl.text.length));
             return KeyEventResult.handled;
           } else if (event.logicalKey == LogicalKeyboardKey.enter ||
               event.logicalKey == LogicalKeyboardKey.space) {

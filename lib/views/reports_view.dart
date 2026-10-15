@@ -7,16 +7,20 @@ import 'reports/sales_report_screen.dart';
 import 'reports/inward_report_screen.dart';
 
 class ReportsView extends StatefulWidget {
-  const ReportsView({super.key});
+  final bool isActive;
+  const ReportsView({super.key, this.isActive = false});
 
   @override
   State<ReportsView> createState() => _ReportsViewState();
 }
 
 class _ReportsViewState extends State<ReportsView>
-    with SingleTickerProviderStateMixin {
+  with SingleTickerProviderStateMixin {
   late TabController _tabController;
   int _currentTab = 0;
+
+  final GlobalKey<InwardReportScreenState> _inwardReportKey =
+      GlobalKey<InwardReportScreenState>();
 
   final List<FocusNode> _tabFocusNodes = [
     FocusNode(debugLabel: 'tab_issue_report'),
@@ -31,35 +35,54 @@ class _ReportsViewState extends State<ReportsView>
   final FocusNode _inwardSearchFocusNode = FocusNode(debugLabel: 'inward_search');
 
   @override
+  void didUpdateWidget(ReportsView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isActive && !oldWidget.isActive) {
+      if (_currentTab == 3) {
+        _inwardReportKey.currentState?.refresh();
+      }
+    }
+  }
+
+  @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 4, vsync: this);
     _tabController.addListener(() {
       if (_tabController.indexIsChanging || _tabController.index != _currentTab) {
         setState(() => _currentTab = _tabController.index);
-        _focusSearchForTab(_tabController.index);
+        if (_tabController.index == 3) {
+          _inwardReportKey.currentState?.refresh();
+        }
       }
     });
-    _focusSearchForTab(0);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _tabFocusNodes[0].requestFocus();
+      }
+    });
   }
 
   void _focusSearchForTab(int index) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      switch (index) {
-        case 0:
-          _issueSearchFocusNode.requestFocus();
-          break;
-        case 1:
-          _stockSearchFocusNode.requestFocus();
-          break;
-        case 2:
-          _salesSearchFocusNode.requestFocus();
-          break;
-        case 3:
-          _inwardSearchFocusNode.requestFocus();
-          break;
-      }
+      Future.delayed(const Duration(milliseconds: 60), () {
+        if (!mounted) return;
+        switch (index) {
+          case 0:
+            _issueSearchFocusNode.requestFocus();
+            break;
+          case 1:
+            _stockSearchFocusNode.requestFocus();
+            break;
+          case 2:
+            _salesSearchFocusNode.requestFocus();
+            break;
+          case 3:
+            _inwardSearchFocusNode.requestFocus();
+            break;
+        }
+      });
     });
   }
 
@@ -82,164 +105,204 @@ class _ReportsViewState extends State<ReportsView>
       _tabController.animateTo(index);
     }
     _focusSearchForTab(index);
+    if (index == 3) {
+      _inwardReportKey.currentState?.refresh();
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    return FocusTraversalGroup(
-      policy: OrderedTraversalPolicy(),
-      child: Column(
-        children: [
-          // ── Top Header ────────────────────────────────────────────────
-          Container(
-            decoration: const BoxDecoration(
-              color: BoutiqueColors.bgCard,
-              border: Border(
-                bottom: BorderSide(color: BoutiqueColors.border, width: 1),
+    return CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.digit1, alt: true): () => _selectTab(0),
+        const SingleActivator(LogicalKeyboardKey.digit2, alt: true): () => _selectTab(1),
+        const SingleActivator(LogicalKeyboardKey.digit3, alt: true): () => _selectTab(2),
+        const SingleActivator(LogicalKeyboardKey.digit4, alt: true): () => _selectTab(3),
+        const SingleActivator(LogicalKeyboardKey.digit1, control: true, shift: true): () => _selectTab(0),
+        const SingleActivator(LogicalKeyboardKey.digit2, control: true, shift: true): () => _selectTab(1),
+        const SingleActivator(LogicalKeyboardKey.digit3, control: true, shift: true): () => _selectTab(2),
+        const SingleActivator(LogicalKeyboardKey.digit4, control: true, shift: true): () => _selectTab(3),
+      },
+      child: FocusTraversalGroup(
+        policy: OrderedTraversalPolicy(),
+        child: Column(
+          children: [
+            // ── Top Header ────────────────────────────────────────────────
+            Container(
+              decoration: const BoxDecoration(
+                color: BoutiqueColors.bgCard,
+                border: Border(
+                  bottom: BorderSide(color: BoutiqueColors.border, width: 1),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.only(
+                      left: 28,
+                      right: 28,
+                      top: 20,
+                      bottom: 8,
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: BoutiqueColors.accentSoft,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Icon(
+                            Icons.analytics_outlined,
+                            color: BoutiqueColors.accent,
+                            size: 20,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        const Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Reports',
+                              style: TextStyle(
+                                fontFamily: 'serif',
+                                fontSize: 22,
+                                fontWeight: FontWeight.bold,
+                                color: BoutiqueColors.textPrimary,
+                              ),
+                            ),
+                            Text(
+                              'Issue Returns • Stock Overview • Sales Analytics',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: BoutiqueColors.textSecondary,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  // ── Tab Bar Buttons with Ordered Focus Traversal ────────────
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: Row(
+                      children: [
+                        _ReportTabButton(
+                          focusNode: _tabFocusNodes[0],
+                          index: 0,
+                          icon: Icons.assignment_return_rounded,
+                          label: 'Issue Report',
+                          shortcut: 'Alt+1',
+                          isSelected: _currentTab == 0,
+                          order: 1.0,
+                          onSelect: () => _selectTab(0),
+                          onTabNext: () => _tabFocusNodes[1].requestFocus(),
+                          onTabPrev: () => _tabFocusNodes[3].requestFocus(),
+                          onArrowRight: () => _tabFocusNodes[1].requestFocus(),
+                          onArrowLeft: () => _tabFocusNodes[3].requestFocus(),
+                        ),
+                        const SizedBox(width: 6),
+                        _ReportTabButton(
+                          focusNode: _tabFocusNodes[1],
+                          index: 1,
+                          icon: Icons.inventory_2_outlined,
+                          label: 'Stock Report',
+                          shortcut: 'Alt+2',
+                          isSelected: _currentTab == 1,
+                          order: 2.0,
+                          onSelect: () => _selectTab(1),
+                          onTabNext: () => _tabFocusNodes[2].requestFocus(),
+                          onTabPrev: () => _tabFocusNodes[0].requestFocus(),
+                          onArrowRight: () => _tabFocusNodes[2].requestFocus(),
+                          onArrowLeft: () => _tabFocusNodes[0].requestFocus(),
+                        ),
+                        const SizedBox(width: 6),
+                        _ReportTabButton(
+                          focusNode: _tabFocusNodes[2],
+                          index: 2,
+                          icon: Icons.bar_chart_rounded,
+                          label: 'Sales Report',
+                          shortcut: 'Alt+3',
+                          isSelected: _currentTab == 2,
+                          order: 3.0,
+                          onSelect: () => _selectTab(2),
+                          onTabNext: () => _tabFocusNodes[3].requestFocus(),
+                          onTabPrev: () => _tabFocusNodes[1].requestFocus(),
+                          onArrowRight: () => _tabFocusNodes[3].requestFocus(),
+                          onArrowLeft: () => _tabFocusNodes[1].requestFocus(),
+                        ),
+                        const SizedBox(width: 6),
+                        _ReportTabButton(
+                          focusNode: _tabFocusNodes[3],
+                          index: 3,
+                          icon: Icons.input_rounded,
+                          label: 'Inward Report',
+                          shortcut: 'Alt+4',
+                          isSelected: _currentTab == 3,
+                          order: 4.0,
+                          onSelect: () => _selectTab(3),
+                          onTabNext: () => _tabFocusNodes[0].requestFocus(),
+                          onTabPrev: () => _tabFocusNodes[2].requestFocus(),
+                          onArrowRight: () => _tabFocusNodes[0].requestFocus(),
+                          onArrowLeft: () => _tabFocusNodes[2].requestFocus(),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.only(
-                    left: 28,
-                    right: 28,
-                    top: 20,
-                    bottom: 8,
-                  ),
-                  child: Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: BoutiqueColors.accentSoft,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: const Icon(
-                          Icons.analytics_outlined,
-                          color: BoutiqueColors.accent,
-                          size: 20,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      const Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Reports',
-                            style: TextStyle(
-                              fontFamily: 'serif',
-                              fontSize: 22,
-                              fontWeight: FontWeight.bold,
-                              color: BoutiqueColors.textPrimary,
-                            ),
-                          ),
-                          Text(
-                            'Issue Returns • Stock Overview • Sales Analytics',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: BoutiqueColors.textSecondary,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                // ── Tab Bar Buttons with Ordered Focus Traversal ────────────
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: Row(
-                    children: [
-                      _ReportTabButton(
-                        focusNode: _tabFocusNodes[0],
-                        index: 0,
-                        icon: Icons.assignment_return_rounded,
-                        label: 'Issue Report',
-                        isSelected: _currentTab == 0,
-                        order: 1.0,
-                        onSelect: () => _selectTab(0),
-                        onArrowRight: () => _tabFocusNodes[1].requestFocus(),
-                        onArrowLeft: null,
-                      ),
-                      const SizedBox(width: 6),
-                      _ReportTabButton(
-                        focusNode: _tabFocusNodes[1],
-                        index: 1,
-                        icon: Icons.inventory_2_outlined,
-                        label: 'Stock Report',
-                        isSelected: _currentTab == 1,
-                        order: 2.0,
-                        onSelect: () => _selectTab(1),
-                        onArrowRight: () => _tabFocusNodes[2].requestFocus(),
-                        onArrowLeft: () => _tabFocusNodes[0].requestFocus(),
-                      ),
-                      const SizedBox(width: 6),
-                      _ReportTabButton(
-                        focusNode: _tabFocusNodes[2],
-                        index: 2,
-                        icon: Icons.bar_chart_rounded,
-                        label: 'Sales Report',
-                        isSelected: _currentTab == 2,
-                        order: 3.0,
-                        onSelect: () => _selectTab(2),
-                        onArrowRight: () => _tabFocusNodes[3].requestFocus(),
-                        onArrowLeft: () => _tabFocusNodes[1].requestFocus(),
-                      ),
-                      const SizedBox(width: 6),
-                      _ReportTabButton(
-                        focusNode: _tabFocusNodes[3],
-                        index: 3,
-                        icon: Icons.input_rounded,
-                        label: 'Inward Report',
-                        isSelected: _currentTab == 3,
-                        order: 4.0,
-                        onSelect: () => _selectTab(3),
-                        onArrowRight: null,
-                        onArrowLeft: () => _tabFocusNodes[2].requestFocus(),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
 
           // ── Tab Body ──────────────────────────────────────────────────
           Expanded(
-            child: TabBarView(
-              controller: _tabController,
-              children: [
-                FocusScope(
-                  child: FocusTraversalGroup(
-                    policy: OrderedTraversalPolicy(),
-                    child: IssueReportScreen(searchFocusNode: _issueSearchFocusNode),
+            child: Focus(
+              onKeyEvent: (node, event) {
+                if (event is KeyDownEvent &&
+                    event.logicalKey == LogicalKeyboardKey.escape) {
+                  _tabFocusNodes[_currentTab].requestFocus();
+                  return KeyEventResult.handled;
+                }
+                return KeyEventResult.ignored;
+              },
+              child: TabBarView(
+                controller: _tabController,
+                children: [
+                  FocusScope(
+                    child: FocusTraversalGroup(
+                      policy: OrderedTraversalPolicy(),
+                      child: IssueReportScreen(searchFocusNode: _issueSearchFocusNode),
+                    ),
                   ),
-                ),
-                FocusScope(
-                  child: FocusTraversalGroup(
-                    policy: OrderedTraversalPolicy(),
-                    child: StockReportScreen(searchFocusNode: _stockSearchFocusNode),
+                  FocusScope(
+                    child: FocusTraversalGroup(
+                      policy: OrderedTraversalPolicy(),
+                      child: StockReportScreen(searchFocusNode: _stockSearchFocusNode),
+                    ),
                   ),
-                ),
-                FocusScope(
-                  child: FocusTraversalGroup(
-                    policy: OrderedTraversalPolicy(),
-                    child: SalesReportScreen(searchFocusNode: _salesSearchFocusNode),
+                  FocusScope(
+                    child: FocusTraversalGroup(
+                      policy: OrderedTraversalPolicy(),
+                      child: SalesReportScreen(searchFocusNode: _salesSearchFocusNode),
+                    ),
                   ),
-                ),
-                FocusScope(
-                  child: FocusTraversalGroup(
-                    policy: OrderedTraversalPolicy(),
-                    child: InwardReportScreen(searchFocusNode: _inwardSearchFocusNode),
+                  FocusScope(
+                    child: FocusTraversalGroup(
+                      policy: OrderedTraversalPolicy(),
+                      child: InwardReportScreen(
+                        key: _inwardReportKey,
+                        searchFocusNode: _inwardSearchFocusNode,
+                      ),
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ],
       ),
+    ),
     );
   }
 }
@@ -251,9 +314,12 @@ class _ReportTabButton extends StatefulWidget {
   final int index;
   final IconData icon;
   final String label;
+  final String? shortcut;
   final bool isSelected;
   final double order;
   final VoidCallback onSelect;
+  final VoidCallback? onTabNext;
+  final VoidCallback? onTabPrev;
   final VoidCallback? onArrowRight;
   final VoidCallback? onArrowLeft;
 
@@ -262,9 +328,12 @@ class _ReportTabButton extends StatefulWidget {
     required this.index,
     required this.icon,
     required this.label,
+    this.shortcut,
     required this.isSelected,
     required this.order,
     required this.onSelect,
+    this.onTabNext,
+    this.onTabPrev,
     this.onArrowRight,
     this.onArrowLeft,
   });
@@ -281,12 +350,14 @@ class _ReportTabButtonState extends State<_ReportTabButton> {
     final isSelected = widget.isSelected;
     const accent = BoutiqueColors.accent;
 
-    return Focus(
-      focusNode: widget.focusNode,
-      canRequestFocus: false,
-      onFocusChange: (focused) {
-        if (mounted) setState(() => _isFocused = focused);
-      },
+    return FocusTraversalOrder(
+      order: NumericFocusOrder(widget.order),
+      child: Focus(
+        focusNode: widget.focusNode,
+        canRequestFocus: true,
+        onFocusChange: (focused) {
+          if (mounted) setState(() => _isFocused = focused);
+        },
         onKeyEvent: (node, event) {
           if (event is KeyDownEvent) {
             if (event.logicalKey == LogicalKeyboardKey.enter ||
@@ -294,6 +365,16 @@ class _ReportTabButtonState extends State<_ReportTabButton> {
                 event.logicalKey == LogicalKeyboardKey.space) {
               widget.onSelect();
               return KeyEventResult.handled;
+            }
+            if (event.logicalKey == LogicalKeyboardKey.tab) {
+              final isShift = HardwareKeyboard.instance.isShiftPressed;
+              if (isShift && widget.onTabPrev != null) {
+                widget.onTabPrev!();
+                return KeyEventResult.handled;
+              } else if (!isShift && widget.onTabNext != null) {
+                widget.onTabNext!();
+                return KeyEventResult.handled;
+              }
             }
             if (event.logicalKey == LogicalKeyboardKey.arrowRight &&
                 widget.onArrowRight != null) {
@@ -358,6 +439,19 @@ class _ReportTabButtonState extends State<_ReportTabButton> {
                         color: isSelected ? accent : BoutiqueColors.textSecondary,
                       ),
                     ),
+                    if (widget.shortcut != null) ...[
+                      const SizedBox(width: 5),
+                      Text(
+                        '(${widget.shortcut})',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w500,
+                          color: isSelected
+                              ? accent.withValues(alpha: 0.8)
+                              : BoutiqueColors.textSecondary.withValues(alpha: 0.7),
+                        ),
+                      ),
+                    ],
                   ],
                 ),
                 const SizedBox(height: 4),
