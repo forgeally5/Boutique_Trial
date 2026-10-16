@@ -77,15 +77,32 @@ class BoutiquePdfGenerator {
     var subtotal = (bill['subtotal'] as num?)?.toDouble() ?? 0.0;
     var discAmt = (bill['extraDiscountAmount'] as num?)?.toDouble() ?? 0.0;
     var taxAmt = (bill['taxAmount'] as num?)?.toDouble() ?? 0.0;
-    final total = (bill['totalPayable'] as num?)?.toDouble() ?? 0.0;
+    var total = (bill['totalPayable'] as num?)?.toDouble() ?? 0.0;
     final adjustment = (bill['adjustment'] as num?)?.toDouble() ?? 0.0;
+
+    // Fallback if total or subtotal is 0 but items have amounts
+    if (total == 0 && items.isNotEmpty) {
+      double itemsTotal = 0.0;
+      for (final it in items) {
+        final p = (it['price'] as num?)?.toDouble() ?? (it['rate'] as num?)?.toDouble() ?? 0.0;
+        final q = (it['qty'] as num?)?.toDouble() ?? 1.0;
+        final w = (it['weight'] as num?)?.toDouble() ?? 0.0;
+        var a = (it['lineAmount'] as num?)?.toDouble() ?? (it['amount'] as num?)?.toDouble() ?? 0.0;
+        if (a <= 0 && p > 0) a = w > 0 ? (p * w) : (p * q);
+        itemsTotal += a;
+      }
+      total = itemsTotal;
+      if (subtotal == 0) subtotal = itemsTotal;
+    } else if (subtotal == 0 && total > 0) {
+      subtotal = total;
+    }
     
     if (adjustment != 0 && items.isNotEmpty) {
-      double currentSum = items.fold(0.0, (s, i) => s + ((i['lineAmount'] as num?)?.toDouble() ?? 0.0));
+      double currentSum = items.fold(0.0, (s, i) => s + (((i['lineAmount'] ?? i['amount']) as num?)?.toDouble() ?? 0.0));
       if (currentSum > 0) {
         for (int i = 0; i < items.length; i++) {
           final r = Map<String, dynamic>.from(items[i]);
-          final originalLineAmt = (r['lineAmount'] as num?)?.toDouble() ?? 0.0;
+          final originalLineAmt = ((r['lineAmount'] ?? r['amount']) as num?)?.toDouble() ?? 0.0;
           final originalQty = (r['qty'] as num?)?.toDouble() ?? 1.0;
           
           final newLineAmt = (originalLineAmt / currentSum) * total;
@@ -184,12 +201,21 @@ class BoutiquePdfGenerator {
                         crossAxisAlignment: pw.CrossAxisAlignment.start,
                         children: [
                           pw.Text(
-                            billType == 'Advance Payment' ? 'ADVANCE' : 'INVOICE',
+                            billType == 'Advance Payment'
+                                ? 'ADVANCE'
+                                : (billType == 'Return' || billType == 'Customer Return')
+                                    ? 'CUSTOMER RETURN'
+                                    : (billType == 'Vendor Issue')
+                                        ? 'VENDOR RETURN'
+                                        : (billType == 'Inward' || billType == 'Stock Inward')
+                                            ? 'STOCK INWARD'
+                                            : 'INVOICE',
                             style: pw.TextStyle(
                               font: fontSerif,
-                              fontSize: 16,
+                              fontSize: (billType == 'Customer Return' || billType == 'Vendor Issue' || billType == 'Stock Inward') ? 13 : 16,
                               color: maroon,
-                              letterSpacing: 1.5,
+                              letterSpacing: 1.2,
+                              fontWeight: pw.FontWeight.bold,
                             ),
                           ),
                           pw.SizedBox(height: 4),
@@ -199,7 +225,16 @@ class BoutiquePdfGenerator {
                           pw.Row(
                             mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                             children: [
-                              pw.Text('INVOICE NO.', style: pw.TextStyle(fontSize: 6, color: textLight)),
+                              pw.Text(
+                                (billType == 'Return' || billType == 'Customer Return')
+                                    ? 'RETURN NO.'
+                                    : (billType == 'Vendor Issue')
+                                        ? 'ISSUE NO.'
+                                        : (billType == 'Inward' || billType == 'Stock Inward')
+                                            ? 'INWARD NO.'
+                                            : 'INVOICE NO.',
+                                style: pw.TextStyle(fontSize: 6, color: textLight),
+                              ),
                               underlineText(billNo),
                             ],
                           ),
@@ -218,8 +253,17 @@ class BoutiquePdfGenerator {
                 ),
                 pw.SizedBox(height: 20),
                 
-                // INVOICE TO
-                pw.Text('INVOICE TO', style: pw.TextStyle(fontSize: 8, letterSpacing: 1, color: textDark, fontWeight: pw.FontWeight.bold)),
+                // INVOICE TO / PARTY
+                pw.Text(
+                  (billType == 'Vendor Issue')
+                      ? 'VENDOR / SUPPLIER'
+                      : (billType == 'Inward' || billType == 'Stock Inward')
+                          ? 'SUPPLIER / SOURCE'
+                          : (billType == 'Return' || billType == 'Customer Return')
+                              ? 'CUSTOMER'
+                              : 'INVOICE TO',
+                  style: pw.TextStyle(fontSize: 8, letterSpacing: 1, color: textDark, fontWeight: pw.FontWeight.bold),
+                ),
                 pw.SizedBox(height: 6),
                 underlineText(customerName.isEmpty ? 'Walk-in Customer' : customerName),
                 pw.SizedBox(height: 4),
@@ -254,14 +298,19 @@ class BoutiquePdfGenerator {
                     ...items.asMap().entries.map((e) {
                       final i = e.key + 1;
                       final r = e.value as Map<String, dynamic>;
-                      final itemName = r['name']?.toString() ?? '';
+                      final itemName = r['name']?.toString() ?? r['productName']?.toString() ?? '';
+                      final tagId = r['tagId']?.toString() ?? '';
+                      final displayName = tagId.isNotEmpty && !itemName.contains(tagId) ? '$itemName ($tagId)' : itemName;
                       final qty = (r['qty'] as num?)?.toDouble() ?? 1.0;
-                      final price = (r['price'] as num?)?.toDouble() ?? 0.0;
-                      final lineAmt = (r['lineAmount'] as num?)?.toDouble() ?? 0.0;
+                      final price = (r['price'] as num?)?.toDouble() ?? (r['rate'] as num?)?.toDouble() ?? 0.0;
                       final weight = (r['weight'] as num?)?.toDouble() ?? 0.0;
                       final unit = (r['unit']?.toString().isNotEmpty == true) ? r['unit'].toString() : 'g';
                       final isWeight = r['pricingType'] == 'Weight-Based' || weight > 0;
                       final weightStr = weight.toStringAsFixed(weight.truncateToDouble() == weight ? 0 : 2);
+                      var lineAmt = (r['lineAmount'] as num?)?.toDouble() ?? (r['amount'] as num?)?.toDouble() ?? 0.0;
+                      if (lineAmt <= 0 && price > 0) {
+                        lineAmt = isWeight && weight > 0 ? (price * weight) : (price * qty);
+                      }
 
                       final priceDisplay = isWeight ? '${price.toStringAsFixed(2)}/$unit' : price.toStringAsFixed(2);
                       final qtyDisplay = isWeight
@@ -271,7 +320,7 @@ class BoutiquePdfGenerator {
                       return pw.TableRow(
                         children: [
                           pdfCell(i.toString(), align: pw.Alignment.center),
-                          pdfCell(itemName, align: pw.Alignment.centerLeft),
+                          pdfCell(displayName, align: pw.Alignment.centerLeft),
                           pdfCell(priceDisplay, align: pw.Alignment.center),
                           pdfCell(qtyDisplay, align: pw.Alignment.center),
                           pdfCell(lineAmt.toStringAsFixed(2), align: pw.Alignment.center),

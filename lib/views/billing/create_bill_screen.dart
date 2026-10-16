@@ -17,7 +17,14 @@ class CreateBillScreen extends StatefulWidget {
   final AdminState state;
   final VoidCallback? onSaved;
   final Map<String, dynamic>? initialBill;
-  const CreateBillScreen({super.key, required this.state, this.onSaved, this.initialBill});
+  final FocusNode? firstFieldFocusNode;
+  const CreateBillScreen({
+    super.key,
+    required this.state,
+    this.onSaved,
+    this.initialBill,
+    this.firstFieldFocusNode,
+  });
 
   @override
   State<CreateBillScreen> createState() => _CreateBillScreenState();
@@ -35,7 +42,8 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
   final _customerNameCtrl = TextEditingController();
   final _customerMobileCtrl = TextEditingController();
   final _customerAddressCtrl = TextEditingController();
-  final _customerNameFocusNode = FocusNode();
+  late final FocusNode _customerNameFocusNode;
+  bool _ownsCustomerNameFocusNode = false;
   final _customerMobileFocusNode = FocusNode();
   final _narrationFocusNode = FocusNode();
 
@@ -77,6 +85,13 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
   @override
   void initState() {
     super.initState();
+    if (widget.firstFieldFocusNode != null) {
+      _customerNameFocusNode = widget.firstFieldFocusNode!;
+      _ownsCustomerNameFocusNode = false;
+    } else {
+      _customerNameFocusNode = FocusNode(debugLabel: 'create_bill_customer_name');
+      _ownsCustomerNameFocusNode = true;
+    }
     _cachedProducts = widget.state.products;
     
     if (widget.initialBill != null) {
@@ -279,7 +294,9 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
     _customerNameCtrl.dispose();
     _customerMobileCtrl.dispose();
     _customerAddressCtrl.dispose();
-    _customerNameFocusNode.dispose();
+    if (_ownsCustomerNameFocusNode) {
+      _customerNameFocusNode.dispose();
+    }
     _customerMobileFocusNode.dispose();
     _narrationFocusNode.dispose();
     for (var f in _customFields) {
@@ -1054,7 +1071,7 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
                   focusNode: _customerNameFocusNode,
                   labelText: 'Customer Name',
                   hintText: 'Walk-in Customer',
-                  autofocus: true,
+                  autofocus: false,
                   textInputAction: TextInputAction.next,
                   nextFocusNode: _customerMobileFocusNode,
                   optionsBuilder: (query) {
@@ -1444,7 +1461,7 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
           return TextField(
             controller: textCtrl,
             focusNode: focusNode,
-            autofocus: true,
+            autofocus: false,
             style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
             decoration: InputDecoration(
               filled: true,

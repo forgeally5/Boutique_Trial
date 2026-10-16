@@ -30,7 +30,8 @@ class _SalesReportScreenState extends State<SalesReportScreen>
   late TabController _tabController;
   int _currentTab = 0;
 
-  late final FocusNode _productWiseTabFocusNode;
+  late FocusNode _productWiseTabFocusNode;
+  bool _ownProductWiseTabFocusNode = false;
   final FocusNode _totalSalesTabFocusNode =
       FocusNode(debugLabel: 'subtab_total_sales');
 
@@ -49,20 +50,12 @@ class _SalesReportScreenState extends State<SalesReportScreen>
       }
     });
 
-    _productWiseTabFocusNode =
-        FocusNode(debugLabel: 'subtab_product_wise_sales');
-
     if (widget.searchFocusNode != null) {
-      widget.searchFocusNode!.addListener(_onExternalSearchFocus);
-    }
-  }
-
-  void _onExternalSearchFocus() {
-    if (widget.searchFocusNode?.hasFocus == true) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        _productWiseTabFocusNode.requestFocus();
-      });
+      _productWiseTabFocusNode = widget.searchFocusNode!;
+    } else {
+      _productWiseTabFocusNode =
+          FocusNode(debugLabel: 'subtab_product_wise_sales');
+      _ownProductWiseTabFocusNode = true;
     }
   }
 
@@ -70,7 +63,10 @@ class _SalesReportScreenState extends State<SalesReportScreen>
     if (_currentTab != index) {
       setState(() => _currentTab = index);
       _tabController.animateTo(index);
-      WidgetsBinding.instance.addPostFrameCallback((_) {
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      Future.delayed(const Duration(milliseconds: 50), () {
         if (!mounted) return;
         if (index == 0) {
           _productWiseSearchFocusNode.requestFocus();
@@ -78,19 +74,14 @@ class _SalesReportScreenState extends State<SalesReportScreen>
           _totalSalesSearchFocusNode.requestFocus();
         }
       });
-    } else {
-      if (index == 0) {
-        _productWiseSearchFocusNode.requestFocus();
-      } else {
-        _totalSalesSearchFocusNode.requestFocus();
-      }
-    }
+    });
   }
 
   @override
   void dispose() {
-    widget.searchFocusNode?.removeListener(_onExternalSearchFocus);
-    _productWiseTabFocusNode.dispose();
+    if (_ownProductWiseTabFocusNode) {
+      _productWiseTabFocusNode.dispose();
+    }
     _totalSalesTabFocusNode.dispose();
     _productWiseSearchFocusNode.dispose();
     _totalSalesSearchFocusNode.dispose();
@@ -123,10 +114,9 @@ class _SalesReportScreenState extends State<SalesReportScreen>
                   isSelected: _currentTab == 0,
                   order: 1.0,
                   onSelect: () => _selectSubTab(0),
-                  onTabNext: () => _totalSalesTabFocusNode.requestFocus(),
-                  onTabPrev: widget.onReturnToMainTab,
                   onArrowRight: () => _totalSalesTabFocusNode.requestFocus(),
-                  onArrowLeft: widget.onReturnToMainTab,
+                  onArrowLeft: null,
+                  onShiftTab: widget.onReturnToMainTab,
                 ),
                 const SizedBox(width: 6),
                 _SalesSubTabButton(
@@ -137,16 +127,9 @@ class _SalesReportScreenState extends State<SalesReportScreen>
                   isSelected: _currentTab == 1,
                   order: 2.0,
                   onSelect: () => _selectSubTab(1),
-                  onTabNext: () {
-                    if (_currentTab == 0) {
-                      _productWiseSearchFocusNode.requestFocus();
-                    } else {
-                      _totalSalesSearchFocusNode.requestFocus();
-                    }
-                  },
-                  onTabPrev: () => _productWiseTabFocusNode.requestFocus(),
                   onArrowRight: null,
                   onArrowLeft: () => _productWiseTabFocusNode.requestFocus(),
+                  onShiftTab: widget.onReturnToMainTab,
                 ),
               ],
             ),
@@ -168,6 +151,7 @@ class _SalesReportScreenState extends State<SalesReportScreen>
                   },
                   child: _ProductWiseSalesTab(
                     searchFocusNode: _productWiseSearchFocusNode,
+                    onShiftTab: () => _productWiseTabFocusNode.requestFocus(),
                   ),
                 ),
                 Focus(
@@ -181,6 +165,7 @@ class _SalesReportScreenState extends State<SalesReportScreen>
                   },
                   child: _TotalSalesTab(
                     searchFocusNode: _totalSalesSearchFocusNode,
+                    onShiftTab: () => _totalSalesTabFocusNode.requestFocus(),
                   ),
                 ),
               ],
@@ -202,10 +187,9 @@ class _SalesSubTabButton extends StatefulWidget {
   final bool isSelected;
   final double order;
   final VoidCallback onSelect;
-  final VoidCallback? onTabNext;
-  final VoidCallback? onTabPrev;
   final VoidCallback? onArrowRight;
   final VoidCallback? onArrowLeft;
+  final VoidCallback? onShiftTab;
 
   const _SalesSubTabButton({
     required this.focusNode,
@@ -215,10 +199,9 @@ class _SalesSubTabButton extends StatefulWidget {
     required this.isSelected,
     required this.order,
     required this.onSelect,
-    this.onTabNext,
-    this.onTabPrev,
     this.onArrowRight,
     this.onArrowLeft,
+    this.onShiftTab,
   });
 
   @override
@@ -249,13 +232,10 @@ class _SalesSubTabButtonState extends State<_SalesSubTabButton> {
               widget.onSelect();
               return KeyEventResult.handled;
             }
-            if (event.logicalKey == LogicalKeyboardKey.tab) {
-              final isShift = HardwareKeyboard.instance.isShiftPressed;
-              if (isShift && widget.onTabPrev != null) {
-                widget.onTabPrev!();
-                return KeyEventResult.handled;
-              } else if (!isShift && widget.onTabNext != null) {
-                widget.onTabNext!();
+            if (event.logicalKey == LogicalKeyboardKey.tab &&
+                HardwareKeyboard.instance.isShiftPressed) {
+              if (widget.onShiftTab != null) {
+                widget.onShiftTab!();
                 return KeyEventResult.handled;
               }
             }
@@ -887,7 +867,8 @@ class _IndividualSalesTabState extends State<_IndividualSalesTab> {
 
 class _TotalSalesTab extends StatefulWidget {
   final FocusNode? searchFocusNode;
-  const _TotalSalesTab({this.searchFocusNode});
+  final VoidCallback? onShiftTab;
+  const _TotalSalesTab({this.searchFocusNode, this.onShiftTab});
 
   @override
   State<_TotalSalesTab> createState() => _TotalSalesTabState();
@@ -929,6 +910,18 @@ class _TotalSalesTabState extends State<_TotalSalesTab> {
     _dateTo = now;
     _load();
     _searchCtrl.addListener(_applyFilters);
+
+    _searchFocusNode.onKeyEvent = (node, event) {
+      if (event is KeyDownEvent &&
+          event.logicalKey == LogicalKeyboardKey.tab &&
+          HardwareKeyboard.instance.isShiftPressed) {
+        if (widget.onShiftTab != null) {
+          widget.onShiftTab!();
+          return KeyEventResult.handled;
+        }
+      }
+      return KeyEventResult.ignored;
+    };
   }
 
   @override
@@ -1491,7 +1484,8 @@ class _TotalSalesTabState extends State<_TotalSalesTab> {
 
 class _ProductWiseSalesTab extends StatefulWidget {
   final FocusNode? searchFocusNode;
-  const _ProductWiseSalesTab({this.searchFocusNode});
+  final VoidCallback? onShiftTab;
+  const _ProductWiseSalesTab({this.searchFocusNode, this.onShiftTab});
 
   @override
   State<_ProductWiseSalesTab> createState() => _ProductWiseSalesTabState();
@@ -1538,11 +1532,18 @@ class _ProductWiseSalesTabState extends State<_ProductWiseSalesTab> {
     _dateTo = now;
     _load();
     _searchCtrl.addListener(_applyFilters);
-    if (widget.searchFocusNode == null) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _searchFocusNode.requestFocus();
-      });
-    }
+
+    _searchFocusNode.onKeyEvent = (node, event) {
+      if (event is KeyDownEvent &&
+          event.logicalKey == LogicalKeyboardKey.tab &&
+          HardwareKeyboard.instance.isShiftPressed) {
+        if (widget.onShiftTab != null) {
+          widget.onShiftTab!();
+          return KeyEventResult.handled;
+        }
+      }
+      return KeyEventResult.ignored;
+    };
   }
 
   @override

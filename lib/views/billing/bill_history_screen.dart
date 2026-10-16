@@ -38,7 +38,8 @@ String _formatPaymentBreakdown(Map<String, dynamic> b) {
 class BillHistoryScreen extends StatefulWidget {
   final AdminState? state;
   final ValueChanged<Map<String, dynamic>>? onEditBill;
-  const BillHistoryScreen({super.key, this.state, this.onEditBill});
+  final FocusNode? searchFocusNode;
+  const BillHistoryScreen({super.key, this.state, this.onEditBill, this.searchFocusNode});
 
   @override
   State<BillHistoryScreen> createState() => _BillHistoryScreenState();
@@ -53,6 +54,7 @@ class _BillHistoryScreenState extends State<BillHistoryScreen> {
 
   final _searchCtrl = TextEditingController();
   late final FocusNode _searchFocusNode;
+  bool _ownsSearchFocusNode = false;
   late final FocusNode _paymentModeFocusNode;
   final ScrollController _scrollCtrl = ScrollController();
   int _selectedBillIndex = -1;
@@ -158,25 +160,25 @@ class _BillHistoryScreenState extends State<BillHistoryScreen> {
   @override
   void initState() {
     super.initState();
-    _searchFocusNode = FocusNode(
-      debugLabel: 'bill_history_search',
-      onKeyEvent: (node, event) {
-        if (event is KeyDownEvent) {
-          if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
-            final bills = _displayedBills;
-            if (bills.isNotEmpty) {
-              _selectBillAt(0, bills);
-              return KeyEventResult.handled;
-            }
-          } else if (event.logicalKey == LogicalKeyboardKey.tab &&
-              HardwareKeyboard.instance.isShiftPressed) {
-            _paymentModeFocusNode.requestFocus();
+    if (widget.searchFocusNode != null) {
+      _searchFocusNode = widget.searchFocusNode!;
+      _ownsSearchFocusNode = false;
+    } else {
+      _searchFocusNode = FocusNode(debugLabel: 'bill_history_search');
+      _ownsSearchFocusNode = true;
+    }
+    _searchFocusNode.onKeyEvent = (node, event) {
+      if (event is KeyDownEvent) {
+        if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
+          final bills = _displayedBills;
+          if (bills.isNotEmpty) {
+            _selectBillAt(0, bills);
             return KeyEventResult.handled;
           }
         }
-        return KeyEventResult.ignored;
-      },
-    );
+      }
+      return KeyEventResult.ignored;
+    };
     _paymentModeFocusNode = FocusNode(
       debugLabel: 'bill_history_payment_mode',
       onKeyEvent: (node, event) {
@@ -203,7 +205,9 @@ class _BillHistoryScreenState extends State<BillHistoryScreen> {
   @override
   void dispose() {
     _searchCtrl.dispose();
-    _searchFocusNode.dispose();
+    if (_ownsSearchFocusNode) {
+      _searchFocusNode.dispose();
+    }
     _paymentModeFocusNode.dispose();
     _scrollCtrl.dispose();
     _clearBillFocusNodes();
@@ -575,7 +579,7 @@ class _BillHistoryScreenState extends State<BillHistoryScreen> {
                       child: TextField(
                         controller: _searchCtrl,
                         focusNode: _searchFocusNode,
-                        autofocus: true,
+                        autofocus: false,
                         style: const TextStyle(fontSize: 13),
                         decoration: BoutiqueInputDecoration.field(
                           hintText: 'Search bill #, customer, mobile...',
@@ -1673,9 +1677,14 @@ class _BillDetailDialogState extends State<_BillDetailDialog> {
   Future<void> _handleSavePdf(BuildContext context) async {
     try {
       final bytes = await BoutiquePdfGenerator.generate(widget.bill);
+      final rawDate = widget.bill['billDate'] ?? widget.bill['voucherDate'];
+      final billDate = rawDate is DateTime
+          ? rawDate
+          : (rawDate != null ? DateTime.tryParse(rawDate.toString()) : null) ?? DateTime.now();
+      final dateStr = DateFormat('dd-MM-yyyy').format(billDate);
       await Printing.sharePdf(
         bytes: bytes,
-        filename: 'Invoice_${widget.bill['billNo'] ?? 'Unknown'}.pdf',
+        filename: 'Invoice_${widget.bill['billNo'] ?? 'Bill'}_$dateStr.pdf',
       );
     } catch (e) {
       if (context.mounted) BoutiqueToast.showError(context, 'Failed to download invoice: $e');

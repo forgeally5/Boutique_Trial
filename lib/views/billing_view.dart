@@ -42,11 +42,31 @@ class BillingViewState extends State<BillingView> {
     FocusNode(debugLabel: 'tab_customer_ledger'),
   ];
 
+  final FocusNode _createBillFocusNode = FocusNode(debugLabel: 'create_bill_first_field');
+  final FocusNode _billHistoryFocusNode = FocusNode(debugLabel: 'bill_history_first_field');
+  final FocusNode _customerLedgerFocusNode = FocusNode(debugLabel: 'customer_ledger_first_field');
+
+  @override
+  void initState() {
+    super.initState();
+    _tab = widget.initialSection == 'Bill History'
+        ? 1
+        : (widget.initialSection == 'Customer Ledger' ? 2 : 0);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _tabFocus[_tab].requestFocus();
+      }
+    });
+  }
+
   @override
   void dispose() {
     for (final fn in _tabFocus) {
       fn.dispose();
     }
+    _createBillFocusNode.dispose();
+    _billHistoryFocusNode.dispose();
+    _customerLedgerFocusNode.dispose();
     super.dispose();
   }
 
@@ -59,20 +79,50 @@ class BillingViewState extends State<BillingView> {
     ];
   }
 
-  void selectTab(int index) {
+  void selectTab(int index, {bool focusFirstField = true}) {
     final authUser = context.read<AuthViewModel>().appUser;
     final perms = authUser?.permissions ?? PermissionsModel.adminPreset();
     final canCreateBill = perms.salesEntry;
     final canViewHistory = perms.salesEntry || perms.viewReports;
     final visible = _visible(canCreateBill, canViewHistory);
-    if (visible.contains(index)) {
+    if (!visible.contains(index)) return;
+
+    if (_tab != index) {
       setState(() => _tab = index);
+    }
+    widget.onSectionChanged?.call(
+      index == 0 ? 'Create Bill' : (index == 1 ? 'Bill History' : 'Customer Ledger'),
+    );
+
+    if (focusFirstField) {
+      _focusFirstFieldForTab(index);
+    } else {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted && index >= 0 && index < _tabFocus.length) {
           _tabFocus[index].requestFocus();
         }
       });
     }
+  }
+
+  void _focusFirstFieldForTab(int index) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      Future.delayed(const Duration(milliseconds: 60), () {
+        if (!mounted) return;
+        switch (index) {
+          case 0:
+            _createBillFocusNode.requestFocus();
+            break;
+          case 1:
+            _billHistoryFocusNode.requestFocus();
+            break;
+          case 2:
+            _customerLedgerFocusNode.requestFocus();
+            break;
+        }
+      });
+    });
   }
 
   @override
@@ -90,12 +140,12 @@ class BillingViewState extends State<BillingView> {
 
     return CallbackShortcuts(
       bindings: {
-        const SingleActivator(LogicalKeyboardKey.keyB, alt: true): () => selectTab(0),
-        const SingleActivator(LogicalKeyboardKey.keyH, alt: true): () => selectTab(1),
-        const SingleActivator(LogicalKeyboardKey.keyC, alt: true): () => selectTab(2),
-        const SingleActivator(LogicalKeyboardKey.keyB, control: true, shift: true): () => selectTab(0),
-        const SingleActivator(LogicalKeyboardKey.keyH, control: true, shift: true): () => selectTab(1),
-        const SingleActivator(LogicalKeyboardKey.keyC, control: true, shift: true): () => selectTab(2),
+        const SingleActivator(LogicalKeyboardKey.keyB, alt: true): () => selectTab(0, focusFirstField: true),
+        const SingleActivator(LogicalKeyboardKey.keyH, alt: true): () => selectTab(1, focusFirstField: true),
+        const SingleActivator(LogicalKeyboardKey.keyC, alt: true): () => selectTab(2, focusFirstField: true),
+        const SingleActivator(LogicalKeyboardKey.keyB, control: true, shift: true): () => selectTab(0, focusFirstField: true),
+        const SingleActivator(LogicalKeyboardKey.keyH, control: true, shift: true): () => selectTab(1, focusFirstField: true),
+        const SingleActivator(LogicalKeyboardKey.keyC, control: true, shift: true): () => selectTab(2, focusFirstField: true),
       },
       child: Column(
         children: [
@@ -142,15 +192,12 @@ class BillingViewState extends State<BillingView> {
               ],
             ),
           ),
-          // Content — Shift+Tab from anywhere inside content returns to the active tab button
+          // Content — Escape from anywhere inside content returns focus to the active tab button
           Expanded(
             child: Focus(
-              skipTraversal: true,
               onKeyEvent: (node, event) {
-                if (event is! KeyDownEvent) return KeyEventResult.ignored;
-                if (event.logicalKey == LogicalKeyboardKey.tab &&
-                    HardwareKeyboard.instance.isShiftPressed) {
-                  // Go back to the currently active tab button
+                if (event is KeyDownEvent &&
+                    event.logicalKey == LogicalKeyboardKey.escape) {
                   _tabFocus[_tab].requestFocus();
                   return KeyEventResult.handled;
                 }
@@ -165,25 +212,33 @@ class BillingViewState extends State<BillingView> {
                         key: ValueKey(_billToEdit?['billNo'] ?? 'create'),
                         state: widget.state,
                         initialBill: _billToEdit,
+                        firstFieldFocusNode: _createBillFocusNode,
                         onSaved: () {
                           setState(() {
                             _billToEdit = null;
                             _tab = 1;
                           });
+                          _focusFirstFieldForTab(1);
                         },
                       ),
                     ),
                   if (_tab == 1 && canViewHistory)
                     BillHistoryScreen(
                       state: widget.state,
+                      searchFocusNode: _billHistoryFocusNode,
                       onEditBill: (bill) {
                         setState(() {
                           _billToEdit = bill;
                           _tab = 0;
                         });
+                        _focusFirstFieldForTab(0);
                       },
                     ),
-                  if (_tab == 2) CustomerLedgerScreen(state: widget.state),
+                  if (_tab == 2)
+                    CustomerLedgerScreen(
+                      state: widget.state,
+                      searchFocusNode: _customerLedgerFocusNode,
+                    ),
                 ],
               ),
             ),
@@ -199,50 +254,46 @@ class BillingViewState extends State<BillingView> {
 
     return Focus(
       focusNode: fn,
+      canRequestFocus: true,
       // Handle keyboard events on this tab button
       onKeyEvent: (node, event) {
         if (event is! KeyDownEvent) return KeyEventResult.ignored;
 
         final pos = visible.indexOf(index);
+        if (pos == -1) return KeyEventResult.ignored;
 
-        // Tab / Shift+Tab: cycle through tab buttons; after last Tab enters content
+        // Tab / Shift+Tab: cycle through tab buttons (like in Report section)
         if (event.logicalKey == LogicalKeyboardKey.tab) {
-          if (HardwareKeyboard.instance.isShiftPressed) {
-            if (pos > 0) {
-              _tabFocus[visible[pos - 1]].requestFocus();
-              return KeyEventResult.handled;
-            }
+          final isShift = HardwareKeyboard.instance.isShiftPressed;
+          if (isShift) {
+            final prevPos = (pos - 1 + visible.length) % visible.length;
+            _tabFocus[visible[prevPos]].requestFocus();
+            return KeyEventResult.handled;
           } else {
-            if (pos < visible.length - 1) {
-              // Move to next tab button
-              _tabFocus[visible[pos + 1]].requestFocus();
-              return KeyEventResult.handled;
-            }
-            // Last tab button: let Tab fall through into content naturally
+            final nextPos = (pos + 1) % visible.length;
+            _tabFocus[visible[nextPos]].requestFocus();
+            return KeyEventResult.handled;
           }
         }
 
-        // Enter / Space: select this tab and let focus fall into content
-        if (event.logicalKey == LogicalKeyboardKey.enter ||
-            event.logicalKey == LogicalKeyboardKey.numpadEnter ||
-            event.logicalKey == LogicalKeyboardKey.space) {
-          setState(() => _tab = index);
-          // Unfocus tab bar so next Tab goes into content
-          fn.unfocus();
+        // Left / Right arrows: navigate focus across tabs
+        if (event.logicalKey == LogicalKeyboardKey.arrowRight) {
+          final nextPos = (pos + 1) % visible.length;
+          _tabFocus[visible[nextPos]].requestFocus();
+          return KeyEventResult.handled;
+        }
+        if (event.logicalKey == LogicalKeyboardKey.arrowLeft) {
+          final prevPos = (pos - 1 + visible.length) % visible.length;
+          _tabFocus[visible[prevPos]].requestFocus();
           return KeyEventResult.handled;
         }
 
-        // Left / Right arrows: navigate and switch between tabs
-        if (event.logicalKey == LogicalKeyboardKey.arrowRight && pos < visible.length - 1) {
-          final nextIdx = visible[pos + 1];
-          setState(() => _tab = nextIdx);
-          _tabFocus[nextIdx].requestFocus();
-          return KeyEventResult.handled;
-        }
-        if (event.logicalKey == LogicalKeyboardKey.arrowLeft && pos > 0) {
-          final prevIdx = visible[pos - 1];
-          setState(() => _tab = prevIdx);
-          _tabFocus[prevIdx].requestFocus();
+        // Enter / Space / ArrowDown: select this tab and go to its first field
+        if (event.logicalKey == LogicalKeyboardKey.enter ||
+            event.logicalKey == LogicalKeyboardKey.numpadEnter ||
+            event.logicalKey == LogicalKeyboardKey.space ||
+            event.logicalKey == LogicalKeyboardKey.arrowDown) {
+          selectTab(index, focusFirstField: true);
           return KeyEventResult.handled;
         }
 
@@ -253,43 +304,73 @@ class BillingViewState extends State<BillingView> {
         builder: (context, _) {
           final isFocused = fn.hasFocus;
           return InkWell(
-            borderRadius: BorderRadius.circular(6),
-            onTap: () => setState(() => _tab = index),
+            canRequestFocus: false,
+            borderRadius: BorderRadius.circular(8),
+            onTap: () {
+              fn.requestFocus();
+              selectTab(index, focusFirstField: true);
+            },
             child: AnimatedContainer(
-              duration: const Duration(milliseconds: 180),
-              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+              duration: const Duration(milliseconds: 150),
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
               decoration: BoxDecoration(
-                // Subtle keyboard-focus highlight on the tab button
-                color: isFocused ? _brown.withValues(alpha: 0.07) : Colors.transparent,
-                borderRadius: BorderRadius.circular(4),
-                border: Border(
-                  bottom: BorderSide(
-                    color: isSelected ? _brown : Colors.transparent,
-                    width: 2.5,
-                  ),
+                color: isSelected
+                    ? _brown.withAlpha(20)
+                    : (isFocused ? _brown.withAlpha(15) : Colors.transparent),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: isFocused
+                      ? _brown
+                      : (isSelected ? _brown.withAlpha(100) : Colors.transparent),
+                  width: isFocused ? 1.5 : 1.0,
                 ),
+                boxShadow: isSelected
+                    ? [
+                        BoxShadow(
+                          color: _brown.withAlpha(25),
+                          blurRadius: 4,
+                          offset: const Offset(0, 1),
+                        ),
+                      ]
+                    : null,
               ),
-              child: Row(mainAxisSize: MainAxisSize.min, children: [
-                Icon(icon, size: 16, color: isSelected ? _brown : _brownLight),
-                const SizedBox(width: 6),
-                Text(
-                  label,
-                  style: TextStyle(
-                    fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-                    color: isSelected ? _brown : _brownLight,
-                    fontSize: 14,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(icon, size: 16, color: isSelected ? _brown : _brownLight),
+                    const SizedBox(width: 8),
+                    Text(
+                      label,
+                      style: TextStyle(
+                        fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                        color: isSelected ? _brown : _brownLight,
+                        fontSize: 14,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      '($shortcut)',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                        color: isSelected ? _brown.withAlpha(220) : _brownLight.withAlpha(160),
+                      ),
+                    ),
+                  ]),
+                  const SizedBox(height: 4),
+                  // Bottom underline indicator
+                  AnimatedContainer(
+                    duration: const Duration(milliseconds: 180),
+                    height: 2.5,
+                    width: isSelected ? 48 : 0,
+                    decoration: BoxDecoration(
+                      color: isSelected ? _brown : Colors.transparent,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
                   ),
-                ),
-                const SizedBox(width: 6),
-                Text(
-                  '($shortcut)',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-                    color: isSelected ? _brown.withAlpha(220) : _brownLight.withAlpha(160),
-                  ),
-                ),
-              ]),
+                ],
+              ),
             ),
           );
         },

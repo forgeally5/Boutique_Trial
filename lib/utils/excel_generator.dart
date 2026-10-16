@@ -7,10 +7,13 @@ import 'file_downloader.dart';
 class ExcelGenerator {
   static final _fmt = DateFormat('dd/MM/yyyy');
   static final _dateTimeFmt = DateFormat('dd/MM/yyyy hh:mm a');
+  static final _fileDateFmt = DateFormat('dd-MM-yyyy');
 
-  /// Generate & download Inward Bill for a single or multiple products
+  /// Generate & download Inward Transactions Report Excel
   static Future<void> downloadInwardReportExcel({
     required List<Map<String, dynamic>> transactions,
+    DateTime? dateFrom,
+    DateTime? dateTo,
   }) async {
     final Workbook workbook = Workbook();
     final Worksheet sheet = workbook.worksheets[0];
@@ -32,7 +35,10 @@ class ExcelGenerator {
     // ── Metadata ────────────────────────────────────────────────────
     final metaDate = sheet.getRangeByName('A2:G2');
     metaDate.merge();
-    metaDate.setText('Generated on: $nowStr');
+    final metaText = (dateFrom != null && dateTo != null)
+        ? 'Period: ${_fmt.format(dateFrom)} to ${_fmt.format(dateTo)}   |   Generated: $nowStr'
+        : 'Generated on: $nowStr';
+    metaDate.setText(metaText);
     metaDate.cellStyle.bold = true;
     metaDate.cellStyle.fontSize = 10;
     metaDate.cellStyle.backColor = '#F5ECE4';
@@ -99,6 +105,10 @@ class ExcelGenerator {
         c7.setNumber(amt);
         c7.cellStyle.hAlign = HAlignType.right;
 
+        if (rowIndex % 2 == 1) {
+          sheet.getRangeByIndex(rowIndex, 1, rowIndex, 7).cellStyle.backColor = '#FAF6F0';
+        }
+
         rowIndex++;
       }
     }
@@ -115,17 +125,27 @@ class ExcelGenerator {
     footerTotal.cellStyle.bold = true;
     footerTotal.cellStyle.hAlign = HAlignType.right;
 
-    // Auto-fit columns
-    for (int i = 1; i <= 7; i++) {
-      sheet.autoFitColumn(i);
-    }
+    sheet.getRangeByIndex(rowIndex, 1, rowIndex, 7).cellStyle.backColor = '#EAD8C7';
+
+    // ── Explicit Compact Column Widths (Fixed spacing without excessive blank areas) ──
+    sheet.getRangeByIndex(1, 1).columnWidth = 17.5; // Date & Time
+    sheet.getRangeByIndex(1, 2).columnWidth = 24.0; // Item Name
+    sheet.getRangeByIndex(1, 3).columnWidth = 11.0; // Tag ID
+    sheet.getRangeByIndex(1, 4).columnWidth = 16.0; // Category
+    sheet.getRangeByIndex(1, 5).columnWidth = 9.5;  // Added Qty
+    sheet.getRangeByIndex(1, 6).columnWidth = 11.5; // Added Weight
+    sheet.getRangeByIndex(1, 7).columnWidth = 13.5; // Total Value (₹)
 
     final List<int> bytes = workbook.saveAsStream();
     workbook.dispose();
 
+    final datePart = (dateFrom != null && dateTo != null)
+        ? '${_fileDateFmt.format(dateFrom)}_to_${_fileDateFmt.format(dateTo)}'
+        : _fileDateFmt.format(DateTime.now());
+
     await downloadFile(
       bytes,
-      'Inward_Report_${DateTime.now().millisecondsSinceEpoch}.xlsx',
+      'Inward_Report_$datePart.xlsx',
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     );
   }
@@ -142,9 +162,10 @@ class ExcelGenerator {
       inwardRefNo: inwardRefNo,
     );
     final ref = inwardRefNo ?? 'INW_${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}';
+    final dateStr = _fileDateFmt.format(DateTime.now());
     await downloadFile(
       bytes,
-      'Inward_Bill_$ref.xlsx',
+      'Inward_Bill_${ref}_$dateStr.xlsx',
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     );
   }
@@ -341,9 +362,155 @@ class ExcelGenerator {
   }) async {
     final bytes = generateVendorIssueBillBytes(issue: issue);
     final ref = issue.id.isNotEmpty ? issue.id : 'ISS_${issue.tagId}';
+    final dateStr = _fileDateFmt.format(issue.dateReported);
     await downloadFile(
       bytes,
-      'Issue_Bill_$ref.xlsx',
+      'Issue_Bill_${ref}_$dateStr.xlsx',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
+  }
+
+  /// Generate & download Customer Return Bill Excel
+  static Future<void> downloadCustomerReturnBillExcel({
+    required Map<String, dynamic> bill,
+  }) async {
+    final Workbook workbook = Workbook();
+    final Worksheet sheet = workbook.worksheets[0];
+    sheet.name = 'Return Bill';
+
+    final billNo = bill['billNo']?.toString() ?? 'RET-${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}';
+    final rawDate = bill['billDate'];
+    final billDate = rawDate is DateTime
+        ? rawDate
+        : (rawDate is String ? DateTime.tryParse(rawDate) : null) ?? DateTime.now();
+    final customer = bill['customerName']?.toString() ?? 'Customer';
+
+    // ── Row 1: Title ────────────────────────────────────────────────────────
+    final titleRange = sheet.getRangeByName('A1:G1');
+    titleRange.merge();
+    titleRange.setText('CUSTOMER RETURN BILL / CREDIT NOTE');
+    titleRange.cellStyle.bold = true;
+    titleRange.cellStyle.fontSize = 13;
+    titleRange.cellStyle.backColor = '#5A121A';
+    titleRange.cellStyle.fontColor = '#FFFFFF';
+    titleRange.cellStyle.hAlign = HAlignType.center;
+    titleRange.cellStyle.vAlign = VAlignType.center;
+
+    // ── Row 2: Compact Meta ────────────────────────────────────────────────
+    final metaRef = sheet.getRangeByName('A2:C2');
+    metaRef.merge();
+    metaRef.setText('Return No: $billNo');
+    metaRef.cellStyle.bold = true;
+    metaRef.cellStyle.fontSize = 10;
+    metaRef.cellStyle.backColor = '#F5ECE4';
+
+    final metaDate = sheet.getRangeByName('D2:E2');
+    metaDate.merge();
+    metaDate.setText('Date: ${_fmt.format(billDate)}');
+    metaDate.cellStyle.bold = true;
+    metaDate.cellStyle.fontSize = 10;
+    metaDate.cellStyle.backColor = '#F5ECE4';
+    metaDate.cellStyle.hAlign = HAlignType.center;
+
+    final metaCust = sheet.getRangeByName('F2:G2');
+    metaCust.merge();
+    metaCust.setText('Customer: $customer');
+    metaCust.cellStyle.bold = true;
+    metaCust.cellStyle.fontSize = 10;
+    metaCust.cellStyle.backColor = '#F5ECE4';
+    metaCust.cellStyle.hAlign = HAlignType.right;
+
+    // ── Row 3: Headers ──────────────────────────────────────────────────────
+    final headers = ['S.No', 'Tag ID', 'Product Description', 'Qty', 'Unit Rate (₹)', 'Refund / Line Total (₹)', 'Reason / Status'];
+    for (int col = 0; col < headers.length; col++) {
+      final cell = sheet.getRangeByIndex(3, col + 1);
+      cell.setText(headers[col]);
+      cell.cellStyle.bold = true;
+      cell.cellStyle.fontSize = 10;
+      cell.cellStyle.backColor = '#8C6246';
+      cell.cellStyle.fontColor = '#FFFFFF';
+      cell.cellStyle.hAlign = (col == 0 || col == 1 || col == 3) ? HAlignType.center : (col == 4 || col == 5 ? HAlignType.right : HAlignType.left);
+      cell.cellStyle.vAlign = VAlignType.center;
+    }
+
+    final rawItems = bill['items'] as List<dynamic>? ?? [];
+    int rowIndex = 4;
+    int totalQty = 0;
+    double totalRefund = 0.0;
+
+    for (int i = 0; i < rawItems.length; i++) {
+      final it = rawItems[i] is Map ? rawItems[i] as Map : {};
+      final name = it['name']?.toString() ?? it['productName']?.toString() ?? 'Item';
+      final tagId = it['tagId']?.toString() ?? '—';
+      final qty = (it['qty'] as num?)?.toInt() ?? 1;
+      final rate = (it['price'] as num?)?.toDouble() ?? (it['rate'] as num?)?.toDouble() ?? 0.0;
+      var amt = (it['lineAmount'] as num?)?.toDouble() ?? (it['amount'] as num?)?.toDouble() ?? (rate * qty);
+      final reason = it['reason']?.toString() ?? bill['narration']?.toString() ?? 'Return';
+
+      totalQty += qty;
+      totalRefund += amt;
+
+      sheet.getRangeByIndex(rowIndex, 1).setNumber((i + 1).toDouble());
+      sheet.getRangeByIndex(rowIndex, 1).cellStyle.hAlign = HAlignType.center;
+
+      sheet.getRangeByIndex(rowIndex, 2).setText(tagId);
+      sheet.getRangeByIndex(rowIndex, 2).cellStyle.hAlign = HAlignType.center;
+
+      sheet.getRangeByIndex(rowIndex, 3).setText(name);
+      sheet.getRangeByIndex(rowIndex, 3).cellStyle.hAlign = HAlignType.left;
+
+      sheet.getRangeByIndex(rowIndex, 4).setNumber(qty.toDouble());
+      sheet.getRangeByIndex(rowIndex, 4).cellStyle.hAlign = HAlignType.center;
+
+      sheet.getRangeByIndex(rowIndex, 5).setNumber(rate);
+      sheet.getRangeByIndex(rowIndex, 5).cellStyle.hAlign = HAlignType.right;
+
+      sheet.getRangeByIndex(rowIndex, 6).setNumber(amt);
+      sheet.getRangeByIndex(rowIndex, 6).cellStyle.hAlign = HAlignType.right;
+      sheet.getRangeByIndex(rowIndex, 6).cellStyle.bold = true;
+
+      sheet.getRangeByIndex(rowIndex, 7).setText(reason);
+      sheet.getRangeByIndex(rowIndex, 7).cellStyle.hAlign = HAlignType.left;
+
+      if (i % 2 == 1) {
+        sheet.getRangeByIndex(rowIndex, 1, rowIndex, 7).cellStyle.backColor = '#FAF6F0';
+      }
+      rowIndex++;
+    }
+
+    // Totals
+    final totalRange = sheet.getRangeByIndex(rowIndex, 1, rowIndex, 3);
+    totalRange.merge();
+    totalRange.setText('TOTAL REFUND');
+    totalRange.cellStyle.bold = true;
+    totalRange.cellStyle.hAlign = HAlignType.right;
+
+    sheet.getRangeByIndex(rowIndex, 4).setNumber(totalQty.toDouble());
+    sheet.getRangeByIndex(rowIndex, 4).cellStyle.bold = true;
+    sheet.getRangeByIndex(rowIndex, 4).cellStyle.hAlign = HAlignType.center;
+
+    sheet.getRangeByIndex(rowIndex, 6).setNumber(totalRefund > 0 ? totalRefund : (bill['totalPayable'] as num?)?.toDouble() ?? 0.0);
+    sheet.getRangeByIndex(rowIndex, 6).cellStyle.bold = true;
+    sheet.getRangeByIndex(rowIndex, 6).cellStyle.hAlign = HAlignType.right;
+
+    sheet.getRangeByIndex(rowIndex, 1, rowIndex, 7).cellStyle.backColor = '#EAD8C7';
+
+    // Widths
+    sheet.getRangeByIndex(1, 1).columnWidth = 6.0;   // S.No
+    sheet.getRangeByIndex(1, 2).columnWidth = 12.0;  // Tag ID
+    sheet.getRangeByIndex(1, 3).columnWidth = 24.0;  // Description
+    sheet.getRangeByIndex(1, 4).columnWidth = 8.0;   // Qty
+    sheet.getRangeByIndex(1, 5).columnWidth = 13.0;  // Unit Rate
+    sheet.getRangeByIndex(1, 6).columnWidth = 15.0;  // Refund Total
+    sheet.getRangeByIndex(1, 7).columnWidth = 16.0;  // Reason
+
+    final List<int> bytes = workbook.saveAsStream();
+    workbook.dispose();
+
+    final dateStr = _fileDateFmt.format(billDate);
+    await downloadFile(
+      bytes,
+      'Return_Bill_${billNo}_$dateStr.xlsx',
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     );
   }
@@ -639,7 +806,7 @@ class ExcelGenerator {
 
     await downloadFile(
       bytes,
-      'Issue_Report_${_fmt.format(dateFrom)}_${_fmt.format(dateTo)}.xlsx',
+      'Issue_Report_${_fileDateFmt.format(dateFrom)}_to_${_fileDateFmt.format(dateTo)}.xlsx',
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     );
   }
@@ -842,9 +1009,10 @@ class ExcelGenerator {
     final List<int> bytes = workbook.saveAsStream();
     workbook.dispose();
 
+    final dateStr = _fileDateFmt.format(DateTime.now());
     await downloadFile(
       bytes,
-      'closing_stock_category_wise_${DateTime.now().millisecondsSinceEpoch}.xlsx',
+      'closing_stock_category_wise_$dateStr.xlsx',
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     );
   }
@@ -1039,9 +1207,10 @@ class ExcelGenerator {
     final List<int> bytes = workbook.saveAsStream();
     workbook.dispose();
 
+    final dateStr = _fileDateFmt.format(DateTime.now());
     await downloadFile(
       bytes,
-      'stock_report_${DateTime.now().millisecondsSinceEpoch}.xlsx',
+      'stock_report_$dateStr.xlsx',
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     );
   }
@@ -1221,7 +1390,7 @@ class ExcelGenerator {
 
     await downloadFile(
       bytes,
-      'sales_report_${_fmt.format(dateFrom)}_${_fmt.format(dateTo)}.xlsx',
+      'sales_report_${_fileDateFmt.format(dateFrom)}_to_${_fileDateFmt.format(dateTo)}.xlsx',
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     );
   }
@@ -1382,7 +1551,7 @@ class ExcelGenerator {
 
     await downloadFile(
       bytes,
-      'product_wise_sales_${_fmt.format(dateFrom)}_${_fmt.format(dateTo)}.xlsx',
+      'product_wise_sales_${_fileDateFmt.format(dateFrom)}_to_${_fileDateFmt.format(dateTo)}.xlsx',
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     );
   }
@@ -1531,22 +1700,23 @@ class ExcelGenerator {
     sheet.getRangeByIndex(rowIndex, 1, rowIndex, 7).cellStyle.backColor =
         '#F0E5D8';
 
-    // Set column widths
-    sheet.getRangeByIndex(1, 1).columnWidth = 8.0;
-    sheet.getRangeByIndex(1, 2).columnWidth = 22.0;
-    sheet.getRangeByIndex(1, 3).columnWidth = 28.0;
-    sheet.getRangeByIndex(1, 4).columnWidth = 14.0;
-    sheet.getRangeByIndex(1, 5).columnWidth = 16.0;
-    sheet.getRangeByIndex(1, 6).columnWidth = 14.0;
-    sheet.getRangeByIndex(1, 7).columnWidth = 18.0;
+    // Set compact column widths
+    sheet.getRangeByIndex(1, 1).columnWidth = 6.0;   // S.No
+    sheet.getRangeByIndex(1, 2).columnWidth = 17.5;  // Date & Time
+    sheet.getRangeByIndex(1, 3).columnWidth = 20.0;  // Narration
+    sheet.getRangeByIndex(1, 4).columnWidth = 9.0;   // Qty
+    sheet.getRangeByIndex(1, 5).columnWidth = 11.5;  // Weight
+    sheet.getRangeByIndex(1, 6).columnWidth = 11.5;  // Rate
+    sheet.getRangeByIndex(1, 7).columnWidth = 13.5;  // Total Value
 
     final List<int> bytes = workbook.saveAsStream();
     workbook.dispose();
 
     final safeTag = tagId.replaceAll(RegExp(r'[^a-zA-Z0-9_\-]'), '_');
+    final dateStr = _fileDateFmt.format(DateTime.now());
     await downloadFile(
       bytes,
-      'inward_history_${safeTag}_${DateTime.now().millisecondsSinceEpoch}.xlsx',
+      'inward_history_${safeTag}_$dateStr.xlsx',
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     );
   }

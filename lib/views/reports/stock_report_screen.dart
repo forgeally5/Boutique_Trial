@@ -12,7 +12,8 @@ import '../../widgets/report_filter_widgets.dart';
 
 class StockReportScreen extends StatefulWidget {
   final FocusNode? searchFocusNode;
-  const StockReportScreen({super.key, this.searchFocusNode});
+  final VoidCallback? onReturnToMainTab;
+  const StockReportScreen({super.key, this.searchFocusNode, this.onReturnToMainTab});
 
   @override
   State<StockReportScreen> createState() => _StockReportScreenState();
@@ -99,6 +100,25 @@ class _StockReportScreenState extends State<StockReportScreen>
     _load();
     _searchCtrl.addListener(_applyFilters);
     _catSearchCtrl.addListener(_applyCategoryFilters);
+
+    _searchFocusNode.onKeyEvent = (node, event) {
+      if (event is KeyDownEvent &&
+          event.logicalKey == LogicalKeyboardKey.tab &&
+          HardwareKeyboard.instance.isShiftPressed) {
+        _productWiseTabFocusNode.requestFocus();
+        return KeyEventResult.handled;
+      }
+      return KeyEventResult.ignored;
+    };
+    _catSearchFocusNode.onKeyEvent = (node, event) {
+      if (event is KeyDownEvent &&
+          event.logicalKey == LogicalKeyboardKey.tab &&
+          HardwareKeyboard.instance.isShiftPressed) {
+        _closingStockTabFocusNode.requestFocus();
+        return KeyEventResult.handled;
+      }
+      return KeyEventResult.ignored;
+    };
   }
 
   Future<void> _pickDate({required bool isFrom}) async {
@@ -122,11 +142,14 @@ class _StockReportScreenState extends State<StockReportScreen>
     }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      if (index == 0) {
-        _searchFocusNode.requestFocus();
-      } else {
-        _catSearchFocusNode.requestFocus();
-      }
+      Future.delayed(const Duration(milliseconds: 50), () {
+        if (!mounted) return;
+        if (index == 0) {
+          _searchFocusNode.requestFocus();
+        } else {
+          _catSearchFocusNode.requestFocus();
+        }
+      });
     });
   }
 
@@ -514,7 +537,7 @@ class _StockReportScreenState extends State<StockReportScreen>
         );
         await Printing.sharePdf(
           bytes: bytes,
-          filename: 'stock_report_${DateTime.now().millisecondsSinceEpoch}.pdf',
+          filename: 'stock_report_${DateFormat('dd-MM-yyyy').format(DateTime.now())}.pdf',
         );
       },
       onDownloadExcel: () async {
@@ -556,7 +579,7 @@ class _StockReportScreenState extends State<StockReportScreen>
         await Printing.sharePdf(
           bytes: bytes,
           filename:
-              'closing_stock_category_wise_${DateTime.now().millisecondsSinceEpoch}.pdf',
+              'closing_stock_category_wise_${DateFormat('dd-MM-yyyy').format(DateTime.now())}.pdf',
         );
       },
       onDownloadExcel: () async {
@@ -602,6 +625,7 @@ class _StockReportScreenState extends State<StockReportScreen>
                   onSelect: () => _selectSubTab(0),
                   onArrowRight: () => _closingStockTabFocusNode.requestFocus(),
                   onArrowLeft: null,
+                  onShiftTab: widget.onReturnToMainTab,
                 ),
                 const SizedBox(width: 6),
                 _StockSubTabButton(
@@ -614,6 +638,7 @@ class _StockReportScreenState extends State<StockReportScreen>
                   onSelect: () => _selectSubTab(1),
                   onArrowRight: null,
                   onArrowLeft: () => _productWiseTabFocusNode.requestFocus(),
+                  onShiftTab: widget.onReturnToMainTab,
                 ),
               ],
             ),
@@ -1732,6 +1757,7 @@ class _StockSubTabButton extends StatefulWidget {
   final VoidCallback onSelect;
   final VoidCallback? onArrowRight;
   final VoidCallback? onArrowLeft;
+  final VoidCallback? onShiftTab;
 
   const _StockSubTabButton({
     required this.focusNode,
@@ -1743,6 +1769,7 @@ class _StockSubTabButton extends StatefulWidget {
     required this.onSelect,
     this.onArrowRight,
     this.onArrowLeft,
+    this.onShiftTab,
   });
 
   @override
@@ -1773,6 +1800,13 @@ class _StockSubTabButtonState extends State<_StockSubTabButton> {
               widget.onSelect();
               return KeyEventResult.handled;
             }
+            if (event.logicalKey == LogicalKeyboardKey.tab &&
+                HardwareKeyboard.instance.isShiftPressed) {
+              if (widget.onShiftTab != null) {
+                widget.onShiftTab!();
+                return KeyEventResult.handled;
+              }
+            }
             if (event.logicalKey == LogicalKeyboardKey.arrowRight &&
                 widget.onArrowRight != null) {
               widget.onArrowRight!();
@@ -1788,7 +1822,10 @@ class _StockSubTabButtonState extends State<_StockSubTabButton> {
         },
         child: InkWell(
           canRequestFocus: false,
-          onTap: widget.onSelect,
+          onTap: () {
+            widget.focusNode.requestFocus();
+            widget.onSelect();
+          },
           borderRadius: BorderRadius.circular(6),
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 150),

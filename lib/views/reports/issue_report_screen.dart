@@ -26,6 +26,7 @@ class IssueReportScreen extends StatefulWidget {
 
 class _IssueReportScreenState extends State<IssueReportScreen> {
   final _fmt = DateFormat('dd/MM/yyyy');
+  final _fileDateFmt = DateFormat('dd-MM-yyyy');
   final _numFmt = NumberFormat('#,##,##0.00', 'en_IN');
 
   late DateTime _dateFrom;
@@ -336,7 +337,7 @@ class _IssueReportScreenState extends State<IssueReportScreen> {
         await Printing.sharePdf(
           bytes: bytes,
           filename:
-              'issue_report_${_fmt.format(_dateFrom)}_${_fmt.format(_dateTo)}.pdf',
+              'issue_report_${_fileDateFmt.format(_dateFrom)}_to_${_fileDateFmt.format(_dateTo)}.pdf',
         );
       },
       onDownloadExcel: () async {
@@ -697,6 +698,106 @@ class _IssueReportScreenState extends State<IssueReportScreen> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   if (isVendor) ...[
+                    // Print Vendor Issue Bill (PDF Bill format)
+                    IconButton(
+                      icon: const Icon(Icons.print_rounded, size: 16, color: BoutiqueColors.accent),
+                      tooltip: 'Print Vendor Issue Bill',
+                      padding: const EdgeInsets.all(4),
+                      constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                      onPressed: () async {
+                        final issue = VendorIssue(
+                          id: r['id'] ?? '',
+                          tagId: r['tagId'] ?? '',
+                          productName: r['productName'] ?? '',
+                          vendor: r['counterpart'] ?? '',
+                          quantity: (r['qty'] as num?)?.toInt() ?? 1,
+                          issueType: r['issueReason'] ?? '',
+                          actionTaken: r['actionTaken'] ?? 'Pending',
+                          dateReported: r['_dt'] as DateTime? ?? DateTime.now(),
+                          notes: '',
+                          refundAmount: (r['refundAmount'] as num?)?.toDouble() ?? 0.0,
+                        );
+                        final billMap = {
+                          'billNo': issue.id.isNotEmpty ? issue.id : 'ISS-${issue.tagId}',
+                          'billType': 'Vendor Issue',
+                          'billDate': issue.dateReported,
+                          'customerName': issue.vendor.isNotEmpty ? issue.vendor : 'Vendor',
+                          'customerMobile': r['mobile']?.toString() ?? '',
+                          'narration': 'Vendor Issue: ${issue.issueType}',
+                          'totalPayable': issue.refundAmount,
+                          'subtotal': issue.refundAmount,
+                          'amountReceived': issue.refundAmount,
+                          'items': [
+                            {
+                              'tagId': issue.tagId,
+                              'name': issue.productName,
+                              'qty': issue.quantity,
+                              'price': issue.quantity > 0 ? (issue.refundAmount / issue.quantity) : issue.refundAmount,
+                              'lineAmount': issue.refundAmount,
+                            }
+                          ],
+                        };
+                        try {
+                          final bytes = await BoutiquePdfGenerator.generate(billMap);
+                          await Printing.layoutPdf(onLayout: (_) async => bytes);
+                        } catch (e) {
+                          if (mounted) BoutiqueToast.showError(context, 'Error generating PDF: $e');
+                        }
+                      },
+                    ),
+                    // Download Vendor Issue Bill (PDF Bill format)
+                    IconButton(
+                      icon: const Icon(Icons.picture_as_pdf_rounded, size: 16, color: Color(0xFFB91C1C)),
+                      tooltip: 'Download Issue Bill (.pdf)',
+                      padding: const EdgeInsets.all(4),
+                      constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                      onPressed: () async {
+                        final issue = VendorIssue(
+                          id: r['id'] ?? '',
+                          tagId: r['tagId'] ?? '',
+                          productName: r['productName'] ?? '',
+                          vendor: r['counterpart'] ?? '',
+                          quantity: (r['qty'] as num?)?.toInt() ?? 1,
+                          issueType: r['issueReason'] ?? '',
+                          actionTaken: r['actionTaken'] ?? 'Pending',
+                          dateReported: r['_dt'] as DateTime? ?? DateTime.now(),
+                          notes: '',
+                          refundAmount: (r['refundAmount'] as num?)?.toDouble() ?? 0.0,
+                        );
+                        final billMap = {
+                          'billNo': issue.id.isNotEmpty ? issue.id : 'ISS-${issue.tagId}',
+                          'billType': 'Vendor Issue',
+                          'billDate': issue.dateReported,
+                          'customerName': issue.vendor.isNotEmpty ? issue.vendor : 'Vendor',
+                          'customerMobile': r['mobile']?.toString() ?? '',
+                          'narration': 'Vendor Issue: ${issue.issueType}',
+                          'totalPayable': issue.refundAmount,
+                          'subtotal': issue.refundAmount,
+                          'amountReceived': issue.refundAmount,
+                          'items': [
+                            {
+                              'tagId': issue.tagId,
+                              'name': issue.productName,
+                              'qty': issue.quantity,
+                              'price': issue.quantity > 0 ? (issue.refundAmount / issue.quantity) : issue.refundAmount,
+                              'lineAmount': issue.refundAmount,
+                            }
+                          ],
+                        };
+                        try {
+                          final bytes = await BoutiquePdfGenerator.generate(billMap);
+                          final dateStr = _fileDateFmt.format(issue.dateReported);
+                          final ref = issue.id.isNotEmpty ? issue.id : 'ISS-${issue.tagId}';
+                          await Printing.sharePdf(
+                            bytes: bytes,
+                            filename: 'Issue_Bill_${ref}_$dateStr.pdf',
+                          );
+                        } catch (e) {
+                          if (mounted) BoutiqueToast.showError(context, 'Error downloading PDF: $e');
+                        }
+                      },
+                    ),
+                    // Download Vendor Issue Bill (.xlsx)
                     IconButton(
                       icon: const Icon(Icons.download_rounded, size: 16, color: Color(0xFF1E7E34)),
                       tooltip: 'Download Issue Bill (.xlsx)',
@@ -759,6 +860,7 @@ class _IssueReportScreenState extends State<IssueReportScreen> {
                       onPressed: () => _updateVendorAction(r['id'], r['tagId'], r['actionTaken']),
                     ),
                   ] else ...[
+                    // Print Customer Return Bill
                     IconButton(
                       icon: const Icon(Icons.print_rounded, size: 16, color: BoutiqueColors.accent),
                       tooltip: 'Print Return Bill',
@@ -776,6 +878,55 @@ class _IssueReportScreenState extends State<IssueReportScreen> {
                          } else {
                             BoutiqueToast.showError(context, 'Bill data missing');
                          }
+                      },
+                    ),
+                    // Download Customer Return Bill (.pdf)
+                    IconButton(
+                      icon: const Icon(Icons.picture_as_pdf_rounded, size: 16, color: Color(0xFFB91C1C)),
+                      tooltip: 'Download Return Bill (.pdf)',
+                      padding: const EdgeInsets.all(4),
+                      constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                      onPressed: () async {
+                        final bill = r['_bill'];
+                        if (bill != null) {
+                          try {
+                            final bytes = await BoutiquePdfGenerator.generate(bill);
+                            final rawDate = bill['billDate'] ?? bill['voucherDate'];
+                            final billDate = rawDate is DateTime
+                                ? rawDate
+                                : (rawDate != null ? DateTime.tryParse(rawDate.toString()) : null) ?? DateTime.now();
+                            final dateStr = _fileDateFmt.format(billDate);
+                            final billNo = bill['billNo']?.toString() ?? 'RET';
+                            await Printing.sharePdf(
+                              bytes: bytes,
+                              filename: 'Return_Bill_${billNo}_$dateStr.pdf',
+                            );
+                          } catch (e) {
+                            if (mounted) BoutiqueToast.showError(context, 'Error downloading PDF: $e');
+                          }
+                        } else {
+                          BoutiqueToast.showError(context, 'Return bill data missing');
+                        }
+                      },
+                    ),
+                    // Download Customer Return Bill (.xlsx)
+                    IconButton(
+                      icon: const Icon(Icons.download_rounded, size: 16, color: Color(0xFF1E7E34)),
+                      tooltip: 'Download Return Bill (.xlsx)',
+                      padding: const EdgeInsets.all(4),
+                      constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                      onPressed: () async {
+                        final bill = r['_bill'];
+                        if (bill != null) {
+                          try {
+                            await ExcelGenerator.downloadCustomerReturnBillExcel(bill: bill);
+                            if (mounted) BoutiqueToast.showSuccess(context, 'Return Bill (.xlsx) downloaded!');
+                          } catch (e) {
+                            if (mounted) BoutiqueToast.showError(context, 'Failed to download Excel: $e');
+                          }
+                        } else {
+                          BoutiqueToast.showError(context, 'Return bill data missing');
+                        }
                       },
                     ),
                     IconButton(
@@ -1078,12 +1229,12 @@ class _ReportDatePillState extends State<_ReportDatePill> {
 // ── Log Issue / Return Button with Traversal Order & Focused Glow ────────────
 
 class _ReportLogIssueButton extends StatefulWidget {
-  final MenuController menuController;
+  final MenuController? menuController;
   final VoidCallback onLogCustomerReturn;
   final VoidCallback onLogVendorIssue;
 
   const _ReportLogIssueButton({
-    required this.menuController,
+    this.menuController,
     required this.onLogCustomerReturn,
     required this.onLogVendorIssue,
   });
@@ -1094,52 +1245,79 @@ class _ReportLogIssueButton extends StatefulWidget {
 
 class _ReportLogIssueButtonState extends State<_ReportLogIssueButton> {
   bool _isFocused = false;
+  final FocusNode _focusNode = FocusNode(debugLabel: 'log_issue_popup_button');
 
-  void _toggleMenu() {
-    if (widget.menuController.isOpen) {
-      widget.menuController.close();
-    } else {
-      widget.menuController.open();
-    }
+  @override
+  void dispose() {
+    _focusNode.dispose();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return FocusTraversalOrder(
       order: const NumericFocusOrder(9.0),
-      child: MenuAnchor(
-        controller: widget.menuController,
-        menuChildren: [
-          MenuItemButton(
-            leadingIcon: const Icon(Icons.assignment_return_rounded,
-                size: 18, color: BoutiqueColors.textPrimary),
-            onPressed: widget.onLogCustomerReturn,
-            child: const Text('Log Customer Return'),
+      child: Focus(
+        focusNode: _focusNode,
+        onFocusChange: (focused) {
+          if (mounted) setState(() => _isFocused = focused);
+        },
+        child: Theme(
+          data: Theme.of(context).copyWith(
+            popupMenuTheme: PopupMenuThemeData(
+              color: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+                side: const BorderSide(color: BoutiqueColors.border),
+              ),
+              elevation: 6,
+            ),
           ),
-          MenuItemButton(
-            leadingIcon: const Icon(Icons.local_shipping_outlined,
-                size: 18, color: BoutiqueColors.textPrimary),
-            onPressed: widget.onLogVendorIssue,
-            child: const Text('Log Vendor Issue'),
-          ),
-        ],
-        builder: (context, controller, child) {
-          return Focus(
-            onFocusChange: (focused) {
-              if (mounted) setState(() => _isFocused = focused);
+          child: PopupMenuButton<int>(
+            tooltip: 'Log Issue / Return',
+            offset: const Offset(0, 50),
+            onSelected: (val) {
+              if (val == 0) widget.onLogCustomerReturn();
+              if (val == 1) widget.onLogVendorIssue();
             },
-            onKeyEvent: (node, event) {
-              if (event is KeyDownEvent) {
-                if (event.logicalKey == LogicalKeyboardKey.enter ||
-                    event.logicalKey == LogicalKeyboardKey.numpadEnter ||
-                    event.logicalKey == LogicalKeyboardKey.space ||
-                    event.logicalKey == LogicalKeyboardKey.arrowDown) {
-                  _toggleMenu();
-                  return KeyEventResult.handled;
-                }
-              }
-              return KeyEventResult.ignored;
-            },
+            itemBuilder: (context) => [
+              const PopupMenuItem<int>(
+                value: 0,
+                child: Row(
+                  children: [
+                    Icon(Icons.assignment_return_rounded,
+                        size: 18, color: BoutiqueColors.textPrimary),
+                    SizedBox(width: 10),
+                    Text(
+                      'Log Customer Return',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                        color: BoutiqueColors.textPrimary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const PopupMenuItem<int>(
+                value: 1,
+                child: Row(
+                  children: [
+                    Icon(Icons.local_shipping_outlined,
+                        size: 18, color: BoutiqueColors.textPrimary),
+                    SizedBox(width: 10),
+                    Text(
+                      'Log Vendor Issue',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                        color: BoutiqueColors.textPrimary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 150),
               decoration: BoxDecoration(
@@ -1158,41 +1336,36 @@ class _ReportLogIssueButtonState extends State<_ReportLogIssueButton> {
                 color: BoutiqueColors.accent,
                 borderRadius: BorderRadius.circular(8),
                 elevation: _isFocused ? 3 : 0,
-                child: InkWell(
-                  canRequestFocus: false,
-                  onTap: _toggleMenu,
-                  borderRadius: BorderRadius.circular(8),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 14),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                        color: _isFocused ? Colors.white : Colors.transparent,
-                        width: _isFocused ? 2.0 : 1.0,
-                      ),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 16, vertical: 14),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: _isFocused ? Colors.white : Colors.transparent,
+                      width: _isFocused ? 2.0 : 1.0,
                     ),
-                    child: const Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.add, size: 18, color: Colors.white),
-                        SizedBox(width: 8),
-                        Text(
-                          'Log Issue / Return',
-                          style: TextStyle(
-                            fontWeight: FontWeight.w600,
-                            fontSize: 13,
-                            color: Colors.white,
-                          ),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.add, size: 18, color: Colors.white),
+                      SizedBox(width: 8),
+                      Text(
+                        'Log Issue / Return',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 13,
+                          color: Colors.white,
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ),
               ),
             ),
-          );
-        },
+          ),
+        ),
       ),
     );
   }

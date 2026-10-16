@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:printing/printing.dart';
 import '../../models/product.dart';
 import '../../services/api_service.dart';
 import '../../utils/boutique_theme.dart';
 import '../../utils/excel_generator.dart';
+import '../../utils/pdf_report_generator.dart';
+import '../../utils/boutique_pdf_generator.dart';
+import '../../widgets/report_export_dialog.dart';
 import 'package:intl/intl.dart';
 import '../../widgets/report_filter_widgets.dart';
 
@@ -17,6 +21,7 @@ class InwardReportScreen extends StatefulWidget {
 
 class InwardReportScreenState extends State<InwardReportScreen> {
   final _currencyFmt = NumberFormat('#,##,##0.00', 'en_IN');
+  final _fileDateFmt = DateFormat('dd-MM-yyyy');
   final _searchCtrl = TextEditingController();
   late FocusNode _searchFocusNode;
   bool _ownSearchFocusNode = false;
@@ -290,13 +295,215 @@ class InwardReportScreenState extends State<InwardReportScreen> {
     }
   }
 
+  List<Map<String, dynamic>> _getFlatItems() {
+    final flatItems = <Map<String, dynamic>>[];
+    for (final bill in _filtered) {
+      final date = DateTime.tryParse(bill['billDate'] ?? '') ?? DateTime.now();
+      final narration = bill['narration']?.toString() ?? 'Stock Inward';
+      final items = bill['items'] as List<dynamic>? ?? [];
+
+      for (final item in items) {
+        if (item is! Map) continue;
+        final name = (item['name'] ?? '').toString();
+        final tagId = (item['tagId'] ?? '').toString();
+        final cat = (item['category'] ?? '').toString();
+
+        if (_searchQuery.isNotEmpty) {
+          final q = _searchQuery.toLowerCase();
+          if (!name.toLowerCase().contains(q) &&
+              !tagId.toLowerCase().contains(q) &&
+              !cat.toLowerCase().contains(q) &&
+              !narration.toLowerCase().contains(q)) {
+            continue;
+          }
+        }
+
+        final billDateParsed = DateTime.tryParse(bill['billDate']?.toString() ?? '');
+        final itemDate = billDateParsed ??
+            (item['addedDate'] != null
+                ? (DateTime.tryParse(item['addedDate'].toString()) ?? date)
+                : date);
+
+        flatItems.add({
+          'date': itemDate,
+          'narration': narration,
+          'itemData': item,
+          '_bill': bill,
+        });
+      }
+    }
+    flatItems.sort((a, b) {
+      final dateA = a['date'] as DateTime;
+      final dateB = b['date'] as DateTime;
+      return dateB.compareTo(dateA);
+    });
+    return flatItems;
+  }
+
+  Future<void> _handlePrint() async {
+    final flat = _getFlatItems();
+    if (flat.isEmpty) {
+      BoutiqueToast.showError(context, 'No inward data to print.');
+      return;
+    }
+    try {
+      final bytes = await generateInwardReportPdf(
+        items: flat,
+        dateFrom: _startDate,
+        dateTo: _endDate,
+      );
+      await Printing.layoutPdf(onLayout: (_) => bytes);
+    } catch (e) {
+      if (mounted) BoutiqueToast.showError(context, 'Error generating PDF: $e');
+    }
+  }
+
+  Future<void> _handleDownload() async {
+    final flat = _getFlatItems();
+    if (flat.isEmpty) {
+      BoutiqueToast.showError(context, 'No inward data to download.');
+      return;
+    }
+    await ReportExportDialog.show(
+      context: context,
+      title: 'Inward Transactions Report',
+      onDownloadPdf: () async {
+        final bytes = await generateInwardReportPdf(
+          items: flat,
+          dateFrom: _startDate,
+          dateTo: _endDate,
+        );
+        final dateStr = '${_fileDateFmt.format(_startDate)}_to_${_fileDateFmt.format(_endDate)}';
+        await Printing.sharePdf(
+          bytes: bytes,
+          filename: 'Inward_Report_$dateStr.pdf',
+        );
+      },
+      onDownloadExcel: () async {
+        await ExcelGenerator.downloadInwardReportExcel(
+          transactions: _filtered,
+          dateFrom: _startDate,
+          dateTo: _endDate,
+        );
+      },
+    );
+  }
+
   Future<void> _handleDownloadExcel() async {
     try {
-      await ExcelGenerator.downloadInwardReportExcel(transactions: _filtered);
+      await ExcelGenerator.downloadInwardReportExcel(
+        transactions: _filtered,
+        dateFrom: _startDate,
+        dateTo: _endDate,
+      );
+      if (mounted) BoutiqueToast.showSuccess(context, 'Inward Report (.xlsx) downloaded!');
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to download: $e')));
+        BoutiqueToast.showError(context, 'Failed to download: $e');
       }
+    }
+  }
+
+  Map<String, dynamic> _createInwardBillForProduct(Map<String, dynamic> itemData, DateTime date, String narration) {
+    final tagId = itemData['tagId']?.toString() ?? '';
+    final name = itemData['name']?.toString() ?? 'Product';
+    final qty = (itemData['qty'] as num?)?.toDouble() ?? 1.0;
+    final weight = (itemData['weight'] as num?)?.toDouble() ?? 0.0;
+    final rate = (itemData['rate'] as num?)?.toDouble() ?? 0.0;
+    var amt = (itemData['amount'] as num?)?.toDouble() ?? 0.0;
+    if (amt <= 0 && rate > 0) {
+      amt = weight > 0 ? (rate * weight) : (rate * qty);
+    }
+
+    return {
+      'billNo': 'INW-$tagId-${DateFormat('ddMMyy').format(date)}',
+      'billType': 'Inward',
+      'billDate': date,
+      'customerName': narration.isNotEmpty ? narration : 'Stock Inward',
+      'customerMobile': '',
+      'narration': narration,
+      'paymentMode': 'Internal',
+      'subtotal': amt,
+      'totalPayable': amt,
+      'amountReceived': amt,
+      'pendingBalance': 0.0,
+      'items': [
+        {
+          'tagId': tagId,
+          'name': name,
+          'category': itemData['category']?.toString() ?? '',
+          'qty': qty,
+          'weight': weight,
+          'unit': weight > 0 ? 'g' : 'Piece',
+          'pricingType': weight > 0 ? 'Weight-Based' : 'Quantity-Based',
+          'price': rate,
+          'rate': rate,
+          'lineAmount': amt,
+          'amount': amt,
+        }
+      ],
+    };
+  }
+
+  Future<void> _printRowInwardBill(Map<String, dynamic> itemData, DateTime date, String narration) async {
+    try {
+      final billMap = _createInwardBillForProduct(itemData, date, narration);
+      final bytes = await BoutiquePdfGenerator.generate(billMap);
+      await Printing.layoutPdf(onLayout: (_) async => bytes);
+    } catch (e) {
+      if (mounted) BoutiqueToast.showError(context, 'Failed to print bill: $e');
+    }
+  }
+
+  Future<void> _downloadRowInwardBillPdf(Map<String, dynamic> itemData, DateTime date, String narration) async {
+    try {
+      final billMap = _createInwardBillForProduct(itemData, date, narration);
+      final bytes = await BoutiquePdfGenerator.generate(billMap);
+      final tagId = itemData['tagId']?.toString() ?? 'Item';
+      final dateStr = _fileDateFmt.format(date);
+      await Printing.sharePdf(
+        bytes: bytes,
+        filename: 'Inward_Bill_${tagId}_$dateStr.pdf',
+      );
+    } catch (e) {
+      if (mounted) BoutiqueToast.showError(context, 'Failed to download bill: $e');
+    }
+  }
+
+  Future<void> _downloadRowInwardBillExcel(Map<String, dynamic> itemData, DateTime date, String narration) async {
+    try {
+      final tagId = itemData['tagId']?.toString() ?? '';
+      final name = itemData['name']?.toString() ?? 'Product';
+      final qty = (itemData['qty'] as num?)?.toInt() ?? 1;
+      final weight = (itemData['weight'] as num?)?.toDouble() ?? 0.0;
+      final rate = (itemData['rate'] as num?)?.toDouble() ?? 0.0;
+      final cat = itemData['category']?.toString() ?? '';
+
+      final prod = Product(
+        tagId: tagId,
+        name: name,
+        category: cat,
+        pricingType: weight > 0 ? 'Weight-Based' : 'Quantity-Based',
+        ratePerGram: rate,
+        sellingPrice: rate,
+        mrp: rate,
+        quantity: qty,
+        grossWeight: weight,
+        weightUnit: 'g',
+        unit: weight > 0 ? 'g' : 'Piece',
+        vendor: narration,
+        notes: narration,
+      );
+
+      final ref = 'INW-$tagId-${DateFormat('ddMMyy').format(date)}';
+      await ExcelGenerator.downloadInwardBillExcel(
+        products: [prod],
+        vendorName: narration,
+        inwardRefNo: ref,
+      );
+      if (mounted) BoutiqueToast.showSuccess(context, 'Inward Bill (.xlsx) downloaded!');
+    } catch (e) {
+      if (mounted) BoutiqueToast.showError(context, 'Failed to download Excel: $e');
     }
   }
 
@@ -493,6 +700,7 @@ class InwardReportScreenState extends State<InwardReportScreen> {
           Expanded(flex: 1, child: Text('Rate', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: BoutiqueColors.textPrimary), textAlign: TextAlign.right)),
           Expanded(flex: 2, child: Text('Added Stock', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: BoutiqueColors.textPrimary), textAlign: TextAlign.right)),
           Expanded(flex: 2, child: Text('Total Value', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: BoutiqueColors.textPrimary), textAlign: TextAlign.right)),
+          Expanded(flex: 2, child: Text('Actions', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: BoutiqueColors.textPrimary), textAlign: TextAlign.center)),
         ],
       ),
     );
@@ -685,6 +893,38 @@ class InwardReportScreenState extends State<InwardReportScreen> {
                 textAlign: TextAlign.right,
               ),
             ),
+            // Actions (Print Bill, PDF Bill, Excel Bill)
+            Expanded(
+              flex: 2,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.print_rounded, size: 18, color: BoutiqueColors.accent),
+                    tooltip: 'Print Inward Bill',
+                    padding: const EdgeInsets.all(4),
+                    constraints: const BoxConstraints(),
+                    onPressed: () => _printRowInwardBill(itemData, date, narration),
+                  ),
+                  const SizedBox(width: 8),
+                  IconButton(
+                    icon: const Icon(Icons.picture_as_pdf_rounded, size: 18, color: Colors.redAccent),
+                    tooltip: 'Download PDF Bill',
+                    padding: const EdgeInsets.all(4),
+                    constraints: const BoxConstraints(),
+                    onPressed: () => _downloadRowInwardBillPdf(itemData, date, narration),
+                  ),
+                  const SizedBox(width: 8),
+                  IconButton(
+                    icon: const Icon(Icons.download_rounded, size: 18, color: Color(0xFF1E7E34)),
+                    tooltip: 'Download Excel Bill',
+                    padding: const EdgeInsets.all(4),
+                    constraints: const BoxConstraints(),
+                    onPressed: () => _downloadRowInwardBillExcel(itemData, date, narration),
+                  ),
+                ],
+              ),
+            ),
           ],
         ),
       ),
@@ -694,64 +934,24 @@ class InwardReportScreenState extends State<InwardReportScreen> {
   @override
   Widget build(BuildContext context) {
     // Flatten transactions into a list of items for the table
-    final flatItems = <Map<String, dynamic>>[];
+    final flatItems = _getFlatItems();
     int totalInwardUnits = 0;
     double totalInwardWeight = 0.0;
     double totalInwardValue = 0.0;
 
-    for (final bill in _filtered) {
-      final date = DateTime.tryParse(bill['billDate'] ?? '') ?? DateTime.now();
-      final narration = bill['narration']?.toString() ?? 'Stock Inward';
-      final items = bill['items'] as List<dynamic>? ?? [];
-
-      for (final item in items) {
-        if (item is! Map) continue;
-        final name = (item['name'] ?? '').toString();
-        final tagId = (item['tagId'] ?? '').toString();
-        final cat = (item['category'] ?? '').toString();
-
-        if (_searchQuery.isNotEmpty) {
-          final q = _searchQuery.toLowerCase();
-          if (!name.toLowerCase().contains(q) &&
-              !tagId.toLowerCase().contains(q) &&
-              !cat.toLowerCase().contains(q) &&
-              !narration.toLowerCase().contains(q)) {
-            continue;
-          }
-        }
-
-        final qty = (item['qty'] as num?)?.toInt() ?? 0;
-        final weight = (item['weight'] as num?)?.toDouble() ?? 0.0;
-        final rate = (item['rate'] as num?)?.toDouble() ?? 0.0;
-        var amt = (item['amount'] as num?)?.toDouble() ?? 0.0;
-        if (amt <= 0 && rate > 0) {
-          amt = weight > 0 ? (rate * weight) : (rate * qty);
-        }
-
-        totalInwardUnits += qty;
-        totalInwardWeight += weight;
-        totalInwardValue += amt;
-
-        final billDateParsed = DateTime.tryParse(bill['billDate']?.toString() ?? '');
-        final itemDate = billDateParsed ??
-            (item['addedDate'] != null
-                ? (DateTime.tryParse(item['addedDate'].toString()) ?? date)
-                : date);
-
-        flatItems.add({
-          'date': itemDate,
-          'narration': narration,
-          'itemData': item,
-        });
+    for (final fi in flatItems) {
+      final item = fi['itemData'] as Map<String, dynamic>;
+      final qty = (item['qty'] as num?)?.toInt() ?? 0;
+      final weight = (item['weight'] as num?)?.toDouble() ?? 0.0;
+      final rate = (item['rate'] as num?)?.toDouble() ?? 0.0;
+      var amt = (item['amount'] as num?)?.toDouble() ?? 0.0;
+      if (amt <= 0 && rate > 0) {
+        amt = weight > 0 ? (rate * weight) : (rate * qty);
       }
+      totalInwardUnits += qty;
+      totalInwardWeight += weight;
+      totalInwardValue += amt;
     }
-
-    // Sort items by exact date & time descending
-    flatItems.sort((a, b) {
-      final dateA = a['date'] as DateTime;
-      final dateB = b['date'] as DateTime;
-      return dateB.compareTo(dateA);
-    });
 
     final totalStockString = totalInwardWeight > 0 && totalInwardUnits > 0
         ? '$totalInwardUnits pcs | ${totalInwardWeight.toStringAsFixed(1)}g'
@@ -898,14 +1098,37 @@ class InwardReportScreenState extends State<InwardReportScreen> {
                     ),
                   ),
                 ),
+                const SizedBox(width: 4),
 
-                // Download Excel
+                // Print Inward Report
                 FocusTraversalOrder(
                   order: const NumericFocusOrder(7.0),
                   child: IconButton(
+                    icon: const Icon(Icons.print_outlined, color: BoutiqueColors.accent),
+                    tooltip: 'Print Report',
+                    onPressed: _handlePrint,
+                  ),
+                ),
+                const SizedBox(width: 4),
+
+                // Download PDF Report
+                FocusTraversalOrder(
+                  order: const NumericFocusOrder(8.0),
+                  child: IconButton(
+                    icon: const Icon(Icons.download_outlined, color: BoutiqueColors.accent),
+                    tooltip: 'Download PDF',
+                    onPressed: _handleDownload,
+                  ),
+                ),
+                const SizedBox(width: 4),
+
+                // Download Excel
+                FocusTraversalOrder(
+                  order: const NumericFocusOrder(9.0),
+                  child: IconButton(
                     icon: const Icon(Icons.table_view_rounded, color: Color(0xFF1E7E34)),
                     onPressed: _handleDownloadExcel,
-                    tooltip: 'Download Excel',
+                    tooltip: 'Download Excel (.xlsx)',
                   ),
                 ),
               ],
@@ -1194,6 +1417,101 @@ class _ProductInwardHistoryDialogState extends State<_ProductInwardHistoryDialog
                           ],
                         ),
                       ),
+                      // Print Inward Bill Button
+                      OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: BoutiqueColors.accent,
+                          side: const BorderSide(color: BoutiqueColors.accentLightBorder),
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        ),
+                        icon: const Icon(Icons.print_rounded, size: 16),
+                        label: const Text('Print Bill', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                        onPressed: () async {
+                          if (widget.historyRows.isEmpty) return;
+                          final first = widget.historyRows.first;
+                          final dt = first['date'] as DateTime? ?? DateTime.now();
+                          final narr = first['narration']?.toString() ?? 'Stock Inward';
+                          final billMap = {
+                            'billNo': 'INW-${widget.tagId}-${DateFormat('ddMMyy').format(dt)}',
+                            'billType': 'Inward',
+                            'billDate': dt,
+                            'customerName': narr,
+                            'items': widget.historyRows.map((r) {
+                              final it = r['itemData'] as Map<String, dynamic>? ?? r;
+                              final q = (it['qty'] as num?)?.toDouble() ?? 1.0;
+                              final w = (it['weight'] as num?)?.toDouble() ?? 0.0;
+                              final rt = (it['rate'] as num?)?.toDouble() ?? 0.0;
+                              var a = (it['amount'] as num?)?.toDouble() ?? 0.0;
+                              if (a <= 0 && rt > 0) a = w > 0 ? rt * w : rt * q;
+                              return {
+                                'tagId': widget.tagId,
+                                'name': widget.productName,
+                                'category': widget.category,
+                                'qty': q,
+                                'weight': w,
+                                'price': rt,
+                                'rate': rt,
+                                'lineAmount': a,
+                              };
+                            }).toList(),
+                          };
+                          final bytes = await BoutiquePdfGenerator.generate(billMap);
+                          await Printing.layoutPdf(onLayout: (_) => bytes);
+                        },
+                      ),
+                      const SizedBox(width: 8),
+
+                      // Download PDF Bill Button
+                      OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.redAccent,
+                          side: const BorderSide(color: Color(0xFFFFCDD2)),
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        ),
+                        icon: const Icon(Icons.picture_as_pdf_rounded, size: 16),
+                        label: const Text('Download Bill PDF', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                        onPressed: () async {
+                          if (widget.historyRows.isEmpty) return;
+                          final first = widget.historyRows.first;
+                          final dt = first['date'] as DateTime? ?? DateTime.now();
+                          final narr = first['narration']?.toString() ?? 'Stock Inward';
+                          final billMap = {
+                            'billNo': 'INW-${widget.tagId}-${DateFormat('ddMMyy').format(dt)}',
+                            'billType': 'Inward',
+                            'billDate': dt,
+                            'customerName': narr,
+                            'items': widget.historyRows.map((r) {
+                              final it = r['itemData'] as Map<String, dynamic>? ?? r;
+                              final q = (it['qty'] as num?)?.toDouble() ?? 1.0;
+                              final w = (it['weight'] as num?)?.toDouble() ?? 0.0;
+                              final rt = (it['rate'] as num?)?.toDouble() ?? 0.0;
+                              var a = (it['amount'] as num?)?.toDouble() ?? 0.0;
+                              if (a <= 0 && rt > 0) a = w > 0 ? rt * w : rt * q;
+                              return {
+                                'tagId': widget.tagId,
+                                'name': widget.productName,
+                                'category': widget.category,
+                                'qty': q,
+                                'weight': w,
+                                'price': rt,
+                                'rate': rt,
+                                'lineAmount': a,
+                              };
+                            }).toList(),
+                          };
+                          final bytes = await BoutiquePdfGenerator.generate(billMap);
+                          final safeTag = widget.tagId.replaceAll('/', '-').replaceAll('\\', '-');
+                          final dateStr = DateFormat('dd-MM-yyyy').format(dt);
+                          await Printing.sharePdf(
+                            bytes: bytes,
+                            filename: 'Inward_Bill_${safeTag}_$dateStr.pdf',
+                          );
+                        },
+                      ),
+                      const SizedBox(width: 8),
+
                       // Download Excel Button
                       ElevatedButton.icon(
                         style: ElevatedButton.styleFrom(

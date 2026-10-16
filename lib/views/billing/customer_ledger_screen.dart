@@ -9,7 +9,8 @@ import '../../services/api_service.dart';
 
 class CustomerLedgerScreen extends StatefulWidget {
   final AdminState state;
-  const CustomerLedgerScreen({super.key, required this.state});
+  final FocusNode? searchFocusNode;
+  const CustomerLedgerScreen({super.key, required this.state, this.searchFocusNode});
 
   @override
   State<CustomerLedgerScreen> createState() => _CustomerLedgerScreenState();
@@ -25,7 +26,8 @@ class _CustomerLedgerScreenState extends State<CustomerLedgerScreen> {
   String _searchQuery = '';
   int _highlightedIndex = -1; // index in _filteredCustomerKeys for arrow-key nav
   final TextEditingController _searchCtrl = TextEditingController();
-  final FocusNode _searchFocusNode = FocusNode();
+  late final FocusNode _searchFocusNode;
+  bool _ownsSearchFocusNode = false;
   final ScrollController _listScrollCtrl = ScrollController();
   // Focus node for the right-panel content so Tab jumps there
   final FocusNode _rightPanelFocusNode = FocusNode(debugLabel: 'ledger_right_panel');
@@ -33,13 +35,22 @@ class _CustomerLedgerScreenState extends State<CustomerLedgerScreen> {
   @override
   void initState() {
     super.initState();
+    if (widget.searchFocusNode != null) {
+      _searchFocusNode = widget.searchFocusNode!;
+      _ownsSearchFocusNode = false;
+    } else {
+      _searchFocusNode = FocusNode(debugLabel: 'customer_ledger_search');
+      _ownsSearchFocusNode = true;
+    }
     _fetchPendingBills();
   }
 
   @override
   void dispose() {
     _searchCtrl.dispose();
-    _searchFocusNode.dispose();
+    if (_ownsSearchFocusNode) {
+      _searchFocusNode.dispose();
+    }
     _listScrollCtrl.dispose();
     _rightPanelFocusNode.dispose();
     super.dispose();
@@ -330,7 +341,7 @@ class _CustomerLedgerScreenState extends State<CustomerLedgerScreen> {
                         child: TextField(
                           controller: _searchCtrl,
                           focusNode: _searchFocusNode,
-                          autofocus: true,
+                          autofocus: false,
                           textInputAction: TextInputAction.none,
                           decoration: BoutiqueInputDecoration.field(
                             hintText: 'Search customer, mobile or bill #...',

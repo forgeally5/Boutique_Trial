@@ -121,12 +121,8 @@ class ReportsViewState extends State<ReportsView>
     }
     widget.onSubTabChanged?.call(index);
     if (mounted) {
-      if (index == 2) {
-        _focusSearchForTab(index);
-      } else {
-        _tabFocusNodes[index].requestFocus();
-        _focusSearchForTab(index);
-      }
+      _tabFocusNodes[index].requestFocus();
+      _focusSearchForTab(index);
     }
     if (index == 3) {
       _inwardReportKey.currentState?.refresh();
@@ -205,32 +201,6 @@ class ReportsViewState extends State<ReportsView>
                           ],
                         ),
                         const Spacer(),
-                        Tooltip(
-                          message: 'Refresh current report (F5)',
-                          child: OutlinedButton.icon(
-                            icon: const Icon(Icons.refresh_rounded, size: 16, color: BoutiqueColors.accent),
-                            label: const Text(
-                              'Refresh',
-                              style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                                color: BoutiqueColors.accent,
-                              ),
-                            ),
-                            style: OutlinedButton.styleFrom(
-                              backgroundColor: BoutiqueColors.bgCard,
-                              side: const BorderSide(color: BoutiqueColors.accentLightBorder),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                            ),
-                            onPressed: () {
-                              _selectTab(_currentTab);
-                              if (_currentTab == 3) {
-                                _inwardReportKey.currentState?.refresh();
-                              }
-                            },
-                          ),
-                        ),
                       ],
                     ),
                   ),
@@ -278,7 +248,7 @@ class ReportsViewState extends State<ReportsView>
                           isSelected: _currentTab == 2,
                           order: 3.0,
                           onSelect: () => _selectTab(2),
-                          onTabNext: () => _salesSearchFocusNode.requestFocus(),
+                          onTabNext: () => _tabFocusNodes[3].requestFocus(),
                           onTabPrev: () => _tabFocusNodes[1].requestFocus(),
                           onArrowRight: () => _tabFocusNodes[3].requestFocus(),
                           onArrowLeft: () => _tabFocusNodes[1].requestFocus(),
@@ -329,7 +299,10 @@ class ReportsViewState extends State<ReportsView>
                   FocusScope(
                     child: FocusTraversalGroup(
                       policy: OrderedTraversalPolicy(),
-                      child: StockReportScreen(searchFocusNode: _stockSearchFocusNode),
+                      child: StockReportScreen(
+                        searchFocusNode: _stockSearchFocusNode,
+                        onReturnToMainTab: () => _tabFocusNodes[1].requestFocus(),
+                      ),
                     ),
                   ),
                   FocusScope(

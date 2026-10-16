@@ -1037,6 +1037,115 @@ Future<Uint8List> generateProductWisePdf({
   return pdf.save();
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// INWARD REPORT PDF (Stock Inward Transactions)
+// ═══════════════════════════════════════════════════════════════════════════
+Future<Uint8List> generateInwardReportPdf({
+  required List<Map<String, dynamic>> items,
+  required DateTime dateFrom,
+  required DateTime dateTo,
+}) async {
+  final pdf = pw.Document();
+  final boldFont = await _boldFont();
+  final regularFont = await _regularFont();
+  final logoImage = await _getPdfLogo();
+
+  final subtitle =
+      'Period: ${_dateFmt.format(dateFrom)} -> ${_dateFmt.format(dateTo)}';
+
+  int totalQty = 0;
+  double totalWeight = 0.0;
+  double totalValue = 0.0;
+
+  for (final r in items) {
+    final it = r['itemData'] as Map<String, dynamic>? ?? r;
+    final q = (it['qty'] as num?)?.toInt() ?? 0;
+    final w = (it['weight'] as num?)?.toDouble() ?? 0.0;
+    final rate = (it['rate'] as num?)?.toDouble() ?? 0.0;
+    var amt = (it['amount'] as num?)?.toDouble() ?? 0.0;
+    if (amt <= 0 && rate > 0) {
+      amt = w > 0 ? (rate * w) : (rate * q);
+    }
+    totalQty += q;
+    totalWeight += w;
+    totalValue += amt;
+  }
+
+  final columns = [
+    'S.No', 'Date & Time', 'Item Name', 'Tag ID',
+    'Category', 'Inward Source', 'Qty', 'Weight', 'Rate (Rs.)', 'Total Value (Rs.)'
+  ];
+  final flexes = [1, 2, 3, 2, 2, 2, 1, 1, 2, 2];
+
+  pdf.addPage(
+    pw.MultiPage(
+      pageFormat: PdfPageFormat.a4.landscape,
+      margin: const pw.EdgeInsets.all(24),
+      footer: (context) => _buildFooter(regularFont, context),
+      build: (context) => [
+        _buildPdfHeader(
+          reportTitle: 'INWARD TRANSACTIONS REPORT',
+          subtitle: subtitle,
+          boldFont: boldFont,
+          regularFont: regularFont,
+          logoImage: logoImage,
+        ),
+        pw.SizedBox(height: 12),
+        pw.Container(
+          decoration: pw.BoxDecoration(
+            border: pw.Border.all(color: _kBorderColor),
+            borderRadius: const pw.BorderRadius.all(pw.Radius.circular(4)),
+          ),
+          child: pw.Column(
+            children: [
+              _buildTableHeader(columns, flexes, boldFont),
+              ...List.generate(items.length, (i) {
+                final r = items[i];
+                final dt = r['date'] is DateTime
+                    ? r['date'] as DateTime
+                    : (DateTime.tryParse(r['date']?.toString() ?? '') ?? DateTime.now());
+                final narration = r['narration']?.toString() ?? 'Stock Inward';
+                final it = r['itemData'] as Map<String, dynamic>? ?? r;
+                final name = it['name']?.toString() ?? '—';
+                final tagId = it['tagId']?.toString() ?? '—';
+                final cat = it['category']?.toString() ?? '—';
+                final q = (it['qty'] as num?)?.toInt() ?? 0;
+                final w = (it['weight'] as num?)?.toDouble() ?? 0.0;
+                final rate = (it['rate'] as num?)?.toDouble() ?? 0.0;
+                var amt = (it['amount'] as num?)?.toDouble() ?? 0.0;
+                if (amt <= 0 && rate > 0) {
+                  amt = w > 0 ? (rate * w) : (rate * q);
+                }
+
+                return _buildTableRow([
+                  '${i + 1}',
+                  DateFormat('dd/MM/yyyy HH:mm').format(dt),
+                  name,
+                  tagId,
+                  cat,
+                  narration,
+                  '$q',
+                  w > 0 ? '${w.toStringAsFixed(1)}g' : '—',
+                  rate > 0 ? 'Rs. ${_numFmt.format(rate)}' : '—',
+                  'Rs. ${_numFmt.format(amt)}',
+                ], flexes, regularFont, i.isOdd);
+              }),
+            ],
+          ),
+        ),
+        _buildSummaryBox({
+          'Total Entries': '${items.length}',
+          'Total Qty Inwarded': '$totalQty pcs',
+          if (totalWeight > 0) 'Total Weight': '${totalWeight.toStringAsFixed(1)}g',
+          'Total Inward Value': 'Rs. ${_numFmt.format(totalValue)}',
+        }, boldFont, regularFont),
+      ],
+    ),
+  );
+
+  return pdf.save();
+}
+
 // ─── Font Helpers ────────────────────────────────────────────────────────────
 pw.Font? _cachedRobotoBold;
 pw.Font? _cachedRobotoRegular;
