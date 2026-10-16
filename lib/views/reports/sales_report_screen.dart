@@ -590,10 +590,19 @@ class _IndividualSalesTabState extends State<_IndividualSalesTab> {
                 ),
                 const SizedBox(width: 8),
                 const SizedBox(width: 8),
-                IconButton(
-                  icon: const Icon(Icons.refresh_rounded, color: BoutiqueColors.accent),
-                  onPressed: _load,
-                  tooltip: 'Refresh',
+                Tooltip(
+                  message: 'Refresh Sales Report (Alt+3)',
+                  child: OutlinedButton.icon(
+                    icon: const Icon(Icons.refresh_rounded, size: 16, color: BoutiqueColors.accent),
+                    label: const Text('Refresh', style: TextStyle(color: BoutiqueColors.accent, fontWeight: FontWeight.bold, fontSize: 13)),
+                    style: OutlinedButton.styleFrom(
+                      backgroundColor: BoutiqueColors.bgCard,
+                      side: const BorderSide(color: BoutiqueColors.accentLightBorder),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    ),
+                    onPressed: _load,
+                  ),
                 ),
                 IconButton(
                   icon: const Icon(Icons.print_outlined,

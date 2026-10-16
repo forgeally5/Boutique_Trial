@@ -729,11 +729,19 @@ class _StockReportScreenState extends State<StockReportScreen>
               const SizedBox(width: 8),
               FocusTraversalOrder(
                 order: const NumericFocusOrder(8.0),
-                child: IconButton(
-                  icon: const Icon(Icons.refresh_rounded,
-                      color: BoutiqueColors.accent),
-                  onPressed: _load,
-                  tooltip: 'Refresh',
+                child: Tooltip(
+                  message: 'Refresh Stock Report (Alt+2)',
+                  child: OutlinedButton.icon(
+                    icon: const Icon(Icons.refresh_rounded, size: 16, color: BoutiqueColors.accent),
+                    label: const Text('Refresh', style: TextStyle(color: BoutiqueColors.accent, fontWeight: FontWeight.bold, fontSize: 13)),
+                    style: OutlinedButton.styleFrom(
+                      backgroundColor: BoutiqueColors.bgCard,
+                      side: const BorderSide(color: BoutiqueColors.accentLightBorder),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    ),
+                    onPressed: _load,
+                  ),
                 ),
               ),
               FocusTraversalOrder(

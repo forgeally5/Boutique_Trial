@@ -8,13 +8,14 @@ import 'reports/inward_report_screen.dart';
 
 class ReportsView extends StatefulWidget {
   final bool isActive;
-  const ReportsView({super.key, this.isActive = false});
+  final int? targetSubTab;
+  const ReportsView({super.key, this.isActive = false, this.targetSubTab});
 
   @override
-  State<ReportsView> createState() => _ReportsViewState();
+  ReportsViewState createState() => ReportsViewState();
 }
 
-class _ReportsViewState extends State<ReportsView>
+class ReportsViewState extends State<ReportsView>
   with SingleTickerProviderStateMixin {
   late TabController _tabController;
   int _currentTab = 0;
@@ -34,10 +35,16 @@ class _ReportsViewState extends State<ReportsView>
   final FocusNode _salesSearchFocusNode = FocusNode(debugLabel: 'sales_search');
   final FocusNode _inwardSearchFocusNode = FocusNode(debugLabel: 'inward_search');
 
+  void selectTab(int index) {
+    _selectTab(index);
+  }
+
   @override
   void didUpdateWidget(ReportsView oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.isActive && !oldWidget.isActive) {
+    if (widget.targetSubTab != null && widget.targetSubTab != _currentTab) {
+      _selectTab(widget.targetSubTab!);
+    } else if (widget.isActive && !oldWidget.isActive) {
       if (_currentTab == 3) {
         _inwardReportKey.currentState?.refresh();
       }
@@ -47,7 +54,8 @@ class _ReportsViewState extends State<ReportsView>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 4, vsync: this);
+    _currentTab = widget.targetSubTab ?? 0;
+    _tabController = TabController(length: 4, vsync: this, initialIndex: _currentTab);
     _tabController.addListener(() {
       if (_tabController.indexIsChanging || _tabController.index != _currentTab) {
         setState(() => _currentTab = _tabController.index);
@@ -180,6 +188,33 @@ class _ReportsViewState extends State<ReportsView>
                               ),
                             ),
                           ],
+                        ),
+                        const Spacer(),
+                        Tooltip(
+                          message: 'Refresh current report (F5)',
+                          child: OutlinedButton.icon(
+                            icon: const Icon(Icons.refresh_rounded, size: 16, color: BoutiqueColors.accent),
+                            label: const Text(
+                              'Refresh',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: BoutiqueColors.accent,
+                              ),
+                            ),
+                            style: OutlinedButton.styleFrom(
+                              backgroundColor: BoutiqueColors.bgCard,
+                              side: const BorderSide(color: BoutiqueColors.accentLightBorder),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                            ),
+                            onPressed: () {
+                              _selectTab(_currentTab);
+                              if (_currentTab == 3) {
+                                _inwardReportKey.currentState?.refresh();
+                              }
+                            },
+                          ),
                         ),
                       ],
                     ),

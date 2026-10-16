@@ -27,10 +27,10 @@ class BillingView extends StatefulWidget {
   });
 
   @override
-  State<BillingView> createState() => _BillingViewState();
+  State<BillingView> createState() => BillingViewState();
 }
 
-class _BillingViewState extends State<BillingView> {
+class BillingViewState extends State<BillingView> {
   // 0 = Create Bill, 1 = Bill History, 2 = Customer Ledger
   int _tab = 0;
   Map<String, dynamic>? _billToEdit;
@@ -59,6 +59,22 @@ class _BillingViewState extends State<BillingView> {
     ];
   }
 
+  void selectTab(int index) {
+    final authUser = context.read<AuthViewModel>().appUser;
+    final perms = authUser?.permissions ?? PermissionsModel.adminPreset();
+    final canCreateBill = perms.salesEntry;
+    final canViewHistory = perms.salesEntry || perms.viewReports;
+    final visible = _visible(canCreateBill, canViewHistory);
+    if (visible.contains(index)) {
+      setState(() => _tab = index);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && index >= 0 && index < _tabFocus.length) {
+          _tabFocus[index].requestFocus();
+        }
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final authUser = context.watch<AuthViewModel>().appUser;
@@ -72,90 +88,112 @@ class _BillingViewState extends State<BillingView> {
 
     final visible = _visible(canCreateBill, canViewHistory);
 
-    return Column(
-      children: [
-        // Tab bar
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 20),
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            border: Border(bottom: BorderSide(color: _border)),
-          ),
-          child: Row(
-            children: [
-              if (canCreateBill)
-                _buildTab(0, Icons.receipt_long_rounded, 'Create Bill', visible),
-              if (canCreateBill) const SizedBox(width: 4),
-              if (canViewHistory)
-                _buildTab(1, Icons.history_rounded, 'Bill History', visible),
-              if (canViewHistory) const SizedBox(width: 4),
-              _buildTab(
-                  2, Icons.account_balance_wallet_rounded, 'Customer Ledger', visible),
-              const Spacer(),
-              Tooltip(
-                message: 'Refresh data from server',
-                child: IconButton(
-                  icon: const Icon(Icons.refresh_rounded, size: 20),
-                  color: BoutiqueColors.textSecondary,
-                  onPressed: reloadWebPage,
-                ),
-              ),
-              const SizedBox(width: 16),
-            ],
-          ),
-        ),
-        // Content — Shift+Tab from anywhere inside content returns to the active tab button
-        Expanded(
-          child: Focus(
-            skipTraversal: true,
-            onKeyEvent: (node, event) {
-              if (event is! KeyDownEvent) return KeyEventResult.ignored;
-              if (event.logicalKey == LogicalKeyboardKey.tab &&
-                  HardwareKeyboard.instance.isShiftPressed) {
-                // Go back to the currently active tab button
-                _tabFocus[_tab].requestFocus();
-                return KeyEventResult.handled;
-              }
-              return KeyEventResult.ignored;
-            },
-            child: Stack(
+    return CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.keyB, alt: true): () => selectTab(0),
+        const SingleActivator(LogicalKeyboardKey.keyH, alt: true): () => selectTab(1),
+        const SingleActivator(LogicalKeyboardKey.keyC, alt: true): () => selectTab(2),
+        const SingleActivator(LogicalKeyboardKey.keyB, control: true, shift: true): () => selectTab(0),
+        const SingleActivator(LogicalKeyboardKey.keyH, control: true, shift: true): () => selectTab(1),
+        const SingleActivator(LogicalKeyboardKey.keyC, control: true, shift: true): () => selectTab(2),
+      },
+      child: Column(
+        children: [
+          // Tab bar
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              border: Border(bottom: BorderSide(color: _border)),
+            ),
+            child: Row(
               children: [
                 if (canCreateBill)
-                  Offstage(
-                    offstage: _tab != 0,
-                    child: CreateBillScreen(
-                      key: ValueKey(_billToEdit?['billNo'] ?? 'create'),
-                      state: widget.state,
-                      initialBill: _billToEdit,
-                      onSaved: () {
-                        setState(() {
-                          _billToEdit = null;
-                          _tab = 1;
-                        });
-                      },
+                  _buildTab(0, Icons.receipt_long_rounded, 'Create Bill', 'Alt+B', visible),
+                if (canCreateBill) const SizedBox(width: 4),
+                if (canViewHistory)
+                  _buildTab(1, Icons.history_rounded, 'Bill History', 'Alt+H', visible),
+                if (canViewHistory) const SizedBox(width: 4),
+                _buildTab(
+                    2, Icons.account_balance_wallet_rounded, 'Customer Ledger', 'Alt+C', visible),
+                const Spacer(),
+                Tooltip(
+                  message: 'Refresh data from server (F5)',
+                  child: OutlinedButton.icon(
+                    icon: const Icon(Icons.refresh_rounded, size: 16, color: BoutiqueColors.accent),
+                    label: const Text(
+                      'Refresh',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: BoutiqueColors.accent,
+                      ),
                     ),
+                    style: OutlinedButton.styleFrom(
+                      backgroundColor: BoutiqueColors.bgCard,
+                      side: const BorderSide(color: BoutiqueColors.accentLightBorder),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                    ),
+                    onPressed: reloadWebPage,
                   ),
-                if (_tab == 1 && canViewHistory)
-                  BillHistoryScreen(
-                    state: widget.state,
-                    onEditBill: (bill) {
-                      setState(() {
-                        _billToEdit = bill;
-                        _tab = 0;
-                      });
-                    },
-                  ),
-                if (_tab == 2) CustomerLedgerScreen(state: widget.state),
+                ),
+                const SizedBox(width: 16),
               ],
             ),
           ),
-        ),
-
-      ],
+          // Content — Shift+Tab from anywhere inside content returns to the active tab button
+          Expanded(
+            child: Focus(
+              skipTraversal: true,
+              onKeyEvent: (node, event) {
+                if (event is! KeyDownEvent) return KeyEventResult.ignored;
+                if (event.logicalKey == LogicalKeyboardKey.tab &&
+                    HardwareKeyboard.instance.isShiftPressed) {
+                  // Go back to the currently active tab button
+                  _tabFocus[_tab].requestFocus();
+                  return KeyEventResult.handled;
+                }
+                return KeyEventResult.ignored;
+              },
+              child: Stack(
+                children: [
+                  if (canCreateBill)
+                    Offstage(
+                      offstage: _tab != 0,
+                      child: CreateBillScreen(
+                        key: ValueKey(_billToEdit?['billNo'] ?? 'create'),
+                        state: widget.state,
+                        initialBill: _billToEdit,
+                        onSaved: () {
+                          setState(() {
+                            _billToEdit = null;
+                            _tab = 1;
+                          });
+                        },
+                      ),
+                    ),
+                  if (_tab == 1 && canViewHistory)
+                    BillHistoryScreen(
+                      state: widget.state,
+                      onEditBill: (bill) {
+                        setState(() {
+                          _billToEdit = bill;
+                          _tab = 0;
+                        });
+                      },
+                    ),
+                  if (_tab == 2) CustomerLedgerScreen(state: widget.state),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
-  Widget _buildTab(int index, IconData icon, String label, List<int> visible) {
+  Widget _buildTab(int index, IconData icon, String label, String shortcut, List<int> visible) {
     final isSelected = _tab == index;
     final fn = _tabFocus[index];
 
@@ -194,13 +232,17 @@ class _BillingViewState extends State<BillingView> {
           return KeyEventResult.handled;
         }
 
-        // Left / Right arrows: navigate between tabs
+        // Left / Right arrows: navigate and switch between tabs
         if (event.logicalKey == LogicalKeyboardKey.arrowRight && pos < visible.length - 1) {
-          _tabFocus[visible[pos + 1]].requestFocus();
+          final nextIdx = visible[pos + 1];
+          setState(() => _tab = nextIdx);
+          _tabFocus[nextIdx].requestFocus();
           return KeyEventResult.handled;
         }
         if (event.logicalKey == LogicalKeyboardKey.arrowLeft && pos > 0) {
-          _tabFocus[visible[pos - 1]].requestFocus();
+          final prevIdx = visible[pos - 1];
+          setState(() => _tab = prevIdx);
+          _tabFocus[prevIdx].requestFocus();
           return KeyEventResult.handled;
         }
 
@@ -215,10 +257,10 @@ class _BillingViewState extends State<BillingView> {
             onTap: () => setState(() => _tab = index),
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 180),
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
               decoration: BoxDecoration(
                 // Subtle keyboard-focus highlight on the tab button
-                color: isFocused ? _brown.withOpacity(0.07) : Colors.transparent,
+                color: isFocused ? _brown.withValues(alpha: 0.07) : Colors.transparent,
                 borderRadius: BorderRadius.circular(4),
                 border: Border(
                   bottom: BorderSide(
@@ -233,9 +275,18 @@ class _BillingViewState extends State<BillingView> {
                 Text(
                   label,
                   style: TextStyle(
-                    fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                    fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
                     color: isSelected ? _brown : _brownLight,
                     fontSize: 14,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  '($shortcut)',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                    color: isSelected ? _brown.withAlpha(220) : _brownLight.withAlpha(160),
                   ),
                 ),
               ]),

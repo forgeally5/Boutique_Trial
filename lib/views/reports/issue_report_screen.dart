@@ -486,12 +486,22 @@ class _IssueReportScreenState extends State<IssueReportScreen> {
           ),
           const SizedBox(width: 8),
           // 10.0 Refresh
-          _ReportActionIconButton(
-            icon: Icons.refresh_rounded,
-            color: BoutiqueColors.accent,
-            tooltip: 'Refresh',
-            order: 10.0,
-            onTap: _load,
+          FocusTraversalOrder(
+            order: const NumericFocusOrder(10.0),
+            child: Tooltip(
+              message: 'Refresh Issue Report (Alt+1)',
+              child: OutlinedButton.icon(
+                icon: const Icon(Icons.refresh_rounded, size: 16, color: BoutiqueColors.accent),
+                label: const Text('Refresh', style: TextStyle(color: BoutiqueColors.accent, fontWeight: FontWeight.bold, fontSize: 13)),
+                style: OutlinedButton.styleFrom(
+                  backgroundColor: BoutiqueColors.bgCard,
+                  side: const BorderSide(color: BoutiqueColors.accentLightBorder),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                ),
+                onPressed: _load,
+              ),
+            ),
           ),
           const SizedBox(width: 4),
           // 11.0 Print

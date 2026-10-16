@@ -257,6 +257,9 @@ class AdminHomeShell extends StatefulWidget {
 
 class _AdminHomeShellState extends State<AdminHomeShell> {
   final AdminState _state = AdminState();
+  final GlobalKey<ReportsViewState> _reportsKey = GlobalKey<ReportsViewState>();
+  final GlobalKey<BillingViewState> _billingKey = GlobalKey<BillingViewState>();
+  int _reportsSubTab = 0;
   int _activeTabIndex = 2; // Default to Billing / POS on login
   String _selectedBillingSection = 'A Sales Entry';
   final TextEditingController _globalSearchCtrl = TextEditingController();
@@ -300,9 +303,120 @@ class _AdminHomeShellState extends State<AdminHomeShell> {
     }
   }
 
+  void _navigateToReportTab(int subTab) {
+    final authUser = context.read<AuthViewModel>().appUser;
+    final perms = authUser?.permissions ?? PermissionsModel.adminPreset();
+    if (!perms.viewReports) return;
+
+    if (_activeTabIndex != 3) {
+      _switchTab(3);
+    }
+    setState(() {
+      _reportsSubTab = subTab;
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _reportsKey.currentState?.selectTab(subTab);
+      _focusMainContent();
+    });
+  }
+
+  void _navigateToBillingTab(int subTab) {
+    final authUser = context.read<AuthViewModel>().appUser;
+    final perms = authUser?.permissions ?? PermissionsModel.adminPreset();
+    if (!perms.salesEntry && !perms.viewReports) return;
+
+    if (_activeTabIndex != 2) {
+      _switchTab(2);
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _billingKey.currentState?.selectTab(subTab);
+      _focusMainContent();
+    });
+  }
+
+  bool _handleGlobalKeyEvent(KeyEvent event) {
+    if (event is! KeyDownEvent) return false;
+
+    final isAlt = HardwareKeyboard.instance.isAltPressed;
+    final isCtrl = HardwareKeyboard.instance.isControlPressed;
+    final isMeta = HardwareKeyboard.instance.isMetaPressed;
+    final isShift = HardwareKeyboard.instance.isShiftPressed;
+    final isCtrlOrMeta = isCtrl || isMeta;
+
+    // Logout shortcuts: Alt+L, Alt+Q, Ctrl+Shift+L, Ctrl+Shift+Q, Meta+Shift+L, Meta+Shift+Q
+    if ((isAlt && (event.logicalKey == LogicalKeyboardKey.keyL || event.logicalKey == LogicalKeyboardKey.keyQ)) ||
+        (isCtrlOrMeta && isShift && (event.logicalKey == LogicalKeyboardKey.keyL || event.logicalKey == LogicalKeyboardKey.keyQ))) {
+      _handleLogout();
+      return true;
+    }
+
+    // Reports sub-tab shortcuts: Alt + 1..4 OR Ctrl + Shift + 1..4 (Works from any page!)
+    if ((isAlt && !isCtrlOrMeta) || (isCtrlOrMeta && isShift)) {
+      if (event.logicalKey == LogicalKeyboardKey.digit1 || event.logicalKey == LogicalKeyboardKey.numpad1) {
+        _navigateToReportTab(0);
+        return true;
+      }
+      if (event.logicalKey == LogicalKeyboardKey.digit2 || event.logicalKey == LogicalKeyboardKey.numpad2) {
+        _navigateToReportTab(1);
+        return true;
+      }
+      if (event.logicalKey == LogicalKeyboardKey.digit3 || event.logicalKey == LogicalKeyboardKey.numpad3) {
+        _navigateToReportTab(2);
+        return true;
+      }
+      if (event.logicalKey == LogicalKeyboardKey.digit4 || event.logicalKey == LogicalKeyboardKey.numpad4) {
+        _navigateToReportTab(3);
+        return true;
+      }
+
+      // Billing sub-tab shortcuts: Alt + B, Alt + H, Alt + C (Works from any page!)
+      if (event.logicalKey == LogicalKeyboardKey.keyB) {
+        _navigateToBillingTab(0);
+        return true;
+      }
+      if (event.logicalKey == LogicalKeyboardKey.keyH) {
+        _navigateToBillingTab(1);
+        return true;
+      }
+      if (event.logicalKey == LogicalKeyboardKey.keyC) {
+        _navigateToBillingTab(2);
+        return true;
+      }
+    }
+
+    // Main navigation tabs: Ctrl+1..5 / Meta+1..5 (without Shift)
+    if (isCtrlOrMeta && !isShift && !isAlt) {
+      if (event.logicalKey == LogicalKeyboardKey.digit1 || event.logicalKey == LogicalKeyboardKey.numpad1) {
+        _switchAndFocus(1);
+        return true;
+      }
+      if (event.logicalKey == LogicalKeyboardKey.digit2 || event.logicalKey == LogicalKeyboardKey.numpad2) {
+        _switchAndFocus(2);
+        return true;
+      }
+      if (event.logicalKey == LogicalKeyboardKey.digit3 || event.logicalKey == LogicalKeyboardKey.numpad3) {
+        _switchAndFocus(3);
+        return true;
+      }
+      if (event.logicalKey == LogicalKeyboardKey.digit4 || event.logicalKey == LogicalKeyboardKey.numpad4) {
+        _switchAndFocus(4);
+        return true;
+      }
+      if (event.logicalKey == LogicalKeyboardKey.digit5 || event.logicalKey == LogicalKeyboardKey.numpad5) {
+        _switchAndFocus(5);
+        return true;
+      }
+    }
+
+    return false;
+  }
+
   @override
   void initState() {
     super.initState();
+    HardwareKeyboard.instance.addHandler(_handleGlobalKeyEvent);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final perms = context.read<AuthViewModel>().appUser?.permissions ?? PermissionsModel.adminPreset();
       if (mounted) {
@@ -349,6 +463,7 @@ class _AdminHomeShellState extends State<AdminHomeShell> {
 
   @override
   void dispose() {
+    HardwareKeyboard.instance.removeHandler(_handleGlobalKeyEvent);
     _mainContentFocusScopeNode.dispose();
     _state.dispose();
     _globalSearchCtrl.dispose();
@@ -391,10 +506,23 @@ class _AdminHomeShellState extends State<AdminHomeShell> {
                 ),
               ),
               Tooltip(
-                message: 'Refresh data from server',
-                child: IconButton(
-                  icon: const Icon(Icons.refresh_rounded, size: 20),
-                  color: BoutiqueColors.textSecondary,
+                message: 'Refresh data from server (F5)',
+                child: OutlinedButton.icon(
+                  icon: const Icon(Icons.refresh_rounded, size: 16, color: BoutiqueColors.accent),
+                  label: const Text(
+                    'Refresh',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: BoutiqueColors.accent,
+                    ),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    backgroundColor: BoutiqueColors.bgCard,
+                    side: const BorderSide(color: BoutiqueColors.accentLightBorder),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  ),
                   onPressed: reloadWebPage,
                 ),
               ),
@@ -413,8 +541,8 @@ class _AdminHomeShellState extends State<AdminHomeShell> {
               ),
               _buildSettingsCard(
                 icon: Icons.logout_rounded,
-                title: 'Logout Admin',
-                subtitle: 'Sign out of current session (Ctrl+Shift+L / Alt+L)',
+                title: 'Logout Admin (Alt+L)',
+                subtitle: 'Sign out of current session (Alt+L / Ctrl+Shift+L)',
                 isDestructive: true,
                 onTap: _handleLogout,
               ),
@@ -753,6 +881,20 @@ class _AdminHomeShellState extends State<AdminHomeShell> {
         const SingleActivator(LogicalKeyboardKey.digit3, meta: true): () => _switchAndFocus(3),
         const SingleActivator(LogicalKeyboardKey.digit4, meta: true): () => _switchAndFocus(4),
         const SingleActivator(LogicalKeyboardKey.digit5, meta: true): () => _switchAndFocus(5),
+        // Alt + 1..4 (Reports: Issue, Stock, Sales, Inward)
+        const SingleActivator(LogicalKeyboardKey.digit1, alt: true): () => _navigateToReportTab(0),
+        const SingleActivator(LogicalKeyboardKey.digit2, alt: true): () => _navigateToReportTab(1),
+        const SingleActivator(LogicalKeyboardKey.digit3, alt: true): () => _navigateToReportTab(2),
+        const SingleActivator(LogicalKeyboardKey.digit4, alt: true): () => _navigateToReportTab(3),
+        const SingleActivator(LogicalKeyboardKey.numpad1, alt: true): () => _navigateToReportTab(0),
+        const SingleActivator(LogicalKeyboardKey.numpad2, alt: true): () => _navigateToReportTab(1),
+        const SingleActivator(LogicalKeyboardKey.numpad3, alt: true): () => _navigateToReportTab(2),
+        const SingleActivator(LogicalKeyboardKey.numpad4, alt: true): () => _navigateToReportTab(3),
+        // Ctrl + Shift + 1..4 (Reports: Issue, Stock, Sales, Inward)
+        const SingleActivator(LogicalKeyboardKey.digit1, control: true, shift: true): () => _navigateToReportTab(0),
+        const SingleActivator(LogicalKeyboardKey.digit2, control: true, shift: true): () => _navigateToReportTab(1),
+        const SingleActivator(LogicalKeyboardKey.digit3, control: true, shift: true): () => _navigateToReportTab(2),
+        const SingleActivator(LogicalKeyboardKey.digit4, control: true, shift: true): () => _navigateToReportTab(3),
         // Logout shortcuts
         const SingleActivator(LogicalKeyboardKey.keyL, control: true, shift: true): _handleLogout,
         const SingleActivator(LogicalKeyboardKey.keyL, alt: true): _handleLogout,
@@ -832,6 +974,10 @@ class _AdminHomeShellState extends State<AdminHomeShell> {
                         if (canViewReports) _buildNavItem(3, Icons.analytics_outlined, 'Reports', shortcut: 'Ctrl+3'),
                         if (canManageUsers) _buildNavItem(4, Icons.manage_accounts_outlined, 'Users', shortcut: 'Ctrl+4'),
                         if (canViewSettings) _buildNavItem(5, Icons.settings_outlined, 'Settings', shortcut: 'Ctrl+5'),
+                        const SizedBox(height: 12),
+                        const Divider(height: 1, color: BoutiqueColors.borderLight),
+                        const SizedBox(height: 12),
+                        _buildLogoutNavItem(shortcut: 'Alt+L'),
                       ],
                     ),
                   ),
@@ -879,9 +1025,9 @@ class _AdminHomeShellState extends State<AdminHomeShell> {
                           tooltip: 'Speed Refresh (F5)',
                         ),
                         IconButton(
-                          icon: const Icon(Icons.logout_rounded, size: 16, color: BoutiqueColors.textSecondary),
+                          icon: const Icon(Icons.logout_rounded, size: 16, color: BoutiqueColors.destructive),
                           onPressed: _handleLogout,
-                          tooltip: 'Logout (Ctrl+Shift+L / Alt+L)',
+                          tooltip: 'Logout (Alt+L)',
                         ),
                       ],
                     ),
@@ -907,13 +1053,30 @@ class _AdminHomeShellState extends State<AdminHomeShell> {
                       children: [
                         PopupMenuButton<int>(
                           icon: const Icon(Icons.menu_rounded, color: BoutiqueColors.textPrimary),
-                          onSelected: (idx) => _switchTab(idx),
+                          onSelected: (idx) {
+                            if (idx == 99) {
+                              _handleLogout();
+                            } else {
+                              _switchTab(idx);
+                            }
+                          },
                           itemBuilder: (ctx) => [
-                            if (canViewInventory) const PopupMenuItem(value: 1, child: Text('Inventory')),
-                            if (canViewBilling) const PopupMenuItem(value: 2, child: Text('Billing / POS')),
-                            if (canViewReports) const PopupMenuItem(value: 3, child: Text('Reports')),
-                            if (canManageUsers) const PopupMenuItem(value: 4, child: Text('Users')),
-                            if (canViewSettings) const PopupMenuItem(value: 5, child: Text('Settings')),
+                            if (canViewInventory) const PopupMenuItem(value: 1, child: Text('Inventory (Ctrl+1)')),
+                            if (canViewBilling) const PopupMenuItem(value: 2, child: Text('Billing / POS (Ctrl+2)')),
+                            if (canViewReports) const PopupMenuItem(value: 3, child: Text('Reports (Ctrl+3)')),
+                            if (canManageUsers) const PopupMenuItem(value: 4, child: Text('Users (Ctrl+4)')),
+                            if (canViewSettings) const PopupMenuItem(value: 5, child: Text('Settings (Ctrl+5)')),
+                            const PopupMenuDivider(),
+                            const PopupMenuItem(
+                              value: 99,
+                              child: Row(
+                                children: [
+                                  Icon(Icons.logout_rounded, size: 18, color: BoutiqueColors.destructive),
+                                  SizedBox(width: 8),
+                                  Text('Logout (Alt+L)', style: TextStyle(color: BoutiqueColors.destructive)),
+                                ],
+                              ),
+                            ),
                           ],
                         ),
                         const SizedBox(width: 8),
@@ -960,6 +1123,7 @@ class _AdminHomeShellState extends State<AdminHomeShell> {
                           ExcludeFocus(
                             excluding: _stackIndex != 1,
                             child: BillingView(
+                              key: _billingKey,
                               state: _state,
                               initialSection: _selectedBillingSection,
                               onSectionChanged: (sec) {
@@ -970,7 +1134,11 @@ class _AdminHomeShellState extends State<AdminHomeShell> {
                           // Index 2: Reports
                           ExcludeFocus(
                             excluding: _stackIndex != 2,
-                            child: ReportsView(isActive: _stackIndex == 2),
+                            child: ReportsView(
+                              key: _reportsKey,
+                              isActive: _stackIndex == 2,
+                              targetSubTab: _reportsSubTab,
+                            ),
                           ),
                           // Index 3: Users
                           ExcludeFocus(
@@ -1014,6 +1182,19 @@ class _AdminHomeShellState extends State<AdminHomeShell> {
       },
     );
   }
+
+  Widget _buildLogoutNavItem({String? shortcut}) {
+    return _SidebarNavItem(
+      index: -1,
+      icon: Icons.logout_rounded,
+      label: 'Logout',
+      shortcut: shortcut ?? 'Alt+L',
+      isSelected: false,
+      isDestructive: true,
+      onTap: _handleLogout,
+      onEnterOrRight: _handleLogout,
+    );
+  }
 }
 
 class _SidebarNavItem extends StatefulWidget {
@@ -1022,6 +1203,7 @@ class _SidebarNavItem extends StatefulWidget {
   final String label;
   final String? shortcut;
   final bool isSelected;
+  final bool isDestructive;
   final VoidCallback onTap;
   final VoidCallback onEnterOrRight;
 
@@ -1031,6 +1213,7 @@ class _SidebarNavItem extends StatefulWidget {
     required this.label,
     this.shortcut,
     required this.isSelected,
+    this.isDestructive = false,
     required this.onTap,
     required this.onEnterOrRight,
   });
@@ -1046,6 +1229,8 @@ class _SidebarNavItemState extends State<_SidebarNavItem> {
   @override
   Widget build(BuildContext context) {
     final showHighlight = widget.isSelected || _isHovered || _isFocused;
+    final primaryColor = widget.isDestructive ? BoutiqueColors.destructive : BoutiqueColors.accent;
+    final primaryBg = widget.isDestructive ? BoutiqueColors.destructiveBg : BoutiqueColors.accentSoft;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 6),
@@ -1080,17 +1265,21 @@ class _SidebarNavItemState extends State<_SidebarNavItem> {
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               decoration: BoxDecoration(
                 color: widget.isSelected
-                    ? BoutiqueColors.accentSoft
+                    ? primaryBg
                     : (_isFocused || _isHovered
-                        ? BoutiqueColors.accentSoft.withValues(alpha: 0.5)
+                        ? primaryBg.withValues(alpha: 0.5)
                         : Colors.transparent),
                 borderRadius: BorderRadius.circular(10),
                 border: Border.all(
                   color: widget.isSelected
-                      ? (_isFocused ? BoutiqueColors.accent : BoutiqueColors.accentLightBorder)
+                      ? (_isFocused ? primaryColor : BoutiqueColors.accentLightBorder)
                       : (_isFocused
-                          ? BoutiqueColors.accent
-                          : (_isHovered ? BoutiqueColors.accentLightBorder : Colors.transparent)),
+                          ? primaryColor
+                          : (_isHovered
+                              ? (widget.isDestructive
+                                  ? BoutiqueColors.destructive.withValues(alpha: 0.3)
+                                  : BoutiqueColors.accentLightBorder)
+                              : Colors.transparent)),
                   width: _isFocused ? 1.5 : 1,
                 ),
               ),
@@ -1099,7 +1288,7 @@ class _SidebarNavItemState extends State<_SidebarNavItem> {
                   Icon(
                     widget.icon,
                     size: 20,
-                    color: showHighlight ? BoutiqueColors.accent : BoutiqueColors.textSecondary,
+                    color: showHighlight ? primaryColor : (widget.isDestructive ? BoutiqueColors.destructive.withValues(alpha: 0.8) : BoutiqueColors.textSecondary),
                   ),
                   const SizedBox(width: 14),
                   Expanded(
@@ -1111,7 +1300,7 @@ class _SidebarNavItemState extends State<_SidebarNavItem> {
                             style: TextStyle(
                               fontSize: 14,
                               fontWeight: widget.isSelected || _isFocused ? FontWeight.bold : FontWeight.w500,
-                              color: showHighlight ? BoutiqueColors.accent : BoutiqueColors.textPrimary,
+                              color: showHighlight ? primaryColor : (widget.isDestructive ? BoutiqueColors.destructive : BoutiqueColors.textPrimary),
                             ),
                             overflow: TextOverflow.ellipsis,
                           ),
@@ -1124,8 +1313,10 @@ class _SidebarNavItemState extends State<_SidebarNavItem> {
                               fontSize: 11,
                               fontWeight: FontWeight.w500,
                               color: showHighlight
-                                  ? BoutiqueColors.accent.withValues(alpha: 0.8)
-                                  : BoutiqueColors.textSecondary.withValues(alpha: 0.7),
+                                  ? primaryColor.withValues(alpha: 0.8)
+                                  : (widget.isDestructive
+                                      ? BoutiqueColors.destructive.withValues(alpha: 0.7)
+                                      : BoutiqueColors.textSecondary.withValues(alpha: 0.7)),
                             ),
                           ),
                         ],

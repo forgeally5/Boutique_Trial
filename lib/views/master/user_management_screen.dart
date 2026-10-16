@@ -5,6 +5,7 @@ import '../../auth/viewmodels/auth_viewmodel.dart';
 import '../../services/user_management_service.dart';
 import 'user_edit_dialog.dart';
 import '../../utils/file_downloader.dart';
+import '../../utils/boutique_theme.dart';
 
 class UserManagementScreen extends StatefulWidget {
   const UserManagementScreen({super.key});
@@ -34,10 +35,24 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
               );
             },
           ),
-          Tooltip(
-            message: 'Refresh data from server',
-            child: IconButton(
-              icon: const Icon(Icons.refresh_rounded),
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+            child: OutlinedButton.icon(
+              icon: const Icon(Icons.refresh_rounded, size: 16, color: BoutiqueColors.accent),
+              label: const Text(
+                'Refresh',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: BoutiqueColors.accent,
+                ),
+              ),
+              style: OutlinedButton.styleFrom(
+                backgroundColor: BoutiqueColors.bgCard,
+                side: const BorderSide(color: BoutiqueColors.accentLightBorder),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              ),
               onPressed: reloadWebPage,
             ),
           ),

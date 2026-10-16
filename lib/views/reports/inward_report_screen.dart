@@ -792,10 +792,19 @@ class InwardReportScreenState extends State<InwardReportScreen> {
               const SizedBox(width: 6),
 
               // Refresh
-              IconButton(
-                icon: const Icon(Icons.refresh_rounded, color: BoutiqueColors.accent),
-                onPressed: _fetchInwardTransactions,
-                tooltip: 'Refresh',
+              Tooltip(
+                message: 'Refresh Inward Data (Alt+4)',
+                child: OutlinedButton.icon(
+                  icon: const Icon(Icons.refresh_rounded, color: BoutiqueColors.accent, size: 16),
+                  label: const Text('Refresh', style: TextStyle(color: BoutiqueColors.accent, fontWeight: FontWeight.bold, fontSize: 13)),
+                  style: OutlinedButton.styleFrom(
+                    backgroundColor: BoutiqueColors.bgCard,
+                    side: const BorderSide(color: BoutiqueColors.accentLightBorder),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  ),
+                  onPressed: _fetchInwardTransactions,
+                ),
               ),
 
               // Download Excel

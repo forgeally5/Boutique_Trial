@@ -44,6 +44,8 @@ class BillHistoryScreen extends StatefulWidget {
   State<BillHistoryScreen> createState() => _BillHistoryScreenState();
 }
 
+enum BillTileAction { due, view, edit, delete }
+
 class _BillHistoryScreenState extends State<BillHistoryScreen> {
   final _fmt = DateFormat('dd/MM/yyyy');
   late DateTime _dateFrom;
@@ -54,6 +56,7 @@ class _BillHistoryScreenState extends State<BillHistoryScreen> {
   late final FocusNode _paymentModeFocusNode;
   final ScrollController _scrollCtrl = ScrollController();
   int _selectedBillIndex = -1;
+  int _selectedTileActionIndex = -1;
   final Map<int, FocusNode> _billFocusNodes = {};
 
   String _paymentModeFilter = 'All';
@@ -110,6 +113,7 @@ class _BillHistoryScreenState extends State<BillHistoryScreen> {
     final clampedIndex = index.clamp(0, list.length - 1);
     setState(() {
       _selectedBillIndex = clampedIndex;
+      _selectedTileActionIndex = -1;
     });
     _scrollToBill(clampedIndex);
     final nextNode = _getBillFocusNode(clampedIndex);
@@ -869,37 +873,80 @@ class _BillHistoryScreenState extends State<BillHistoryScreen> {
     final focusNode = _getBillFocusNode(globalIndex);
     final isSelected = _selectedBillIndex == globalIndex;
 
+    final availableActions = <BillTileAction>[];
+    if (perms.editTransactions) availableActions.add(BillTileAction.due);
+    availableActions.add(BillTileAction.view);
+    if (widget.onEditBill != null) availableActions.add(BillTileAction.edit);
+    if (perms.deleteTransactions) availableActions.add(BillTileAction.delete);
+
     return Focus(
       focusNode: focusNode,
       skipTraversal: true,
       onFocusChange: (hasF) {
         if (hasF && _selectedBillIndex != globalIndex) {
-          setState(() => _selectedBillIndex = globalIndex);
+          setState(() {
+            _selectedBillIndex = globalIndex;
+            _selectedTileActionIndex = -1;
+          });
         }
       },
       onKeyEvent: (node, event) {
         if (event is KeyDownEvent) {
           final bills = _displayedBills;
           if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
+            _selectedTileActionIndex = -1;
             _selectBillAt(globalIndex + 1, bills);
             return KeyEventResult.handled;
           } else if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
+            _selectedTileActionIndex = -1;
             if (globalIndex > 0) {
               _selectBillAt(globalIndex - 1, bills);
             } else {
-              setState(() => _selectedBillIndex = -1);
+              setState(() {
+                _selectedBillIndex = -1;
+                _selectedTileActionIndex = -1;
+              });
               _searchFocusNode.requestFocus();
               _searchCtrl.selection = TextSelection.fromPosition(TextPosition(offset: _searchCtrl.text.length));
             }
             return KeyEventResult.handled;
+          } else if (event.logicalKey == LogicalKeyboardKey.arrowRight) {
+            if (_selectedTileActionIndex < availableActions.length - 1) {
+              setState(() => _selectedTileActionIndex++);
+              return KeyEventResult.handled;
+            }
+          } else if (event.logicalKey == LogicalKeyboardKey.arrowLeft) {
+            if (_selectedTileActionIndex >= 0) {
+              setState(() => _selectedTileActionIndex--);
+              return KeyEventResult.handled;
+            }
           } else if (event.logicalKey == LogicalKeyboardKey.tab) {
+            _selectedTileActionIndex = -1;
             setState(() => _selectedBillIndex = -1);
             _searchFocusNode.requestFocus();
             _searchCtrl.selection = TextSelection.fromPosition(TextPosition(offset: _searchCtrl.text.length));
             return KeyEventResult.handled;
           } else if (event.logicalKey == LogicalKeyboardKey.enter ||
+              event.logicalKey == LogicalKeyboardKey.numpadEnter ||
               event.logicalKey == LogicalKeyboardKey.space) {
-            _viewBill(b);
+            if (_selectedTileActionIndex >= 0 && _selectedTileActionIndex < availableActions.length) {
+              switch (availableActions[_selectedTileActionIndex]) {
+                case BillTileAction.due:
+                  _openSettleDialog(b);
+                  break;
+                case BillTileAction.view:
+                  _viewBill(b);
+                  break;
+                case BillTileAction.edit:
+                  widget.onEditBill?.call(b);
+                  break;
+                case BillTileAction.delete:
+                  _deleteBill(b);
+                  break;
+              }
+            } else {
+              _viewBill(b);
+            }
             return KeyEventResult.handled;
           }
         }
@@ -909,12 +956,18 @@ class _BillHistoryScreenState extends State<BillHistoryScreen> {
         listenable: focusNode,
         builder: (context, _) {
           final isFocused = focusNode.hasFocus || isSelected;
+          BillTileAction? activeAction;
+          if (isSelected && _selectedTileActionIndex >= 0 && _selectedTileActionIndex < availableActions.length) {
+            activeAction = availableActions[_selectedTileActionIndex];
+          }
+
           return _BillHistoryTile(
             key: ValueKey(b['_docId'] ?? b['id'] ?? b['billNo'] ?? UniqueKey().toString()),
             bill: b,
             perms: perms,
             fmt: _fmt,
             isExternallyFocused: isFocused,
+            activeAction: activeAction,
             onTap: () => _viewBill(b),
             onSettle: () => _openSettleDialog(b),
             onDelete: () => _deleteBill(b),
@@ -1028,8 +1081,174 @@ class _ViewModeDropdownButton extends StatefulWidget {
 }
 
 class _ViewModeDropdownButtonState extends State<_ViewModeDropdownButton> {
-  final GlobalKey<PopupMenuButtonState<String>> _popupKey = GlobalKey();
+  final FocusNode _buttonFocusNode = FocusNode(debugLabel: 'view_mode_dropdown_btn');
   bool _focused = false;
+
+  @override
+  void dispose() {
+    _buttonFocusNode.dispose();
+    super.dispose();
+  }
+
+  void _openDropdown() async {
+    final renderBox = context.findRenderObject() as RenderBox?;
+    if (renderBox == null) return;
+    final offset = renderBox.localToGlobal(Offset.zero);
+    final size = renderBox.size;
+
+    int highlighted = widget.viewOptions.indexOf(widget.viewFilter);
+    if (highlighted < 0) highlighted = 0;
+
+    const Map<String, Color> colors = {
+      'All Invoices': BoutiqueColors.accent,
+      'Balance Due': Color(0xFFB45309),
+      'Advance Bills': Color(0xFF1565C0),
+    };
+
+    final selected = await showGeneralDialog<String>(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: 'Dismiss Dropdown',
+      barrierColor: Colors.black12,
+      transitionDuration: const Duration(milliseconds: 100),
+      pageBuilder: (dialogCtx, anim1, anim2) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return Stack(
+              children: [
+                Positioned.fill(
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.translucent,
+                    onTap: () => Navigator.of(dialogCtx).pop(),
+                  ),
+                ),
+                Positioned(
+                  left: offset.dx,
+                  top: offset.dy + size.height + 4,
+                  width: size.width < 210 ? 210 : size.width,
+                  child: Focus(
+                    autofocus: true,
+                    onKeyEvent: (node, event) {
+                      if (event is! KeyDownEvent) return KeyEventResult.ignored;
+                      if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
+                        setDialogState(() {
+                          highlighted = (highlighted + 1) % widget.viewOptions.length;
+                        });
+                        return KeyEventResult.handled;
+                      }
+                      if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
+                        setDialogState(() {
+                          highlighted = (highlighted - 1 + widget.viewOptions.length) % widget.viewOptions.length;
+                        });
+                        return KeyEventResult.handled;
+                      }
+                      if (event.logicalKey == LogicalKeyboardKey.enter ||
+                          event.logicalKey == LogicalKeyboardKey.numpadEnter ||
+                          event.logicalKey == LogicalKeyboardKey.space) {
+                        Navigator.of(dialogCtx).pop(widget.viewOptions[highlighted]);
+                        return KeyEventResult.handled;
+                      }
+                      if (event.logicalKey == LogicalKeyboardKey.escape) {
+                        Navigator.of(dialogCtx).pop();
+                        return KeyEventResult.handled;
+                      }
+                      return KeyEventResult.ignored;
+                    },
+                    child: Material(
+                      elevation: 8,
+                      borderRadius: BorderRadius.circular(12),
+                      color: BoutiqueColors.bgCard,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 6),
+                        decoration: BoxDecoration(
+                          color: BoutiqueColors.bgCard,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: BoutiqueColors.borderLight),
+                          boxShadow: const [
+                            BoxShadow(
+                              color: Color(0x1F000000),
+                              blurRadius: 16,
+                              offset: Offset(0, 6),
+                            ),
+                          ],
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: widget.viewOptions.asMap().entries.map((entry) {
+                            final idx = entry.key;
+                            final opt = entry.value;
+                            final icon = widget.viewIcons[opt] ?? Icons.filter_list_rounded;
+                            final clr = colors[opt] ?? BoutiqueColors.accent;
+                            final isCurrent = widget.viewFilter == opt;
+                            final isHl = highlighted == idx;
+
+                            return InkWell(
+                              onTap: () => Navigator.of(dialogCtx).pop(opt),
+                              onHover: (hovered) {
+                                if (hovered && highlighted != idx) {
+                                  setDialogState(() => highlighted = idx);
+                                }
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                                decoration: BoxDecoration(
+                                  color: isHl
+                                      ? clr.withAlpha(25)
+                                      : (isCurrent ? clr.withAlpha(15) : Colors.transparent),
+                                  border: Border(
+                                    left: BorderSide(
+                                      color: isHl ? clr : Colors.transparent,
+                                      width: 3.5,
+                                    ),
+                                  ),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.all(6),
+                                      decoration: BoxDecoration(
+                                        color: clr.withAlpha(isCurrent ? 40 : 20),
+                                        borderRadius: BorderRadius.circular(6),
+                                      ),
+                                      child: Icon(icon, size: 16, color: clr),
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: Text(
+                                        opt,
+                                        style: TextStyle(
+                                          fontSize: 13,
+                                          fontWeight: (isCurrent || isHl) ? FontWeight.bold : FontWeight.w500,
+                                          color: (isCurrent || isHl) ? clr : BoutiqueColors.textPrimary,
+                                        ),
+                                      ),
+                                    ),
+                                    if (isCurrent)
+                                      Icon(Icons.check_rounded, size: 16, color: clr),
+                                  ],
+                                ),
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    if (mounted) {
+      _buttonFocusNode.requestFocus();
+      if (selected != null && selected != widget.viewFilter) {
+        widget.onSelected(selected);
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1041,100 +1260,67 @@ class _ViewModeDropdownButtonState extends State<_ViewModeDropdownButton> {
     final accent = BoutiqueColors.accent;
     final currentClr = colors[widget.viewFilter] ?? accent;
 
-    return FocusableActionDetector(
+    return Focus(
+      focusNode: _buttonFocusNode,
       onFocusChange: (f) => setState(() => _focused = f),
-      actions: {
-        ActivateIntent: CallbackAction<ActivateIntent>(onInvoke: (_) {
-          _popupKey.currentState?.showButtonMenu();
-          return null;
-        }),
+      onKeyEvent: (node, event) {
+        if (event is! KeyDownEvent) return KeyEventResult.ignored;
+        if (event.logicalKey == LogicalKeyboardKey.arrowDown ||
+            event.logicalKey == LogicalKeyboardKey.arrowUp ||
+            event.logicalKey == LogicalKeyboardKey.enter ||
+            event.logicalKey == LogicalKeyboardKey.numpadEnter ||
+            event.logicalKey == LogicalKeyboardKey.space) {
+          _openDropdown();
+          return KeyEventResult.handled;
+        }
+        return KeyEventResult.ignored;
       },
-      shortcuts: const {
-        SingleActivator(LogicalKeyboardKey.space): ActivateIntent(),
-        SingleActivator(LogicalKeyboardKey.enter): ActivateIntent(),
-        SingleActivator(LogicalKeyboardKey.numpadEnter): ActivateIntent(),
-        SingleActivator(LogicalKeyboardKey.arrowDown): ActivateIntent(),
-      },
-      child: PopupMenuButton<String>(
-        key: _popupKey,
-        onSelected: widget.onSelected,
-        offset: const Offset(0, 48),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        color: BoutiqueColors.bgCard,
-        itemBuilder: (_) => widget.viewOptions.map((opt) {
-          final icon = widget.viewIcons[opt]!;
-          final clr = colors[opt]!;
-          final isSelected = widget.viewFilter == opt;
-          return PopupMenuItem<String>(
-            value: opt,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(10),
+          onTap: _openDropdown,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 150),
+            height: 50,
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            decoration: BoxDecoration(
+              color: _focused ? BoutiqueColors.accentSoft.withAlpha(80) : BoutiqueColors.bgSubtle,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: _focused
+                    ? BoutiqueColors.accent
+                    : (widget.viewFilter == 'All Invoices' ? BoutiqueColors.border : currentClr.withAlpha(120)),
+                width: _focused ? 2.0 : (widget.viewFilter == 'All Invoices' ? 1.0 : 1.5),
+              ),
+              boxShadow: _focused
+                  ? [
+                      BoxShadow(
+                        color: BoutiqueColors.accent.withAlpha(50),
+                        blurRadius: 6,
+                        spreadRadius: 1,
+                      )
+                    ]
+                  : null,
+            ),
             child: Row(
               children: [
-                Container(
-                  padding: const EdgeInsets.all(6),
-                  decoration: BoxDecoration(
-                    color: clr.withAlpha(isSelected ? 40 : 20),
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: Icon(icon, size: 16, color: clr),
-                ),
-                const SizedBox(width: 10),
-                Text(
-                  opt,
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                    color: isSelected ? clr : BoutiqueColors.textPrimary,
+                Icon(widget.viewIcons[widget.viewFilter]!, size: 16, color: currentClr),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    widget.viewFilter,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: currentClr,
+                    ),
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
-                if (isSelected) ...[
-                  const Spacer(),
-                  Icon(Icons.check_rounded, size: 16, color: clr),
-                ],
+                Icon(Icons.expand_more_rounded, size: 18, color: currentClr),
               ],
             ),
-          );
-        }).toList(),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 150),
-          height: 50,
-          padding: const EdgeInsets.symmetric(horizontal: 14),
-          decoration: BoxDecoration(
-            color: _focused ? BoutiqueColors.accentSoft.withAlpha(80) : BoutiqueColors.bgSubtle,
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(
-              color: _focused
-                  ? BoutiqueColors.accent
-                  : (widget.viewFilter == 'All Invoices' ? BoutiqueColors.border : currentClr.withAlpha(120)),
-              width: _focused ? 2.0 : (widget.viewFilter == 'All Invoices' ? 1.0 : 1.5),
-            ),
-            boxShadow: _focused
-                ? [
-                    BoxShadow(
-                      color: BoutiqueColors.accent.withAlpha(50),
-                      blurRadius: 6,
-                      spreadRadius: 1,
-                    )
-                  ]
-                : null,
-          ),
-          child: Row(
-            children: [
-              Icon(widget.viewIcons[widget.viewFilter]!, size: 16, color: currentClr),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  widget.viewFilter,
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: currentClr,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              Icon(Icons.expand_more_rounded, size: 18, color: currentClr),
-            ],
           ),
         ),
       ),
@@ -1153,6 +1339,7 @@ class _BillHistoryTile extends StatefulWidget {
   final VoidCallback? onDelete;
   final VoidCallback? onEditBill;
   final bool isExternallyFocused;
+  final BillTileAction? activeAction;
 
   const _BillHistoryTile({
     super.key,
@@ -1164,6 +1351,7 @@ class _BillHistoryTile extends StatefulWidget {
     this.onDelete,
     this.onEditBill,
     this.isExternallyFocused = false,
+    this.activeAction,
   });
 
   @override
@@ -1358,40 +1546,96 @@ class _BillHistoryTileState extends State<_BillHistoryTile> {
                   if (widget.perms.editTransactions && widget.onSettle != null)
                     Focus(
                       skipTraversal: true,
-                      child: IconButton(
-                        icon: Icon(
-                          hasDue ? Icons.payments_rounded : Icons.edit_note_rounded,
-                          color: hasDue ? const Color(0xFF1E7E34) : BoutiqueColors.textSecondary,
-                          size: 20,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: widget.activeAction == BillTileAction.due
+                              ? const Color(0xFF1E7E34).withAlpha(45)
+                              : Colors.transparent,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: widget.activeAction == BillTileAction.due
+                                ? const Color(0xFF1E7E34)
+                                : Colors.transparent,
+                            width: 2,
+                          ),
                         ),
-                        tooltip: hasDue ? 'Settle Due Balance (₹${pendingBalance.toStringAsFixed(2)})' : 'Edit / View Payment',
-                        onPressed: widget.onSettle,
+                        child: IconButton(
+                          icon: Icon(
+                            hasDue ? Icons.payments_rounded : Icons.edit_note_rounded,
+                            color: hasDue ? const Color(0xFF1E7E34) : BoutiqueColors.textSecondary,
+                            size: 20,
+                          ),
+                          tooltip: hasDue ? 'Settle Due Balance (₹${pendingBalance.toStringAsFixed(2)})' : 'Edit / View Payment',
+                          onPressed: widget.onSettle,
+                        ),
                       ),
                     ),
                   Focus(
                     skipTraversal: true,
-                    child: IconButton(
-                      icon: const Icon(Icons.visibility_outlined, color: BoutiqueColors.accent, size: 19),
-                      tooltip: 'View Invoice',
-                      onPressed: widget.onTap,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: widget.activeAction == BillTileAction.view
+                            ? BoutiqueColors.accent.withAlpha(45)
+                            : Colors.transparent,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: widget.activeAction == BillTileAction.view
+                              ? BoutiqueColors.accent
+                              : Colors.transparent,
+                          width: 2,
+                        ),
+                      ),
+                      child: IconButton(
+                        icon: const Icon(Icons.visibility_outlined, color: BoutiqueColors.accent, size: 19),
+                        tooltip: 'View Invoice',
+                        onPressed: widget.onTap,
+                      ),
                     ),
                   ),
                   if (widget.onEditBill != null)
                     Focus(
                       skipTraversal: true,
-                      child: IconButton(
-                        icon: const Icon(Icons.edit_outlined, color: BoutiqueColors.accent, size: 19),
-                        tooltip: 'Edit Bill',
-                        onPressed: widget.onEditBill,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: widget.activeAction == BillTileAction.edit
+                              ? BoutiqueColors.accent.withAlpha(45)
+                              : Colors.transparent,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: widget.activeAction == BillTileAction.edit
+                                ? BoutiqueColors.accent
+                                : Colors.transparent,
+                            width: 2,
+                          ),
+                        ),
+                        child: IconButton(
+                          icon: const Icon(Icons.edit_outlined, color: BoutiqueColors.accent, size: 19),
+                          tooltip: 'Edit Bill',
+                          onPressed: widget.onEditBill,
+                        ),
                       ),
                     ),
                   if (widget.perms.deleteTransactions && widget.onDelete != null)
                     Focus(
                       skipTraversal: true,
-                      child: IconButton(
-                        icon: const Icon(Icons.delete_outline_rounded, color: BoutiqueColors.destructive, size: 19),
-                        tooltip: 'Delete Bill',
-                        onPressed: widget.onDelete,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: widget.activeAction == BillTileAction.delete
+                              ? BoutiqueColors.destructive.withAlpha(45)
+                              : Colors.transparent,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: widget.activeAction == BillTileAction.delete
+                                ? BoutiqueColors.destructive
+                                : Colors.transparent,
+                            width: 2,
+                          ),
+                        ),
+                        child: IconButton(
+                          icon: const Icon(Icons.delete_outline_rounded, color: BoutiqueColors.destructive, size: 19),
+                          tooltip: 'Delete Bill',
+                          onPressed: widget.onDelete,
+                        ),
                       ),
                     ),
                 ],

@@ -438,19 +438,54 @@ class _InventoryViewState extends State<InventoryView> {
                             children: [
                               // Refresh Button
                               Tooltip(
-                                message: 'Refresh inventory from server',
+                                message: 'Refresh inventory from server (F5)',
                                 child: state.isLoadingProducts
-                                    ? const SizedBox(
-                                        width: 20,
-                                        height: 20,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                          color: BoutiqueColors.accent,
+                                    ? Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                                        decoration: BoxDecoration(
+                                          color: BoutiqueColors.accentSoft,
+                                          borderRadius: BorderRadius.circular(8),
+                                          border: Border.all(color: BoutiqueColors.accentLightBorder),
+                                        ),
+                                        child: const Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            SizedBox(
+                                              width: 14,
+                                              height: 14,
+                                              child: CircularProgressIndicator(
+                                                strokeWidth: 2,
+                                                color: BoutiqueColors.accent,
+                                              ),
+                                            ),
+                                            SizedBox(width: 8),
+                                            Text(
+                                              'Refreshing...',
+                                              style: TextStyle(
+                                                fontSize: 13,
+                                                fontWeight: FontWeight.w600,
+                                                color: BoutiqueColors.accent,
+                                              ),
+                                            ),
+                                          ],
                                         ),
                                       )
-                                    : IconButton(
-                                        icon: const Icon(Icons.refresh_rounded, size: 20),
-                                        color: BoutiqueColors.textSecondary,
+                                    : OutlinedButton.icon(
+                                        icon: const Icon(Icons.refresh_rounded, size: 16, color: BoutiqueColors.accent),
+                                        label: const Text(
+                                          'Refresh',
+                                          style: TextStyle(
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.w600,
+                                            color: BoutiqueColors.accent,
+                                          ),
+                                        ),
+                                        style: OutlinedButton.styleFrom(
+                                          backgroundColor: BoutiqueColors.bgCard,
+                                          side: const BorderSide(color: BoutiqueColors.accentLightBorder),
+                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                                        ),
                                         onPressed: () => state.fetchProducts(),
                                       ),
                               ),

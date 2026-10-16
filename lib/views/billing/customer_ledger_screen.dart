@@ -283,8 +283,13 @@ class _CustomerLedgerScreenState extends State<CustomerLedgerScreen> {
                           if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
                             if (keys.isEmpty) return KeyEventResult.ignored;
                             setState(() {
-                              _highlightedIndex =
-                                  (_highlightedIndex + 1).clamp(0, keys.length - 1);
+                              if (_highlightedIndex < 0) {
+                                _highlightedIndex = 0;
+                              } else {
+                                _highlightedIndex =
+                                    (_highlightedIndex + 1).clamp(0, keys.length - 1);
+                              }
+                              _selectedCustomerKey = keys[_highlightedIndex];
                             });
                             _scrollToHighlighted();
                             return KeyEventResult.handled;
@@ -292,8 +297,13 @@ class _CustomerLedgerScreenState extends State<CustomerLedgerScreen> {
                           if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
                             if (keys.isEmpty) return KeyEventResult.ignored;
                             setState(() {
-                              _highlightedIndex =
-                                  (_highlightedIndex - 1).clamp(0, keys.length - 1);
+                              if (_highlightedIndex <= 0) {
+                                _highlightedIndex = 0;
+                              } else {
+                                _highlightedIndex =
+                                    (_highlightedIndex - 1).clamp(0, keys.length - 1);
+                              }
+                              _selectedCustomerKey = keys[_highlightedIndex];
                             });
                             _scrollToHighlighted();
                             return KeyEventResult.handled;
@@ -302,7 +312,10 @@ class _CustomerLedgerScreenState extends State<CustomerLedgerScreen> {
                               event.logicalKey == LogicalKeyboardKey.numpadEnter) {
                             final idx = _highlightedIndex >= 0 ? _highlightedIndex : 0;
                             if (idx < keys.length) {
-                              setState(() => _selectedCustomerKey = keys[idx]);
+                              setState(() {
+                                _highlightedIndex = idx;
+                                _selectedCustomerKey = keys[idx];
+                              });
                               _rightPanelFocusNode.requestFocus();
                             }
                             return KeyEventResult.handled;
@@ -367,13 +380,30 @@ class _CustomerLedgerScreenState extends State<CustomerLedgerScreen> {
                       ),
                     ),
                     const SizedBox(width: 8),
-                    IconButton(
-                      onPressed: _fetchPendingBills,
-                      icon: const Icon(
-                        Icons.refresh_rounded,
-                        color: BoutiqueColors.accent,
+                    Tooltip(
+                      message: 'Refresh Ledger',
+                      child: OutlinedButton.icon(
+                        onPressed: _fetchPendingBills,
+                        icon: const Icon(
+                          Icons.refresh_rounded,
+                          color: BoutiqueColors.accent,
+                          size: 16,
+                        ),
+                        label: const Text(
+                          'Refresh',
+                          style: TextStyle(
+                            color: BoutiqueColors.accent,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                          ),
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          backgroundColor: BoutiqueColors.bgCard,
+                          side: const BorderSide(color: BoutiqueColors.accentLightBorder),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        ),
                       ),
-                      tooltip: 'Refresh Ledger',
                     ),
                   ],
                 ),
@@ -441,7 +471,13 @@ class _CustomerLedgerScreenState extends State<CustomerLedgerScreen> {
         Expanded(
           child: Focus(
             focusNode: _rightPanelFocusNode,
-            skipTraversal: true,
+            onKeyEvent: (node, event) {
+              if (event is KeyDownEvent && event.logicalKey == LogicalKeyboardKey.escape) {
+                _searchFocusNode.requestFocus();
+                return KeyEventResult.handled;
+              }
+              return KeyEventResult.ignored;
+            },
             child: _selectedCustomerKey == null ||
                     !_customerGroups.containsKey(_selectedCustomerKey)
                 ? const Center(
