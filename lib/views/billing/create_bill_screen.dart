@@ -48,6 +48,10 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
   bool _ownsCustomerNameFocusNode = false;
   final _customerMobileFocusNode = FocusNode();
   final _narrationFocusNode = FocusNode();
+  final _addDetailsFocusNode = FocusNode(debugLabel: 'create_bill_add_details');
+  final _invoiceNoFocusNode = FocusNode(debugLabel: 'create_bill_invoice_no');
+  final _billTypeFocusNode = FocusNode(debugLabel: 'create_bill_type');
+  final _dateFocusNode = FocusNode(debugLabel: 'create_bill_date');
 
   bool _showExtraCustomerDetails = false;
   final List<Map<String, TextEditingController>> _customFields = [];
@@ -107,6 +111,76 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
     widget.state.addListener(_onStateProductsUpdate);
     _gstCtrl.addListener(_onGstChanged);
     _customerMobileFocusNode.addListener(_onMobileFocusChanged);
+
+    _addDetailsFocusNode.onKeyEvent = (node, event) {
+      if (event is KeyDownEvent) {
+        if (event.logicalKey == LogicalKeyboardKey.tab) {
+          if (HardwareKeyboard.instance.isShiftPressed) {
+            widget.onReturnToMainTab?.call();
+            return KeyEventResult.handled;
+          } else {
+            _invoiceNoFocusNode.requestFocus();
+            return KeyEventResult.handled;
+          }
+        }
+        if (event.logicalKey == LogicalKeyboardKey.enter ||
+            event.logicalKey == LogicalKeyboardKey.space) {
+          setState(() => _showExtraCustomerDetails = !_showExtraCustomerDetails);
+          return KeyEventResult.handled;
+        }
+      }
+      return KeyEventResult.ignored;
+    };
+
+    _invoiceNoFocusNode.onKeyEvent = (node, event) {
+      if (event is KeyDownEvent) {
+        if (event.logicalKey == LogicalKeyboardKey.tab) {
+          if (HardwareKeyboard.instance.isShiftPressed) {
+            _addDetailsFocusNode.requestFocus();
+            return KeyEventResult.handled;
+          } else {
+            _billTypeFocusNode.requestFocus();
+            return KeyEventResult.handled;
+          }
+        }
+      }
+      return KeyEventResult.ignored;
+    };
+
+    _billTypeFocusNode.onKeyEvent = (node, event) {
+      if (event is KeyDownEvent) {
+        if (event.logicalKey == LogicalKeyboardKey.tab) {
+          if (HardwareKeyboard.instance.isShiftPressed) {
+            _invoiceNoFocusNode.requestFocus();
+            return KeyEventResult.handled;
+          } else {
+            _dateFocusNode.requestFocus();
+            return KeyEventResult.handled;
+          }
+        }
+      }
+      return KeyEventResult.ignored;
+    };
+
+    _dateFocusNode.onKeyEvent = (node, event) {
+      if (event is KeyDownEvent) {
+        if (event.logicalKey == LogicalKeyboardKey.tab) {
+          if (HardwareKeyboard.instance.isShiftPressed) {
+            _billTypeFocusNode.requestFocus();
+            return KeyEventResult.handled;
+          } else {
+            _customerNameFocusNode.requestFocus();
+            return KeyEventResult.handled;
+          }
+        }
+        if (event.logicalKey == LogicalKeyboardKey.enter ||
+            event.logicalKey == LogicalKeyboardKey.space) {
+          _pickDate();
+          return KeyEventResult.handled;
+        }
+      }
+      return KeyEventResult.ignored;
+    };
   }
 
   void _loadInitialBill(Map<String, dynamic> b) {
@@ -301,6 +375,10 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
     }
     _customerMobileFocusNode.dispose();
     _narrationFocusNode.dispose();
+    _addDetailsFocusNode.dispose();
+    _invoiceNoFocusNode.dispose();
+    _billTypeFocusNode.dispose();
+    _dateFocusNode.dispose();
     for (var f in _customFields) {
       f['key']?.dispose();
       f['value']?.dispose();
@@ -977,10 +1055,30 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
             children: [
               const Text('Customer & Invoice Details',
                   style: TextStyle(fontFamily: 'serif', fontSize: 18, fontWeight: FontWeight.bold, color: BoutiqueColors.textPrimary)),
-              TextButton.icon(
-                onPressed: () => setState(() => _showExtraCustomerDetails = !_showExtraCustomerDetails),
-                icon: Icon(_showExtraCustomerDetails ? Icons.expand_less : Icons.add, size: 18, color: BoutiqueColors.accent),
-                label: Text(_showExtraCustomerDetails ? 'Hide Extra Details' : 'Add Customer Details', style: const TextStyle(color: BoutiqueColors.accent, fontSize: 13)),
+              Focus(
+                focusNode: _addDetailsFocusNode,
+                child: ListenableBuilder(
+                  listenable: _addDetailsFocusNode,
+                  builder: (context, _) {
+                    final isFocused = _addDetailsFocusNode.hasFocus;
+                    return Container(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: isFocused ? BoutiqueColors.accent : Colors.transparent,
+                          width: 1.5,
+                        ),
+                        color: isFocused ? BoutiqueColors.accentSoft.withAlpha(90) : Colors.transparent,
+                      ),
+                      child: TextButton.icon(
+                        focusNode: FocusNode(skipTraversal: true),
+                        onPressed: () => setState(() => _showExtraCustomerDetails = !_showExtraCustomerDetails),
+                        icon: Icon(_showExtraCustomerDetails ? Icons.expand_less : Icons.add, size: 18, color: BoutiqueColors.accent),
+                        label: Text(_showExtraCustomerDetails ? 'Hide Extra Details' : 'Add Customer Details', style: const TextStyle(color: BoutiqueColors.accent, fontSize: 13, fontWeight: FontWeight.w600)),
+                      ),
+                    );
+                  },
+                ),
               ),
             ],
           ),
@@ -990,6 +1088,7 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
               Expanded(
                 child: TextField(
                   controller: _billNoCtrl,
+                  focusNode: _invoiceNoFocusNode,
                   readOnly: true,
                   style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: BoutiqueColors.accent),
                   decoration: BoutiqueInputDecoration.field(hintText: 'Bill No', labelText: 'Invoice #'),
@@ -1010,6 +1109,7 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
                     ),
                     const SizedBox(height: 5),
                     DropdownButtonFormField<String>(
+                      focusNode: _billTypeFocusNode,
                       initialValue: _billType,
                       items: const ['Sale', 'Advance Payment']
                           .map((e) => DropdownMenuItem(
@@ -1031,7 +1131,7 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
                         ),
                         focusedBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(8),
-                          borderSide: const BorderSide(color: Color(0xFF3E2723), width: 1.5),
+                          borderSide: const BorderSide(color: BoutiqueColors.accent, width: 1.5),
                         ),
                       ),
                     ),
@@ -1040,24 +1140,39 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
               ),
               const SizedBox(width: 16),
               Expanded(
-                child: InkWell(
-                  onTap: _pickDate,
-                  borderRadius: BorderRadius.circular(10),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                    decoration: BoxDecoration(
-                      color: BoutiqueColors.bgSubtle,
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: BoutiqueColors.border),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.calendar_today_rounded, size: 18, color: BoutiqueColors.accent),
-                        const SizedBox(width: 10),
-                        Text(_fmt.format(_billDate),
-                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: BoutiqueColors.textPrimary)),
-                      ],
-                    ),
+                child: Focus(
+                  focusNode: _dateFocusNode,
+                  child: ListenableBuilder(
+                    listenable: _dateFocusNode,
+                    builder: (context, _) {
+                      final isFocused = _dateFocusNode.hasFocus;
+                      return InkWell(
+                        focusNode: FocusNode(skipTraversal: true),
+                        onTap: _pickDate,
+                        borderRadius: BorderRadius.circular(10),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                          decoration: BoxDecoration(
+                            color: isFocused
+                                ? BoutiqueColors.accentSoft.withAlpha(90)
+                                : BoutiqueColors.bgSubtle,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: isFocused ? BoutiqueColors.accent : BoutiqueColors.border,
+                              width: isFocused ? 1.5 : 1.0,
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.calendar_today_rounded, size: 18, color: BoutiqueColors.accent),
+                              const SizedBox(width: 10),
+                              Text(_fmt.format(_billDate),
+                                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: BoutiqueColors.textPrimary)),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
                   ),
                 ),
               ),
@@ -1071,7 +1186,7 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
                 child: _CustomerAutocompleteField(
                   controller: _customerNameCtrl,
                   focusNode: _customerNameFocusNode,
-                  onShiftTab: widget.onReturnToMainTab,
+                  onShiftTab: () => _dateFocusNode.requestFocus(),
                   labelText: 'Customer Name',
                   hintText: 'Walk-in Customer',
                   autofocus: false,

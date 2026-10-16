@@ -224,7 +224,7 @@ class BillingViewState extends State<BillingView> {
                     BillHistoryScreen(
                       state: widget.state,
                       searchFocusNode: _billHistoryFocusNode,
-                      onReturnToMainTab: () => _tabFocus[1].requestFocus(),
+                      onReturnToMainTab: () => _tabFocus[0].requestFocus(),
                       onEditBill: (bill) {
                         setState(() {
                           _billToEdit = bill;
@@ -237,7 +237,7 @@ class BillingViewState extends State<BillingView> {
                     CustomerLedgerScreen(
                       state: widget.state,
                       searchFocusNode: _customerLedgerFocusNode,
-                      onReturnToMainTab: () => _tabFocus[2].requestFocus(),
+                      onReturnToMainTab: () => _tabFocus[0].requestFocus(),
                     ),
                 ],
               ),
