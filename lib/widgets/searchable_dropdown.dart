@@ -191,6 +191,22 @@ class _SearchableDropdownDialogState extends State<_SearchableDropdownDialog> {
   void initState() {
     super.initState();
     _filtered = List.from(widget.items);
+    HardwareKeyboard.instance.addHandler(_handleGlobalEscape);
+  }
+
+  bool _handleGlobalEscape(KeyEvent event) {
+    if (event is KeyDownEvent && event.logicalKey == LogicalKeyboardKey.escape) {
+      if (mounted) {
+        final nav = Navigator.of(context, rootNavigator: true);
+        if (nav.canPop()) {
+          nav.pop();
+        } else {
+          Navigator.of(context).pop();
+        }
+        return true;
+      }
+    }
+    return false;
   }
 
   void _onSearch(String query) {
@@ -233,6 +249,14 @@ class _SearchableDropdownDialogState extends State<_SearchableDropdownDialog> {
         widget.onSelected(_filtered[_highlightIdx]);
         return KeyEventResult.handled;
       }
+    } else if (key == LogicalKeyboardKey.escape) {
+      final nav = Navigator.of(context, rootNavigator: true);
+      if (nav.canPop()) {
+        nav.pop();
+      } else {
+        Navigator.of(context).pop();
+      }
+      return KeyEventResult.handled;
     }
     return KeyEventResult.ignored;
   }
@@ -252,6 +276,7 @@ class _SearchableDropdownDialogState extends State<_SearchableDropdownDialog> {
 
   @override
   void dispose() {
+    HardwareKeyboard.instance.removeHandler(_handleGlobalEscape);
     _searchCtrl.dispose();
     _focusNode.dispose();
     _scrollCtrl.dispose();
@@ -260,11 +285,24 @@ class _SearchableDropdownDialogState extends State<_SearchableDropdownDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      insetPadding: const EdgeInsets.symmetric(horizontal: 80, vertical: 60),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 420, maxHeight: 480),
+    return CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.escape): () {
+          if (mounted) {
+            final nav = Navigator.of(context, rootNavigator: true);
+            if (nav.canPop()) {
+              nav.pop();
+            } else {
+              Navigator.of(context).pop();
+            }
+          }
+        },
+      },
+      child: Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        insetPadding: const EdgeInsets.symmetric(horizontal: 80, vertical: 60),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 420, maxHeight: 480),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -428,6 +466,7 @@ class _SearchableDropdownDialogState extends State<_SearchableDropdownDialog> {
           ],
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 }

@@ -902,7 +902,7 @@ class InwardReportScreenState extends State<InwardReportScreen> {
 // PRODUCT INWARD HISTORY DIALOG WITH EXCEL EXPORT & ESC KEY SUPPORT
 // ═══════════════════════════════════════════════════════════════════════════════
 
-class _ProductInwardHistoryDialog extends StatelessWidget {
+class _ProductInwardHistoryDialog extends StatefulWidget {
   final String productName;
   final String tagId;
   final String category;
@@ -916,6 +916,33 @@ class _ProductInwardHistoryDialog extends StatelessWidget {
   });
 
   @override
+  State<_ProductInwardHistoryDialog> createState() => _ProductInwardHistoryDialogState();
+}
+
+class _ProductInwardHistoryDialogState extends State<_ProductInwardHistoryDialog> {
+  @override
+  void initState() {
+    super.initState();
+    HardwareKeyboard.instance.addHandler(_handleGlobalEscape);
+  }
+
+  @override
+  void dispose() {
+    HardwareKeyboard.instance.removeHandler(_handleGlobalEscape);
+    super.dispose();
+  }
+
+  bool _handleGlobalEscape(KeyEvent event) {
+    if (event is KeyDownEvent && event.logicalKey == LogicalKeyboardKey.escape) {
+      if (mounted) {
+        Navigator.of(context).pop();
+        return true;
+      }
+    }
+    return false;
+  }
+
+  @override
   Widget build(BuildContext context) {
     final currencyFmt = NumberFormat('#,##,##0.00', 'en_IN');
     final dateTimeFmt = DateFormat('dd MMM yyyy, hh:mm a');
@@ -924,7 +951,7 @@ class _ProductInwardHistoryDialog extends StatelessWidget {
     double totalWeight = 0.0;
     double totalValue = 0.0;
 
-    for (final r in historyRows) {
+    for (final r in widget.historyRows) {
       final item = r['itemData'] as Map<String, dynamic>? ?? r;
       final q = (item['qty'] as num?)?.toInt() ?? 0;
       final w = (item['weight'] as num?)?.toDouble() ?? 0.0;
@@ -938,18 +965,14 @@ class _ProductInwardHistoryDialog extends StatelessWidget {
       totalValue += amt;
     }
 
-    return FocusScope(
-      autofocus: true,
-      child: Focus(
-        autofocus: true,
-        onKeyEvent: (node, event) {
-          if (event is KeyDownEvent &&
-              event.logicalKey == LogicalKeyboardKey.escape) {
-            Navigator.of(context).pop();
-            return KeyEventResult.handled;
-          }
-          return KeyEventResult.ignored;
+    return CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.escape): () {
+          if (mounted) Navigator.of(context).pop();
         },
+      },
+      child: FocusScope(
+        autofocus: true,
         child: Dialog(
           backgroundColor: Colors.transparent,
           insetPadding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
@@ -998,7 +1021,7 @@ class _ProductInwardHistoryDialog extends StatelessWidget {
                               children: [
                                 Flexible(
                                   child: Text(
-                                    productName.isEmpty ? 'Product Inward History' : productName,
+                                    widget.productName.isEmpty ? 'Product Inward History' : widget.productName,
                                     style: const TextStyle(
                                       fontFamily: 'serif',
                                       fontSize: 18,
@@ -1008,7 +1031,7 @@ class _ProductInwardHistoryDialog extends StatelessWidget {
                                     overflow: TextOverflow.ellipsis,
                                   ),
                                 ),
-                                if (tagId.isNotEmpty) ...[
+                                if (widget.tagId.isNotEmpty) ...[
                                   const SizedBox(width: 8),
                                   Container(
                                     padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
@@ -1018,7 +1041,7 @@ class _ProductInwardHistoryDialog extends StatelessWidget {
                                       border: Border.all(color: BoutiqueColors.accentLightBorder),
                                     ),
                                     child: Text(
-                                      tagId,
+                                      widget.tagId,
                                       style: const TextStyle(
                                         fontSize: 11,
                                         fontWeight: FontWeight.bold,
@@ -1031,7 +1054,7 @@ class _ProductInwardHistoryDialog extends StatelessWidget {
                             ),
                             const SizedBox(height: 3),
                             Text(
-                              'Category: $category • Complete date & time breakdown of every inward addition',
+                              'Category: ${widget.category} • Complete date & time breakdown of every inward addition',
                               style: const TextStyle(fontSize: 12, color: BoutiqueColors.textSecondary),
                             ),
                           ],
@@ -1050,10 +1073,10 @@ class _ProductInwardHistoryDialog extends StatelessWidget {
                         label: const Text('Export Excel (.xlsx)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                         onPressed: () async {
                           await ExcelGenerator.downloadProductInwardHistoryExcel(
-                            productName: productName,
-                            tagId: tagId,
-                            category: category,
-                            historyRows: historyRows,
+                            productName: widget.productName,
+                            tagId: widget.tagId,
+                            category: widget.category,
+                            historyRows: widget.historyRows,
                           );
                         },
                       ),
@@ -1067,7 +1090,7 @@ class _ProductInwardHistoryDialog extends StatelessWidget {
                   ),
                 ),
 
-                // ── Stat Summary Cards ────────────────────────────────
+                // ── KPI Summary Cards ──────────────────────────────────
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
                   decoration: const BoxDecoration(
@@ -1079,7 +1102,7 @@ class _ProductInwardHistoryDialog extends StatelessWidget {
                       _dialogStatCard(
                         icon: Icons.layers_rounded,
                         label: 'Total Batches',
-                        value: '${historyRows.length} entries',
+                        value: '${widget.historyRows.length} entries',
                         color: BoutiqueColors.accent,
                       ),
                       const SizedBox(width: 12),
@@ -1127,16 +1150,16 @@ class _ProductInwardHistoryDialog extends StatelessWidget {
 
                 // ── History List ──────────────────────────────────────
                 Expanded(
-                  child: historyRows.isEmpty
+                  child: widget.historyRows.isEmpty
                       ? const Center(
                           child: Text('No inward batches found for this product.', style: TextStyle(color: BoutiqueColors.textSecondary)),
                         )
                       : ListView.separated(
                           padding: const EdgeInsets.symmetric(vertical: 4),
-                          itemCount: historyRows.length,
+                          itemCount: widget.historyRows.length,
                           separatorBuilder: (_, _) => const Divider(height: 1, color: BoutiqueColors.borderLight),
                           itemBuilder: (ctx, i) {
-                            final row = historyRows[i];
+                            final row = widget.historyRows[i];
                             final dt = row['date'] as DateTime;
                             final narration = row['narration']?.toString() ?? 'Stock Inward';
                             final item = row['itemData'] as Map<String, dynamic>? ?? row;

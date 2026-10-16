@@ -25,8 +25,7 @@ class _SalesReportScreenState extends State<SalesReportScreen>
   late TabController _tabController;
   int _currentTab = 0;
 
-  late FocusNode _productWiseTabFocusNode;
-  bool _ownProductWiseTabFocusNode = false;
+  late final FocusNode _productWiseTabFocusNode;
   final FocusNode _totalSalesTabFocusNode =
       FocusNode(debugLabel: 'subtab_total_sales');
 
@@ -45,12 +44,24 @@ class _SalesReportScreenState extends State<SalesReportScreen>
       }
     });
 
+    _productWiseTabFocusNode =
+        FocusNode(debugLabel: 'subtab_product_wise_sales');
+
     if (widget.searchFocusNode != null) {
-      _productWiseTabFocusNode = widget.searchFocusNode!;
-    } else {
-      _productWiseTabFocusNode =
-          FocusNode(debugLabel: 'subtab_product_wise_sales');
-      _ownProductWiseTabFocusNode = true;
+      widget.searchFocusNode!.addListener(_onExternalSearchFocus);
+    }
+  }
+
+  void _onExternalSearchFocus() {
+    if (widget.searchFocusNode?.hasFocus == true) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        if (_currentTab == 0) {
+          _productWiseSearchFocusNode.requestFocus();
+        } else {
+          _totalSalesSearchFocusNode.requestFocus();
+        }
+      });
     }
   }
 
@@ -71,9 +82,8 @@ class _SalesReportScreenState extends State<SalesReportScreen>
 
   @override
   void dispose() {
-    if (_ownProductWiseTabFocusNode) {
-      _productWiseTabFocusNode.dispose();
-    }
+    widget.searchFocusNode?.removeListener(_onExternalSearchFocus);
+    _productWiseTabFocusNode.dispose();
     _totalSalesTabFocusNode.dispose();
     _productWiseSearchFocusNode.dispose();
     _totalSalesSearchFocusNode.dispose();
@@ -128,6 +138,7 @@ class _SalesReportScreenState extends State<SalesReportScreen>
           Expanded(
             child: TabBarView(
               controller: _tabController,
+              physics: const NeverScrollableScrollPhysics(),
               children: [
                 Focus(
                   onKeyEvent: (node, event) {
@@ -1068,81 +1079,102 @@ class _TotalSalesTabState extends State<_TotalSalesTab> {
               color: BoutiqueColors.bgCard,
               border: Border(bottom: BorderSide(color: BoutiqueColors.border)),
             ),
-            child: Row(
-              children: [
-                Expanded(
-                  flex: 3,
-                  child: TextField(
-                    focusNode: _searchFocusNode,
-                    controller: _searchCtrl,
-                    style: const TextStyle(fontSize: 13),
-                    decoration: BoutiqueInputDecoration.field(
-                      hintText: 'Search bill no, customer, mobile…',
-                      prefixIcon: const Icon(Icons.search_rounded,
-                          size: 18, color: BoutiqueColors.textSecondary),
+            child: FocusTraversalGroup(
+              policy: OrderedTraversalPolicy(),
+              child: Row(
+                children: [
+                  Expanded(
+                    flex: 3,
+                    child: FocusTraversalOrder(
+                      order: const NumericFocusOrder(1.0),
+                      child: TextField(
+                        focusNode: _searchFocusNode,
+                        controller: _searchCtrl,
+                        style: const TextStyle(fontSize: 13),
+                        decoration: BoutiqueInputDecoration.field(
+                          hintText: 'Search bill no, customer, mobile…',
+                          prefixIcon: const Icon(Icons.search_rounded,
+                              size: 18, color: BoutiqueColors.textSecondary),
+                        ),
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(width: 12),
-                ReportDatePill(
-                  label: 'From',
-                  dt: _dateFrom,
-                  order: 6.0,
-                  fmt: _fmt,
-                  onTap: () => _pickDate(isFrom: true),
-                ),
-                const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 8),
-                  child: Text('→',
-                      style: TextStyle(color: BoutiqueColors.textSecondary)),
-                ),
-                ReportDatePill(
-                  label: 'To',
-                  dt: _dateTo,
-                  order: 7.0,
-                  fmt: _fmt,
-                  onTap: () => _pickDate(isFrom: false),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  flex: 2,
-                  child: SearchableDropdownField(
-                    label: 'Payment Mode',
-                    value: _paymentFilter,
-                    items: _paymentModes,
-                    onChanged: (v) {
-                      if (v != null) {
-                        setState(() => _paymentFilter = v);
-                        _applyFilters();
-                      }
-                    },
+                  const SizedBox(width: 12),
+                  ReportDatePill(
+                    label: 'From',
+                    dt: _dateFrom,
+                    order: 2.0,
+                    fmt: _fmt,
+                    onTap: () => _pickDate(isFrom: true),
                   ),
-                ),
-                const SizedBox(width: 8),
-                IconButton(
-                  icon: const Icon(Icons.refresh_rounded,
-                      color: BoutiqueColors.accent),
-                  onPressed: _load,
-                  tooltip: 'Refresh',
-                ),
-                IconButton(
-                  icon: const Icon(Icons.print_outlined,
-                      color: BoutiqueColors.accent),
-                  onPressed: _handlePrint,
-                  tooltip: 'Print Report',
-                ),
-                IconButton(
-                  icon: const Icon(Icons.download_outlined,
-                      color: BoutiqueColors.accent),
-                  onPressed: _handleDownload,
-                  tooltip: 'Download PDF',
-                ),
-                IconButton(
-                  icon: const Icon(Icons.table_view_rounded, color: Color(0xFF1E7E34)),
-                  onPressed: () => ExcelGenerator.downloadBillWiseSalesExcel(rows: _filtered, dateFrom: _dateFrom, dateTo: _dateTo),
-                  tooltip: 'Download Excel',
-                ),
-              ],
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 8),
+                    child: Text('→',
+                        style: TextStyle(color: BoutiqueColors.textSecondary)),
+                  ),
+                  ReportDatePill(
+                    label: 'To',
+                    dt: _dateTo,
+                    order: 3.0,
+                    fmt: _fmt,
+                    onTap: () => _pickDate(isFrom: false),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    flex: 2,
+                    child: FocusTraversalOrder(
+                      order: const NumericFocusOrder(4.0),
+                      child: SearchableDropdownField(
+                        label: 'Payment Mode',
+                        value: _paymentFilter,
+                        items: _paymentModes,
+                        onChanged: (v) {
+                          if (v != null) {
+                            setState(() => _paymentFilter = v);
+                            _applyFilters();
+                          }
+                        },
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  FocusTraversalOrder(
+                    order: const NumericFocusOrder(5.0),
+                    child: IconButton(
+                      icon: const Icon(Icons.refresh_rounded,
+                          color: BoutiqueColors.accent),
+                      onPressed: _load,
+                      tooltip: 'Refresh',
+                    ),
+                  ),
+                  FocusTraversalOrder(
+                    order: const NumericFocusOrder(6.0),
+                    child: IconButton(
+                      icon: const Icon(Icons.print_outlined,
+                          color: BoutiqueColors.accent),
+                      onPressed: _handlePrint,
+                      tooltip: 'Print Report',
+                    ),
+                  ),
+                  FocusTraversalOrder(
+                    order: const NumericFocusOrder(7.0),
+                    child: IconButton(
+                      icon: const Icon(Icons.download_outlined,
+                          color: BoutiqueColors.accent),
+                      onPressed: _handleDownload,
+                      tooltip: 'Download PDF',
+                    ),
+                  ),
+                  FocusTraversalOrder(
+                    order: const NumericFocusOrder(8.0),
+                    child: IconButton(
+                      icon: const Icon(Icons.table_view_rounded, color: Color(0xFF1E7E34)),
+                      onPressed: () => ExcelGenerator.downloadBillWiseSalesExcel(rows: _filtered, dateFrom: _dateFrom, dateTo: _dateTo),
+                      tooltip: 'Download Excel',
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
 
@@ -1728,91 +1760,112 @@ class _ProductWiseSalesTabState extends State<_ProductWiseSalesTab> {
               color: BoutiqueColors.bgCard,
               border: Border(bottom: BorderSide(color: BoutiqueColors.border)),
             ),
-            child: Row(
-              children: [
-                Expanded(
-                  flex: 3,
-                  child: TextField(
-                    focusNode: _searchFocusNode,
-                    controller: _searchCtrl,
-                    style: const TextStyle(fontSize: 13),
-                    decoration: BoutiqueInputDecoration.field(
-                      hintText: 'Search product name or tag ID…',
-                      prefixIcon: const Icon(Icons.search_rounded,
-                          size: 18, color: BoutiqueColors.textSecondary),
+            child: FocusTraversalGroup(
+              policy: OrderedTraversalPolicy(),
+              child: Row(
+                children: [
+                  Expanded(
+                    flex: 3,
+                    child: FocusTraversalOrder(
+                      order: const NumericFocusOrder(1.0),
+                      child: TextField(
+                        focusNode: _searchFocusNode,
+                        controller: _searchCtrl,
+                        style: const TextStyle(fontSize: 13),
+                        decoration: BoutiqueInputDecoration.field(
+                          hintText: 'Search product name or tag ID…',
+                          prefixIcon: const Icon(Icons.search_rounded,
+                              size: 18, color: BoutiqueColors.textSecondary),
+                        ),
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(width: 12),
-                ReportDatePill(
-                  label: 'From',
-                  dt: _dateFrom,
-                  order: 6.0,
-                  fmt: _fmt,
-                  onTap: () => _pickDate(isFrom: true),
-                ),
-                const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 8),
-                  child: Text('→',
-                      style: TextStyle(color: BoutiqueColors.textSecondary)),
-                ),
-                ReportDatePill(
-                  label: 'To',
-                  dt: _dateTo,
-                  order: 7.0,
-                  fmt: _fmt,
-                  onTap: () => _pickDate(isFrom: false),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  flex: 2,
-                  child: SearchableDropdownField(
-                    label: 'Category',
-                    value: _categoryFilter,
-                    items: _categories,
-                    onChanged: (v) {
-                      if (v != null) {
-                        setState(() => _categoryFilter = v);
-                        _applyFilters();
-                      }
-                    },
+                  const SizedBox(width: 12),
+                  ReportDatePill(
+                    label: 'From',
+                    dt: _dateFrom,
+                    order: 2.0,
+                    fmt: _fmt,
+                    onTap: () => _pickDate(isFrom: true),
                   ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  flex: 2,
-                  child: SearchableDropdownField(
-                    label: 'Payment Mode',
-                    value: _paymentFilter,
-                    items: _paymentModes,
-                    onChanged: (v) {
-                      if (v != null) {
-                        setState(() => _paymentFilter = v);
-                        _applyFilters();
-                      }
-                    },
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 8),
+                    child: Text('→',
+                        style: TextStyle(color: BoutiqueColors.textSecondary)),
                   ),
-                ),
-                const SizedBox(width: 8),
-                IconButton(
-                  icon: const Icon(Icons.refresh_rounded,
-                      color: BoutiqueColors.accent),
-                  onPressed: _load,
-                  tooltip: 'Refresh',
-                ),
-                IconButton(
-                  icon: const Icon(Icons.print_outlined,
-                      color: BoutiqueColors.accent),
-                  onPressed: _handlePrint,
-                  tooltip: 'Print Report',
-                ),
-                IconButton(
-                  icon: const Icon(Icons.download_outlined,
-                      color: BoutiqueColors.accent),
-                  onPressed: _handleDownload,
-                  tooltip: 'Download PDF',
-                ),
-              ],
+                  ReportDatePill(
+                    label: 'To',
+                    dt: _dateTo,
+                    order: 3.0,
+                    fmt: _fmt,
+                    onTap: () => _pickDate(isFrom: false),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    flex: 2,
+                    child: FocusTraversalOrder(
+                      order: const NumericFocusOrder(4.0),
+                      child: SearchableDropdownField(
+                        label: 'Category',
+                        value: _categoryFilter,
+                        items: _categories,
+                        onChanged: (v) {
+                          if (v != null) {
+                            setState(() => _categoryFilter = v);
+                            _applyFilters();
+                          }
+                        },
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    flex: 2,
+                    child: FocusTraversalOrder(
+                      order: const NumericFocusOrder(5.0),
+                      child: SearchableDropdownField(
+                        label: 'Payment Mode',
+                        value: _paymentFilter,
+                        items: _paymentModes,
+                        onChanged: (v) {
+                          if (v != null) {
+                            setState(() => _paymentFilter = v);
+                            _applyFilters();
+                          }
+                        },
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  FocusTraversalOrder(
+                    order: const NumericFocusOrder(6.0),
+                    child: IconButton(
+                      icon: const Icon(Icons.refresh_rounded,
+                          color: BoutiqueColors.accent),
+                      onPressed: _load,
+                      tooltip: 'Refresh',
+                    ),
+                  ),
+                  FocusTraversalOrder(
+                    order: const NumericFocusOrder(7.0),
+                    child: IconButton(
+                      icon: const Icon(Icons.print_outlined,
+                          color: BoutiqueColors.accent),
+                      onPressed: _handlePrint,
+                      tooltip: 'Print Report',
+                    ),
+                  ),
+                  FocusTraversalOrder(
+                    order: const NumericFocusOrder(8.0),
+                    child: IconButton(
+                      icon: const Icon(Icons.download_outlined,
+                          color: BoutiqueColors.accent),
+                      onPressed: _handleDownload,
+                      tooltip: 'Download PDF',
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
 

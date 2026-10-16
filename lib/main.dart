@@ -895,6 +895,13 @@ class _AdminHomeShellState extends State<AdminHomeShell> {
         const SingleActivator(LogicalKeyboardKey.digit2, control: true, shift: true): () => _navigateToReportTab(1),
         const SingleActivator(LogicalKeyboardKey.digit3, control: true, shift: true): () => _navigateToReportTab(2),
         const SingleActivator(LogicalKeyboardKey.digit4, control: true, shift: true): () => _navigateToReportTab(3),
+        // Alt + B, H, C (Billing: Create Bill, Bill History, Customer Ledger)
+        const SingleActivator(LogicalKeyboardKey.keyB, alt: true): () => _navigateToBillingTab(0),
+        const SingleActivator(LogicalKeyboardKey.keyH, alt: true): () => _navigateToBillingTab(1),
+        const SingleActivator(LogicalKeyboardKey.keyC, alt: true): () => _navigateToBillingTab(2),
+        const SingleActivator(LogicalKeyboardKey.keyB, control: true, shift: true): () => _navigateToBillingTab(0),
+        const SingleActivator(LogicalKeyboardKey.keyH, control: true, shift: true): () => _navigateToBillingTab(1),
+        const SingleActivator(LogicalKeyboardKey.keyC, control: true, shift: true): () => _navigateToBillingTab(2),
         // Logout shortcuts
         const SingleActivator(LogicalKeyboardKey.keyL, control: true, shift: true): _handleLogout,
         const SingleActivator(LogicalKeyboardKey.keyL, alt: true): _handleLogout,
@@ -1138,6 +1145,9 @@ class _AdminHomeShellState extends State<AdminHomeShell> {
                               key: _reportsKey,
                               isActive: _stackIndex == 2,
                               targetSubTab: _reportsSubTab,
+                              onSubTabChanged: (tab) {
+                                _reportsSubTab = tab;
+                              },
                             ),
                           ),
                           // Index 3: Users

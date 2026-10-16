@@ -9,7 +9,13 @@ import 'reports/inward_report_screen.dart';
 class ReportsView extends StatefulWidget {
   final bool isActive;
   final int? targetSubTab;
-  const ReportsView({super.key, this.isActive = false, this.targetSubTab});
+  final ValueChanged<int>? onSubTabChanged;
+  const ReportsView({
+    super.key,
+    this.isActive = false,
+    this.targetSubTab,
+    this.onSubTabChanged,
+  });
 
   @override
   ReportsViewState createState() => ReportsViewState();
@@ -42,7 +48,7 @@ class ReportsViewState extends State<ReportsView>
   @override
   void didUpdateWidget(ReportsView oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.targetSubTab != null && widget.targetSubTab != _currentTab) {
+    if (widget.targetSubTab != null && widget.targetSubTab != oldWidget.targetSubTab) {
       _selectTab(widget.targetSubTab!);
     } else if (widget.isActive && !oldWidget.isActive) {
       if (_currentTab == 3) {
@@ -59,6 +65,7 @@ class ReportsViewState extends State<ReportsView>
     _tabController.addListener(() {
       if (_tabController.indexIsChanging || _tabController.index != _currentTab) {
         setState(() => _currentTab = _tabController.index);
+        widget.onSubTabChanged?.call(_tabController.index);
         if (_tabController.index == 3) {
           _inwardReportKey.currentState?.refresh();
         }
@@ -112,6 +119,7 @@ class ReportsViewState extends State<ReportsView>
       setState(() => _currentTab = index);
       _tabController.animateTo(index);
     }
+    widget.onSubTabChanged?.call(index);
     _focusSearchForTab(index);
     if (index == 3) {
       _inwardReportKey.currentState?.refresh();
@@ -303,6 +311,7 @@ class ReportsViewState extends State<ReportsView>
               },
               child: TabBarView(
                 controller: _tabController,
+                physics: const NeverScrollableScrollPhysics(),
                 children: [
                   FocusScope(
                     child: FocusTraversalGroup(
