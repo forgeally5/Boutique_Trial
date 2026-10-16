@@ -10,7 +10,13 @@ import '../../services/api_service.dart';
 class CustomerLedgerScreen extends StatefulWidget {
   final AdminState state;
   final FocusNode? searchFocusNode;
-  const CustomerLedgerScreen({super.key, required this.state, this.searchFocusNode});
+  final VoidCallback? onReturnToMainTab;
+  const CustomerLedgerScreen({
+    super.key,
+    required this.state,
+    this.searchFocusNode,
+    this.onReturnToMainTab,
+  });
 
   @override
   State<CustomerLedgerScreen> createState() => _CustomerLedgerScreenState();
@@ -42,6 +48,15 @@ class _CustomerLedgerScreenState extends State<CustomerLedgerScreen> {
       _searchFocusNode = FocusNode(debugLabel: 'customer_ledger_search');
       _ownsSearchFocusNode = true;
     }
+    _searchFocusNode.onKeyEvent = (node, event) {
+      if (event is KeyDownEvent &&
+          event.logicalKey == LogicalKeyboardKey.tab &&
+          HardwareKeyboard.instance.isShiftPressed) {
+        widget.onReturnToMainTab?.call();
+        return KeyEventResult.handled;
+      }
+      return KeyEventResult.ignored;
+    };
     _fetchPendingBills();
   }
 
@@ -332,6 +347,10 @@ class _CustomerLedgerScreenState extends State<CustomerLedgerScreen> {
                             return KeyEventResult.handled;
                           }
                           if (event.logicalKey == LogicalKeyboardKey.tab) {
+                            if (HardwareKeyboard.instance.isShiftPressed) {
+                              widget.onReturnToMainTab?.call();
+                              return KeyEventResult.handled;
+                            }
                             // Tab: jump to right panel, skip the list
                             _rightPanelFocusNode.requestFocus();
                             return KeyEventResult.handled;

@@ -213,6 +213,7 @@ class BillingViewState extends State<BillingView> {
                         state: widget.state,
                         initialBill: _billToEdit,
                         firstFieldFocusNode: _createBillFocusNode,
+                        onReturnToMainTab: () => _tabFocus[0].requestFocus(),
                         onSaved: () {
                           setState(() {
                             _billToEdit = null;
@@ -226,6 +227,7 @@ class BillingViewState extends State<BillingView> {
                     BillHistoryScreen(
                       state: widget.state,
                       searchFocusNode: _billHistoryFocusNode,
+                      onReturnToMainTab: () => _tabFocus[1].requestFocus(),
                       onEditBill: (bill) {
                         setState(() {
                           _billToEdit = bill;
@@ -238,6 +240,7 @@ class BillingViewState extends State<BillingView> {
                     CustomerLedgerScreen(
                       state: widget.state,
                       searchFocusNode: _customerLedgerFocusNode,
+                      onReturnToMainTab: () => _tabFocus[2].requestFocus(),
                     ),
                 ],
               ),
@@ -262,18 +265,12 @@ class BillingViewState extends State<BillingView> {
         final pos = visible.indexOf(index);
         if (pos == -1) return KeyEventResult.ignored;
 
-        // Tab / Shift+Tab: cycle through tab buttons (like in Report section)
+        // Tab / Shift+Tab: cycle through tab buttons
+        // e.g. Customer Ledger -> Create Bill -> Bill History -> Customer Ledger
         if (event.logicalKey == LogicalKeyboardKey.tab) {
-          final isShift = HardwareKeyboard.instance.isShiftPressed;
-          if (isShift) {
-            final prevPos = (pos - 1 + visible.length) % visible.length;
-            _tabFocus[visible[prevPos]].requestFocus();
-            return KeyEventResult.handled;
-          } else {
-            final nextPos = (pos + 1) % visible.length;
-            _tabFocus[visible[nextPos]].requestFocus();
-            return KeyEventResult.handled;
-          }
+          final nextPos = (pos + 1) % visible.length;
+          _tabFocus[visible[nextPos]].requestFocus();
+          return KeyEventResult.handled;
         }
 
         // Left / Right arrows: navigate focus across tabs
@@ -316,35 +313,48 @@ class BillingViewState extends State<BillingView> {
               decoration: BoxDecoration(
                 color: isSelected
                     ? _brown.withAlpha(20)
-                    : (isFocused ? _brown.withAlpha(15) : Colors.transparent),
+                    : (isFocused ? _brown.withAlpha(25) : Colors.transparent),
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(
                   color: isFocused
                       ? _brown
                       : (isSelected ? _brown.withAlpha(100) : Colors.transparent),
-                  width: isFocused ? 1.5 : 1.0,
+                  width: isFocused ? 2.0 : 1.0,
                 ),
-                boxShadow: isSelected
+                boxShadow: isFocused
                     ? [
                         BoxShadow(
-                          color: _brown.withAlpha(25),
-                          blurRadius: 4,
+                          color: _brown.withAlpha(40),
+                          blurRadius: 6,
+                          spreadRadius: 1,
                           offset: const Offset(0, 1),
                         ),
                       ]
-                    : null,
+                    : (isSelected
+                        ? [
+                            BoxShadow(
+                              color: _brown.withAlpha(25),
+                              blurRadius: 4,
+                              offset: const Offset(0, 1),
+                            ),
+                          ]
+                        : null),
               ),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Row(mainAxisSize: MainAxisSize.min, children: [
-                    Icon(icon, size: 16, color: isSelected ? _brown : _brownLight),
+                    Icon(
+                      icon,
+                      size: 16,
+                      color: (isSelected || isFocused) ? _brown : _brownLight,
+                    ),
                     const SizedBox(width: 8),
                     Text(
                       label,
                       style: TextStyle(
-                        fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-                        color: isSelected ? _brown : _brownLight,
+                        fontWeight: (isSelected || isFocused) ? FontWeight.bold : FontWeight.w500,
+                        color: (isSelected || isFocused) ? _brown : _brownLight,
                         fontSize: 14,
                       ),
                     ),
@@ -353,8 +363,10 @@ class BillingViewState extends State<BillingView> {
                       '($shortcut)',
                       style: TextStyle(
                         fontSize: 11,
-                        fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-                        color: isSelected ? _brown.withAlpha(220) : _brownLight.withAlpha(160),
+                        fontWeight: (isSelected || isFocused) ? FontWeight.bold : FontWeight.w500,
+                        color: (isSelected || isFocused)
+                            ? _brown.withAlpha(220)
+                            : _brownLight.withAlpha(160),
                       ),
                     ),
                   ]),
@@ -363,9 +375,11 @@ class BillingViewState extends State<BillingView> {
                   AnimatedContainer(
                     duration: const Duration(milliseconds: 180),
                     height: 2.5,
-                    width: isSelected ? 48 : 0,
+                    width: isSelected ? 48 : (isFocused ? 32 : 0),
                     decoration: BoxDecoration(
-                      color: isSelected ? _brown : Colors.transparent,
+                      color: isSelected
+                          ? _brown
+                          : (isFocused ? _brown.withAlpha(140) : Colors.transparent),
                       borderRadius: BorderRadius.circular(2),
                     ),
                   ),

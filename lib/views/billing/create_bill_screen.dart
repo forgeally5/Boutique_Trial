@@ -18,12 +18,14 @@ class CreateBillScreen extends StatefulWidget {
   final VoidCallback? onSaved;
   final Map<String, dynamic>? initialBill;
   final FocusNode? firstFieldFocusNode;
+  final VoidCallback? onReturnToMainTab;
   const CreateBillScreen({
     super.key,
     required this.state,
     this.onSaved,
     this.initialBill,
     this.firstFieldFocusNode,
+    this.onReturnToMainTab,
   });
 
   @override
@@ -1069,6 +1071,7 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
                 child: _CustomerAutocompleteField(
                   controller: _customerNameCtrl,
                   focusNode: _customerNameFocusNode,
+                  onShiftTab: widget.onReturnToMainTab,
                   labelText: 'Customer Name',
                   hintText: 'Walk-in Customer',
                   autofocus: false,
@@ -2875,8 +2878,9 @@ class _CustomerAutocompleteField extends StatefulWidget {
   final List<Map<String, String>> Function(String query) optionsBuilder;
   final ValueChanged<Map<String, String>> onSelected;
   final Widget Function(BuildContext context, Map<String, String> option, bool isHighlighted) itemBuilder;
-  final ValueChanged<String>? onSubmitted;
+   final ValueChanged<String>? onSubmitted;
   final FocusNode? nextFocusNode;
+  final VoidCallback? onShiftTab;
 
   const _CustomerAutocompleteField({
     required this.controller,
@@ -2893,6 +2897,7 @@ class _CustomerAutocompleteField extends StatefulWidget {
     required this.itemBuilder,
     this.onSubmitted,
     this.nextFocusNode,
+    this.onShiftTab,
   });
 
   @override
@@ -3020,6 +3025,13 @@ class _CustomerAutocompleteFieldState extends State<_CustomerAutocompleteField> 
       } else if (event.logicalKey == LogicalKeyboardKey.escape) {
         _removeOverlay();
         return KeyEventResult.handled;
+      } else if (event.logicalKey == LogicalKeyboardKey.tab &&
+          HardwareKeyboard.instance.isShiftPressed) {
+        if (widget.onShiftTab != null) {
+          _removeOverlay();
+          widget.onShiftTab!();
+          return KeyEventResult.handled;
+        }
       }
     }
     return KeyEventResult.ignored;

@@ -39,7 +39,14 @@ class BillHistoryScreen extends StatefulWidget {
   final AdminState? state;
   final ValueChanged<Map<String, dynamic>>? onEditBill;
   final FocusNode? searchFocusNode;
-  const BillHistoryScreen({super.key, this.state, this.onEditBill, this.searchFocusNode});
+  final VoidCallback? onReturnToMainTab;
+  const BillHistoryScreen({
+    super.key,
+    this.state,
+    this.onEditBill,
+    this.searchFocusNode,
+    this.onReturnToMainTab,
+  });
 
   @override
   State<BillHistoryScreen> createState() => _BillHistoryScreenState();
@@ -169,6 +176,11 @@ class _BillHistoryScreenState extends State<BillHistoryScreen> {
     }
     _searchFocusNode.onKeyEvent = (node, event) {
       if (event is KeyDownEvent) {
+        if (event.logicalKey == LogicalKeyboardKey.tab &&
+            HardwareKeyboard.instance.isShiftPressed) {
+          widget.onReturnToMainTab?.call();
+          return KeyEventResult.handled;
+        }
         if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
           final bills = _displayedBills;
           if (bills.isNotEmpty) {
