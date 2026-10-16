@@ -613,45 +613,72 @@ class _AdminHomeShellState extends State<AdminHomeShell> {
   // ── Logout ─────────────────────────────────────────────────────────────────
 
   Future<void> _handleLogout() async {
-    final confirmed = await showDialog<bool>(
+    bool? confirmed;
+    await showDialog<void>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        backgroundColor: BoutiqueColors.bgCard,
-        title: const Text(
-          'Confirm Logout',
-          style: TextStyle(
-            fontFamily: 'serif',
-            fontSize: 20,
-            fontWeight: FontWeight.bold,
-            color: BoutiqueColors.textPrimary,
-          ),
-        ),
-        content: const Text(
-          'Are you sure you want to log out of the admin panel?',
-          style: TextStyle(fontSize: 14, color: BoutiqueColors.textSecondary),
-        ),
-        actions: [
-          OutlinedButton(
-            style: OutlinedButton.styleFrom(
-              side: const BorderSide(color: BoutiqueColors.border),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-            ),
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Cancel', style: TextStyle(color: BoutiqueColors.textSecondary)),
-          ),
-          ElevatedButton(
+      barrierDismissible: false,
+      builder: (ctx) {
+        return CallbackShortcuts(
+          bindings: {
+            const SingleActivator(LogicalKeyboardKey.escape): () {
+              Navigator.of(ctx).pop();
+            },
+            const SingleActivator(LogicalKeyboardKey.enter): () {
+              confirmed = true;
+              Navigator.of(ctx).pop();
+            },
+            const SingleActivator(LogicalKeyboardKey.numpadEnter): () {
+              confirmed = true;
+              Navigator.of(ctx).pop();
+            },
+          },
+          child: Focus(
             autofocus: true,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: BoutiqueColors.destructive,
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            child: AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              backgroundColor: BoutiqueColors.bgCard,
+              title: const Text(
+                'Confirm Logout',
+                style: TextStyle(
+                  fontFamily: 'serif',
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: BoutiqueColors.textPrimary,
+                ),
+              ),
+              content: const Text(
+                'Are you sure you want to log out of the admin panel?',
+                style: TextStyle(fontSize: 14, color: BoutiqueColors.textSecondary),
+              ),
+              actions: [
+                OutlinedButton(
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: BoutiqueColors.border),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                  onPressed: () {
+                    confirmed = false;
+                    Navigator.of(ctx).pop();
+                  },
+                  child: const Text('Cancel', style: TextStyle(color: BoutiqueColors.textSecondary)),
+                ),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: BoutiqueColors.destructive,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                  onPressed: () {
+                    confirmed = true;
+                    Navigator.of(ctx).pop();
+                  },
+                  child: const Text('Logout'),
+                ),
+              ],
             ),
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Logout'),
           ),
-        ],
-      ),
+        );
+      },
     );
 
     if (confirmed == true && mounted) {
