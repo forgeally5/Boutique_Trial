@@ -73,7 +73,7 @@ class ReportsViewState extends State<ReportsView>
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
-        _tabFocusNodes[0].requestFocus();
+        _tabFocusNodes[_currentTab].requestFocus();
       }
     });
   }
@@ -120,7 +120,14 @@ class ReportsViewState extends State<ReportsView>
       _tabController.animateTo(index);
     }
     widget.onSubTabChanged?.call(index);
-    _focusSearchForTab(index);
+    if (mounted) {
+      if (index == 2) {
+        _focusSearchForTab(index);
+      } else {
+        _tabFocusNodes[index].requestFocus();
+        _focusSearchForTab(index);
+      }
+    }
     if (index == 3) {
       _inwardReportKey.currentState?.refresh();
     }
@@ -271,7 +278,7 @@ class ReportsViewState extends State<ReportsView>
                           isSelected: _currentTab == 2,
                           order: 3.0,
                           onSelect: () => _selectTab(2),
-                          onTabNext: () => _tabFocusNodes[3].requestFocus(),
+                          onTabNext: () => _salesSearchFocusNode.requestFocus(),
                           onTabPrev: () => _tabFocusNodes[1].requestFocus(),
                           onArrowRight: () => _tabFocusNodes[3].requestFocus(),
                           onArrowLeft: () => _tabFocusNodes[1].requestFocus(),
@@ -328,7 +335,10 @@ class ReportsViewState extends State<ReportsView>
                   FocusScope(
                     child: FocusTraversalGroup(
                       policy: OrderedTraversalPolicy(),
-                      child: SalesReportScreen(searchFocusNode: _salesSearchFocusNode),
+                      child: SalesReportScreen(
+                        searchFocusNode: _salesSearchFocusNode,
+                        onReturnToMainTab: () => _tabFocusNodes[2].requestFocus(),
+                      ),
                     ),
                   ),
                   FocusScope(
@@ -435,30 +445,31 @@ class _ReportTabButtonState extends State<_ReportTabButton> {
         },
         child: InkWell(
           canRequestFocus: false,
-          onTap: widget.onSelect,
+          onTap: () {
+            widget.focusNode.requestFocus();
+            widget.onSelect();
+          },
           borderRadius: BorderRadius.circular(8),
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 150),
             padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
             decoration: BoxDecoration(
-              color: _isFocused
-                  ? accent.withAlpha(25)
-                  : (isSelected
-                      ? BoutiqueColors.accentSoft.withAlpha(70)
-                      : Colors.transparent),
+              color: isSelected
+                  ? BoutiqueColors.accentSoft.withAlpha(90)
+                  : (_isFocused ? BoutiqueColors.accent.withAlpha(20) : Colors.transparent),
               borderRadius: BorderRadius.circular(8),
               border: Border.all(
-                color: _isFocused
+                color: isSelected
                     ? accent
-                    : (isSelected ? accent.withAlpha(50) : Colors.transparent),
-                width: _isFocused ? 2.0 : 1.0,
+                    : (_isFocused ? BoutiqueColors.border : Colors.transparent),
+                width: isSelected ? 1.5 : 1.0,
               ),
-              boxShadow: _isFocused
+              boxShadow: isSelected
                   ? [
                       BoxShadow(
-                        color: accent.withAlpha(60),
-                        blurRadius: 6,
-                        spreadRadius: 1,
+                        color: accent.withAlpha(35),
+                        blurRadius: 4,
+                        offset: const Offset(0, 1),
                       ),
                     ]
                   : null,

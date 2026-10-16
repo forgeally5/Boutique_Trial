@@ -1742,6 +1742,16 @@ class _SearchableDropdownDialogState extends State<_SearchableDropdownDialog> {
   static const _border = Color(0xFFE5DDD0);
   static const _accent = Color(0xFF5E1729);
 
+  bool _isClosed = false;
+
+  void _closeDialog() {
+    if (_isClosed) return;
+    _isClosed = true;
+    if (mounted) {
+      Navigator.of(context).pop();
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -1789,6 +1799,9 @@ class _SearchableDropdownDialogState extends State<_SearchableDropdownDialog> {
         widget.onSelected(_filtered[_highlightIdx]);
         return KeyEventResult.handled;
       }
+    } else if (key == LogicalKeyboardKey.escape) {
+      _closeDialog();
+      return KeyEventResult.handled;
     }
     return KeyEventResult.ignored;
   }
@@ -1816,41 +1829,50 @@ class _SearchableDropdownDialogState extends State<_SearchableDropdownDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      insetPadding: const EdgeInsets.symmetric(horizontal: 80, vertical: 60),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 420, maxHeight: 480),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // ── Header ─────────────────────────
-            Container(
-              padding: const EdgeInsets.fromLTRB(20, 18, 12, 14),
-              decoration: const BoxDecoration(
-                border: Border(bottom: BorderSide(color: Color(0xFFE5DDD0))),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.search_rounded, color: _brown, size: 22),
-                  const SizedBox(width: 10),
-                  Text(
-                    'Select ${widget.label.replaceAll(' *', '')}',
-                    style: const TextStyle(
-                      fontFamily: 'serif',
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: _brown,
-                    ),
+    return CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.escape): _closeDialog,
+      },
+      child: PopScope(
+        canPop: true,
+        onPopInvokedWithResult: (didPop, _) {
+          if (didPop) _isClosed = true;
+        },
+        child: Dialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          insetPadding: const EdgeInsets.symmetric(horizontal: 80, vertical: 60),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 420, maxHeight: 480),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // ── Header ─────────────────────────
+                Container(
+                  padding: const EdgeInsets.fromLTRB(20, 18, 12, 14),
+                  decoration: const BoxDecoration(
+                    border: Border(bottom: BorderSide(color: Color(0xFFE5DDD0))),
                   ),
-                  const Spacer(),
-                  IconButton(
-                    icon: const Icon(Icons.close, color: Colors.grey, size: 20),
-                    onPressed: () => Navigator.pop(context),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.search_rounded, color: _brown, size: 22),
+                      const SizedBox(width: 10),
+                      Text(
+                        'Select ${widget.label.replaceAll(' *', '')}',
+                        style: const TextStyle(
+                          fontFamily: 'serif',
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: _brown,
+                        ),
+                      ),
+                      const Spacer(),
+                      IconButton(
+                        icon: const Icon(Icons.close, color: Colors.grey, size: 20),
+                        onPressed: _closeDialog,
+                      ),
+                    ],
                   ),
-                ],
-              ),
-            ),
+                ),
 
             // ── Search Bar ─────────────────────
             Padding(
@@ -1971,6 +1993,8 @@ class _SearchableDropdownDialogState extends State<_SearchableDropdownDialog> {
           ],
         ),
       ),
+    ),
+    ),
     );
   }
 }

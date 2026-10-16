@@ -31,6 +31,10 @@ class InwardReportScreenState extends State<InwardReportScreen> {
   late DateTime _endDate;
   String _searchQuery = '';
 
+  int _selectedRowIndex = -1;
+  final FocusNode _tableFocusNode = FocusNode(debugLabel: 'inward_table_focus');
+  final ScrollController _tableScrollCtrl = ScrollController();
+
   Future<void> refresh() async => _fetchInwardTransactions();
 
   @override
@@ -56,6 +60,28 @@ class InwardReportScreenState extends State<InwardReportScreen> {
     }
   }
 
+  void _scrollToSelectedRow() {
+    if (!_tableScrollCtrl.hasClients || _selectedRowIndex < 0) return;
+    const itemHeight = 62.0;
+    final targetOffset = _selectedRowIndex * itemHeight;
+    final viewportHeight = _tableScrollCtrl.position.viewportDimension;
+    final currentOffset = _tableScrollCtrl.offset;
+
+    if (targetOffset < currentOffset) {
+      _tableScrollCtrl.animateTo(
+        targetOffset,
+        duration: const Duration(milliseconds: 120),
+        curve: Curves.easeOut,
+      );
+    } else if (targetOffset + itemHeight > currentOffset + viewportHeight) {
+      _tableScrollCtrl.animateTo(
+        targetOffset + itemHeight - viewportHeight,
+        duration: const Duration(milliseconds: 120),
+        curve: Curves.easeOut,
+      );
+    }
+  }
+
   Future<void> _pickDate({required bool isFrom}) async {
     final initial = isFrom ? _startDate : _endDate;
     final picked = await showBoutiqueDatePicker(
@@ -76,6 +102,8 @@ class InwardReportScreenState extends State<InwardReportScreen> {
     if (_ownSearchFocusNode) {
       _searchFocusNode.dispose();
     }
+    _tableFocusNode.dispose();
+    _tableScrollCtrl.dispose();
     super.dispose();
   }
 
@@ -135,7 +163,10 @@ class InwardReportScreenState extends State<InwardReportScreen> {
       return true;
     }).toList();
 
-    setState(() => _isLoading = false);
+    setState(() {
+      _selectedRowIndex = -1;
+      _isLoading = false;
+    });
   }
 
   Future<void> _syncExistingInventory() async {
@@ -389,7 +420,7 @@ class InwardReportScreenState extends State<InwardReportScreen> {
     );
   }
 
-  void _showProductInwardHistoryDialog(Map<String, dynamic> itemData) {
+  Future<void> _showProductInwardHistoryDialog(Map<String, dynamic> itemData) async {
     final targetTag = itemData['tagId']?.toString().trim() ?? '';
     final targetName = itemData['name']?.toString().trim() ?? '';
     final category = itemData['category']?.toString().trim() ?? '-';
@@ -431,7 +462,7 @@ class InwardReportScreenState extends State<InwardReportScreen> {
       return dateB.compareTo(dateA);
     });
 
-    showDialog(
+    await showDialog(
       context: context,
       barrierDismissible: true,
       builder: (dialogCtx) => _ProductInwardHistoryDialog(
@@ -441,6 +472,9 @@ class InwardReportScreenState extends State<InwardReportScreen> {
         historyRows: productHistory,
       ),
     );
+    if (mounted) {
+      _tableFocusNode.requestFocus();
+    }
   }
 
   Widget _tableHeader() {
@@ -464,7 +498,13 @@ class InwardReportScreenState extends State<InwardReportScreen> {
     );
   }
 
-  Widget _tableRow(Map<String, dynamic> itemData, DateTime date, String narration) {
+  Widget _tableRow(
+    Map<String, dynamic> itemData,
+    DateTime date,
+    String narration, {
+    bool isSelected = false,
+    int rowIndex = -1,
+  }) {
     final addedQty = (itemData['qty'] as num?)?.toInt() ?? 0;
     final addedWeight = (itemData['weight'] as num?)?.toDouble() ?? 0.0;
     final rate = (itemData['rate'] as num?)?.toDouble() ?? 0.0;
@@ -483,24 +523,42 @@ class InwardReportScreenState extends State<InwardReportScreen> {
 
     final displayAdded = formatAdded(addedQty, addedWeight);
 
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      child: Row(
-        children: [
-          // Date & Time
-          Expanded(
-            flex: 2,
-            child: Text(
-              DateFormat('dd MMM yyyy, hh:mm a').format(date),
-              style: const TextStyle(fontSize: 13, color: BoutiqueColors.textSecondary),
+    return InkWell(
+      onTap: () {
+        setState(() => _selectedRowIndex = rowIndex);
+        _tableFocusNode.requestFocus();
+        _showProductInwardHistoryDialog(itemData);
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 100),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? BoutiqueColors.accentSoft.withAlpha(90)
+              : (rowIndex % 2 == 1
+                  ? BoutiqueColors.bgMain.withValues(alpha: 0.4)
+                  : Colors.transparent),
+          border: isSelected
+              ? const Border(
+                  left: BorderSide(color: BoutiqueColors.accent, width: 4),
+                )
+              : const Border(
+                  left: BorderSide(color: Colors.transparent, width: 4),
+                ),
+        ),
+        child: Row(
+          children: [
+            // Date & Time
+            Expanded(
+              flex: 2,
+              child: Text(
+                DateFormat('dd MMM yyyy, hh:mm a').format(date),
+                style: const TextStyle(fontSize: 13, color: BoutiqueColors.textSecondary),
+              ),
             ),
-          ),
-          // Name & Tag ID
-          Expanded(
-            flex: 3,
-            child: InkWell(
-              onTap: () => _showProductInwardHistoryDialog(itemData),
-              borderRadius: BorderRadius.circular(6),
+            // Name & Tag ID
+            Expanded(
+              flex: 3,
               child: Padding(
                 padding: const EdgeInsets.symmetric(vertical: 2),
                 child: Column(
@@ -511,8 +569,8 @@ class InwardReportScreenState extends State<InwardReportScreen> {
                         Flexible(
                           child: Text(
                             itemData['name']?.toString() ?? 'Unknown',
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w600,
+                            style: TextStyle(
+                              fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
                               fontSize: 13,
                               color: BoutiqueColors.textPrimary,
                             ),
@@ -520,25 +578,31 @@ class InwardReportScreenState extends State<InwardReportScreen> {
                         ),
                         const SizedBox(width: 6),
                         Tooltip(
-                          message: 'View complete inward history & download Excel',
+                          message: 'View complete inward history & download Excel (Enter)',
                           child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                             decoration: BoxDecoration(
-                              color: BoutiqueColors.accentSoft,
+                              color: isSelected ? BoutiqueColors.accent : BoutiqueColors.accentSoft,
                               borderRadius: BorderRadius.circular(4),
-                              border: Border.all(color: BoutiqueColors.accentLightBorder),
+                              border: Border.all(
+                                color: isSelected ? BoutiqueColors.accent : BoutiqueColors.accentLightBorder,
+                              ),
                             ),
-                            child: const Row(
+                            child: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                Icon(Icons.history_rounded, size: 11, color: BoutiqueColors.accent),
-                                SizedBox(width: 3),
+                                Icon(
+                                  Icons.history_rounded,
+                                  size: 11,
+                                  color: isSelected ? Colors.white : BoutiqueColors.accent,
+                                ),
+                                const SizedBox(width: 3),
                                 Text(
-                                  'History',
+                                  isSelected ? 'History ↵' : 'History',
                                   style: TextStyle(
                                     fontSize: 10,
                                     fontWeight: FontWeight.bold,
-                                    color: BoutiqueColors.accent,
+                                    color: isSelected ? Colors.white : BoutiqueColors.accent,
                                   ),
                                 ),
                               ],
@@ -577,52 +641,52 @@ class InwardReportScreenState extends State<InwardReportScreen> {
                 ),
               ),
             ),
-          ),
-          // Category
-          Expanded(
-            flex: 2,
-            child: Text(
-              itemData['category']?.toString() ?? '-',
-              style: const TextStyle(fontSize: 13, color: BoutiqueColors.textPrimary),
+            // Category
+            Expanded(
+              flex: 2,
+              child: Text(
+                itemData['category']?.toString() ?? '-',
+                style: const TextStyle(fontSize: 13, color: BoutiqueColors.textPrimary),
+              ),
             ),
-          ),
-          // Rate
-          Expanded(
-            flex: 1,
-            child: Text(
-              rate > 0 ? '₹${rate == rate.toInt() ? rate.toInt() : rate.toStringAsFixed(1)}' : '-',
-              style: const TextStyle(fontSize: 12, color: BoutiqueColors.textSecondary),
-              textAlign: TextAlign.right,
+            // Rate
+            Expanded(
+              flex: 1,
+              child: Text(
+                rate > 0 ? '₹${rate == rate.toInt() ? rate.toInt() : rate.toStringAsFixed(1)}' : '-',
+                style: const TextStyle(fontSize: 12, color: BoutiqueColors.textSecondary),
+                textAlign: TextAlign.right,
+              ),
             ),
-          ),
-          // Added Stock
-          Expanded(
-            flex: 2,
-            child: Container(
-              alignment: Alignment.centerRight,
+            // Added Stock
+            Expanded(
+              flex: 2,
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: Colors.green.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: Text(
-                  displayAdded,
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.green),
+                alignment: Alignment.centerRight,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.green.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    displayAdded,
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.green),
+                  ),
                 ),
               ),
             ),
-          ),
-          // Total Value
-          Expanded(
-            flex: 2,
-            child: Text(
-              amount > 0 ? '₹ ${_currencyFmt.format(amount)}' : '-',
-              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: BoutiqueColors.textPrimary),
-              textAlign: TextAlign.right,
+            // Total Value
+            Expanded(
+              flex: 2,
+              child: Text(
+                amount > 0 ? '₹ ${_currencyFmt.format(amount)}' : '-',
+                style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: BoutiqueColors.textPrimary),
+                textAlign: TextAlign.right,
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -704,116 +768,148 @@ class InwardReportScreenState extends State<InwardReportScreen> {
             color: BoutiqueColors.bgCard,
             border: Border(bottom: BorderSide(color: BoutiqueColors.border)),
           ),
-          child: Row(
-            children: [
-              // Search Input
-              SizedBox(
-                width: 260,
-                child: TextField(
-                  focusNode: _searchFocusNode,
-                  controller: _searchCtrl,
-                  decoration: InputDecoration(
-                    hintText: 'Search by item name, tag, category...',
-                    hintStyle: const TextStyle(fontSize: 12, color: BoutiqueColors.textSecondary),
-                    prefixIcon: const Icon(Icons.search, size: 18, color: BoutiqueColors.textSecondary),
-                    suffixIcon: _searchQuery.isNotEmpty
-                        ? IconButton(
-                            icon: const Icon(Icons.clear, size: 16),
-                            onPressed: () {
-                              _searchCtrl.clear();
-                              setState(() {
-                                _searchQuery = '';
-                                _applyFilters();
-                              });
-                            },
-                          )
-                        : null,
-                    filled: true,
-                    fillColor: Colors.white,
-                    contentPadding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: const BorderSide(color: BoutiqueColors.border),
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: const BorderSide(color: BoutiqueColors.border),
+          child: FocusTraversalGroup(
+            policy: OrderedTraversalPolicy(),
+            child: Row(
+              children: [
+                // Search Input
+                SizedBox(
+                  width: 260,
+                  child: FocusTraversalOrder(
+                    order: const NumericFocusOrder(1.0),
+                    child: Focus(
+                      onKeyEvent: (node, event) {
+                        if (event is KeyDownEvent &&
+                            event.logicalKey == LogicalKeyboardKey.arrowDown) {
+                          if (flatItems.isNotEmpty) {
+                            setState(() => _selectedRowIndex = 0);
+                            _tableFocusNode.requestFocus();
+                            _scrollToSelectedRow();
+                            return KeyEventResult.handled;
+                          }
+                        }
+                        return KeyEventResult.ignored;
+                      },
+                      child: TextField(
+                        focusNode: _searchFocusNode,
+                        controller: _searchCtrl,
+                        decoration: InputDecoration(
+                          hintText: 'Search by item name, tag, category...',
+                          hintStyle: const TextStyle(fontSize: 12, color: BoutiqueColors.textSecondary),
+                          prefixIcon: const Icon(Icons.search, size: 18, color: BoutiqueColors.textSecondary),
+                          suffixIcon: _searchQuery.isNotEmpty
+                              ? IconButton(
+                                  icon: const Icon(Icons.clear, size: 16),
+                                  onPressed: () {
+                                    _searchCtrl.clear();
+                                    setState(() {
+                                      _searchQuery = '';
+                                      _applyFilters();
+                                    });
+                                  },
+                                )
+                              : null,
+                          filled: true,
+                          fillColor: Colors.white,
+                          contentPadding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: const BorderSide(color: BoutiqueColors.border),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: const BorderSide(color: BoutiqueColors.border),
+                          ),
+                        ),
+                        onChanged: (val) {
+                          setState(() {
+                            _searchQuery = val.trim();
+                            _applyFilters();
+                          });
+                        },
+                      ),
                     ),
                   ),
-                  onChanged: (val) {
-                    setState(() {
-                      _searchQuery = val.trim();
-                      _applyFilters();
-                    });
-                  },
                 ),
-              ),
-              const SizedBox(width: 12),
+                const SizedBox(width: 12),
 
-              // Date From
-              ReportDatePill(
-                label: 'From',
-                dt: _startDate,
-                order: 6.0,
-                fmt: DateFormat('dd/MM/yyyy'),
-                onTap: () => _pickDate(isFrom: true),
-              ),
-              const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 8),
-                child: Text('→',
-                    style: TextStyle(color: BoutiqueColors.textSecondary)),
-              ),
-              // Date To
-              ReportDatePill(
-                label: 'To',
-                dt: _endDate,
-                order: 7.0,
-                fmt: DateFormat('dd/MM/yyyy'),
-                onTap: () => _pickDate(isFrom: false),
-              ),
-              const Spacer(),
+                // Date From
+                ReportDatePill(
+                  label: 'From',
+                  dt: _startDate,
+                  order: 2.0,
+                  fmt: DateFormat('dd/MM/yyyy'),
+                  onTap: () => _pickDate(isFrom: true),
+                ),
+                const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 8),
+                  child: Text('→',
+                      style: TextStyle(color: BoutiqueColors.textSecondary)),
+                ),
+                // Date To
+                ReportDatePill(
+                  label: 'To',
+                  dt: _endDate,
+                  order: 3.0,
+                  fmt: DateFormat('dd/MM/yyyy'),
+                  onTap: () => _pickDate(isFrom: false),
+                ),
+                const Spacer(),
 
-              // Sync Inventory (Subtle icon button)
-              IconButton(
-                icon: _isSyncing
-                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: BoutiqueColors.accent))
-                    : const Icon(Icons.sync_rounded, color: BoutiqueColors.accent),
-                onPressed: _isSyncing ? null : _syncExistingInventory,
-                tooltip: 'Sync Inventory Stock to Inward Report',
-              ),
-              const SizedBox(width: 4),
-
-              // Clear All
-              TextButton.icon(
-                icon: const Icon(Icons.delete_sweep_rounded, color: Colors.red, size: 18),
-                label: const Text('Clear All', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold, fontSize: 13)),
-                onPressed: _handleClearAll,
-              ),
-              const SizedBox(width: 6),
-
-              // Refresh
-              Tooltip(
-                message: 'Refresh Inward Data (Alt+4)',
-                child: OutlinedButton.icon(
-                  icon: const Icon(Icons.refresh_rounded, color: BoutiqueColors.accent, size: 16),
-                  label: const Text('Refresh', style: TextStyle(color: BoutiqueColors.accent, fontWeight: FontWeight.bold, fontSize: 13)),
-                  style: OutlinedButton.styleFrom(
-                    backgroundColor: BoutiqueColors.bgCard,
-                    side: const BorderSide(color: BoutiqueColors.accentLightBorder),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                // Sync Inventory (Subtle icon button)
+                FocusTraversalOrder(
+                  order: const NumericFocusOrder(4.0),
+                  child: IconButton(
+                    icon: _isSyncing
+                        ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: BoutiqueColors.accent))
+                        : const Icon(Icons.sync_rounded, color: BoutiqueColors.accent),
+                    onPressed: _isSyncing ? null : _syncExistingInventory,
+                    tooltip: 'Sync Inventory Stock to Inward Report',
                   ),
-                  onPressed: _fetchInwardTransactions,
                 ),
-              ),
+                const SizedBox(width: 4),
 
-              // Download Excel
-              IconButton(
-                icon: const Icon(Icons.table_view_rounded, color: Color(0xFF1E7E34)),
-                onPressed: _handleDownloadExcel,
-                tooltip: 'Download Excel',
-              ),
-            ],
+                // Clear All
+                FocusTraversalOrder(
+                  order: const NumericFocusOrder(5.0),
+                  child: TextButton.icon(
+                    icon: const Icon(Icons.delete_sweep_rounded, color: Colors.red, size: 18),
+                    label: const Text('Clear All', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold, fontSize: 13)),
+                    onPressed: _handleClearAll,
+                  ),
+                ),
+                const SizedBox(width: 6),
+
+                // Refresh
+                FocusTraversalOrder(
+                  order: const NumericFocusOrder(6.0),
+                  child: Tooltip(
+                    message: 'Refresh Inward Data (Alt+4)',
+                    child: OutlinedButton.icon(
+                      icon: const Icon(Icons.refresh_rounded, color: BoutiqueColors.accent, size: 16),
+                      label: const Text('Refresh', style: TextStyle(color: BoutiqueColors.accent, fontWeight: FontWeight.bold, fontSize: 13)),
+                      style: OutlinedButton.styleFrom(
+                        backgroundColor: BoutiqueColors.bgCard,
+                        side: const BorderSide(color: BoutiqueColors.accentLightBorder),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      ),
+                      onPressed: _fetchInwardTransactions,
+                    ),
+                  ),
+                ),
+
+                // Download Excel
+                FocusTraversalOrder(
+                  order: const NumericFocusOrder(7.0),
+                  child: IconButton(
+                    icon: const Icon(Icons.table_view_rounded, color: Color(0xFF1E7E34)),
+                    onPressed: _handleDownloadExcel,
+                    tooltip: 'Download Excel',
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
 
@@ -872,17 +968,64 @@ class InwardReportScreenState extends State<InwardReportScreen> {
                                 children: [
                                   _tableHeader(),
                                   Expanded(
-                                    child: ListView.separated(
-                                      itemCount: flatItems.length,
-                                      separatorBuilder: (_, _) => const Divider(height: 1, color: BoutiqueColors.borderLight),
-                                      itemBuilder: (ctx, i) {
-                                        final entry = flatItems[i];
-                                        return _tableRow(
-                                          entry['itemData'] as Map<String, dynamic>,
-                                          entry['date'] as DateTime,
-                                          entry['narration'] as String,
-                                        );
+                                    child: Focus(
+                                      focusNode: _tableFocusNode,
+                                      onKeyEvent: (node, event) {
+                                        if (event is! KeyDownEvent) return KeyEventResult.ignored;
+                                        if (flatItems.isEmpty) return KeyEventResult.ignored;
+
+                                        if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
+                                          setState(() {
+                                            if (_selectedRowIndex < flatItems.length - 1) {
+                                              _selectedRowIndex++;
+                                            }
+                                          });
+                                          _scrollToSelectedRow();
+                                          return KeyEventResult.handled;
+                                        } else if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
+                                          setState(() {
+                                            if (_selectedRowIndex > 0) {
+                                              _selectedRowIndex--;
+                                              _scrollToSelectedRow();
+                                            } else if (_selectedRowIndex == 0) {
+                                              _selectedRowIndex = -1;
+                                              _searchFocusNode.requestFocus();
+                                            }
+                                          });
+                                          return KeyEventResult.handled;
+                                        } else if (event.logicalKey == LogicalKeyboardKey.enter ||
+                                            event.logicalKey == LogicalKeyboardKey.numpadEnter ||
+                                            event.logicalKey == LogicalKeyboardKey.space ||
+                                            event.logicalKey == LogicalKeyboardKey.keyH) {
+                                          if (_selectedRowIndex >= 0 && _selectedRowIndex < flatItems.length) {
+                                            _showProductInwardHistoryDialog(
+                                              flatItems[_selectedRowIndex]['itemData'] as Map<String, dynamic>,
+                                            );
+                                            return KeyEventResult.handled;
+                                          }
+                                        } else if (event.logicalKey == LogicalKeyboardKey.escape) {
+                                          setState(() => _selectedRowIndex = -1);
+                                          _searchFocusNode.requestFocus();
+                                          return KeyEventResult.handled;
+                                        }
+                                        return KeyEventResult.ignored;
                                       },
+                                      child: ListView.separated(
+                                        controller: _tableScrollCtrl,
+                                        itemCount: flatItems.length,
+                                        separatorBuilder: (_, _) => const Divider(height: 1, color: BoutiqueColors.borderLight),
+                                        itemBuilder: (ctx, i) {
+                                          final entry = flatItems[i];
+                                          final isSelected = _selectedRowIndex == i;
+                                          return _tableRow(
+                                            entry['itemData'] as Map<String, dynamic>,
+                                            entry['date'] as DateTime,
+                                            entry['narration'] as String,
+                                            isSelected: isSelected,
+                                            rowIndex: i,
+                                          );
+                                        },
+                                      ),
                                     ),
                                   ),
                                 ],
@@ -920,26 +1063,14 @@ class _ProductInwardHistoryDialog extends StatefulWidget {
 }
 
 class _ProductInwardHistoryDialogState extends State<_ProductInwardHistoryDialog> {
-  @override
-  void initState() {
-    super.initState();
-    HardwareKeyboard.instance.addHandler(_handleGlobalEscape);
-  }
+  bool _isClosed = false;
 
-  @override
-  void dispose() {
-    HardwareKeyboard.instance.removeHandler(_handleGlobalEscape);
-    super.dispose();
-  }
-
-  bool _handleGlobalEscape(KeyEvent event) {
-    if (event is KeyDownEvent && event.logicalKey == LogicalKeyboardKey.escape) {
-      if (mounted) {
-        Navigator.of(context).pop();
-        return true;
-      }
+  void _closeDialog() {
+    if (_isClosed) return;
+    _isClosed = true;
+    if (mounted) {
+      Navigator.of(context).pop();
     }
-    return false;
   }
 
   @override
@@ -967,13 +1098,16 @@ class _ProductInwardHistoryDialogState extends State<_ProductInwardHistoryDialog
 
     return CallbackShortcuts(
       bindings: {
-        const SingleActivator(LogicalKeyboardKey.escape): () {
-          if (mounted) Navigator.of(context).pop();
-        },
+        const SingleActivator(LogicalKeyboardKey.escape): _closeDialog,
       },
-      child: FocusScope(
-        autofocus: true,
-        child: Dialog(
+      child: PopScope(
+        canPop: true,
+        onPopInvokedWithResult: (didPop, _) {
+          if (didPop) _isClosed = true;
+        },
+        child: FocusScope(
+          autofocus: true,
+          child: Dialog(
           backgroundColor: Colors.transparent,
           insetPadding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
           child: Container(
@@ -1084,7 +1218,7 @@ class _ProductInwardHistoryDialogState extends State<_ProductInwardHistoryDialog
                       IconButton(
                         icon: const Icon(Icons.close_rounded, color: BoutiqueColors.textSecondary),
                         tooltip: 'Close (Esc)',
-                        onPressed: () => Navigator.of(context).pop(),
+                        onPressed: _closeDialog,
                       ),
                     ],
                   ),
@@ -1263,7 +1397,7 @@ class _ProductInwardHistoryDialogState extends State<_ProductInwardHistoryDialog
                           side: const BorderSide(color: BoutiqueColors.border),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                         ),
-                        onPressed: () => Navigator.of(context).pop(),
+                        onPressed: _closeDialog,
                         child: const Text('Close'),
                       ),
                     ],
@@ -1274,6 +1408,7 @@ class _ProductInwardHistoryDialogState extends State<_ProductInwardHistoryDialog
           ),
         ),
       ),
+    ),
     );
   }
 

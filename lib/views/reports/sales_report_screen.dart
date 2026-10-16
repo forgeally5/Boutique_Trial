@@ -14,7 +14,12 @@ import '../../widgets/report_filter_widgets.dart';
 
 class SalesReportScreen extends StatefulWidget {
   final FocusNode? searchFocusNode;
-  const SalesReportScreen({super.key, this.searchFocusNode});
+  final VoidCallback? onReturnToMainTab;
+  const SalesReportScreen({
+    super.key,
+    this.searchFocusNode,
+    this.onReturnToMainTab,
+  });
 
   @override
   State<SalesReportScreen> createState() => _SalesReportScreenState();
@@ -56,11 +61,7 @@ class _SalesReportScreenState extends State<SalesReportScreen>
     if (widget.searchFocusNode?.hasFocus == true) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
-        if (_currentTab == 0) {
-          _productWiseSearchFocusNode.requestFocus();
-        } else {
-          _totalSalesSearchFocusNode.requestFocus();
-        }
+        _productWiseTabFocusNode.requestFocus();
       });
     }
   }
@@ -69,15 +70,21 @@ class _SalesReportScreenState extends State<SalesReportScreen>
     if (_currentTab != index) {
       setState(() => _currentTab = index);
       _tabController.animateTo(index);
-    }
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        if (index == 0) {
+          _productWiseSearchFocusNode.requestFocus();
+        } else {
+          _totalSalesSearchFocusNode.requestFocus();
+        }
+      });
+    } else {
       if (index == 0) {
         _productWiseSearchFocusNode.requestFocus();
       } else {
         _totalSalesSearchFocusNode.requestFocus();
       }
-    });
+    }
   }
 
   @override
@@ -116,8 +123,10 @@ class _SalesReportScreenState extends State<SalesReportScreen>
                   isSelected: _currentTab == 0,
                   order: 1.0,
                   onSelect: () => _selectSubTab(0),
+                  onTabNext: () => _totalSalesTabFocusNode.requestFocus(),
+                  onTabPrev: widget.onReturnToMainTab,
                   onArrowRight: () => _totalSalesTabFocusNode.requestFocus(),
-                  onArrowLeft: null,
+                  onArrowLeft: widget.onReturnToMainTab,
                 ),
                 const SizedBox(width: 6),
                 _SalesSubTabButton(
@@ -128,6 +137,14 @@ class _SalesReportScreenState extends State<SalesReportScreen>
                   isSelected: _currentTab == 1,
                   order: 2.0,
                   onSelect: () => _selectSubTab(1),
+                  onTabNext: () {
+                    if (_currentTab == 0) {
+                      _productWiseSearchFocusNode.requestFocus();
+                    } else {
+                      _totalSalesSearchFocusNode.requestFocus();
+                    }
+                  },
+                  onTabPrev: () => _productWiseTabFocusNode.requestFocus(),
                   onArrowRight: null,
                   onArrowLeft: () => _productWiseTabFocusNode.requestFocus(),
                 ),
@@ -185,6 +202,8 @@ class _SalesSubTabButton extends StatefulWidget {
   final bool isSelected;
   final double order;
   final VoidCallback onSelect;
+  final VoidCallback? onTabNext;
+  final VoidCallback? onTabPrev;
   final VoidCallback? onArrowRight;
   final VoidCallback? onArrowLeft;
 
@@ -196,6 +215,8 @@ class _SalesSubTabButton extends StatefulWidget {
     required this.isSelected,
     required this.order,
     required this.onSelect,
+    this.onTabNext,
+    this.onTabPrev,
     this.onArrowRight,
     this.onArrowLeft,
   });
@@ -228,6 +249,16 @@ class _SalesSubTabButtonState extends State<_SalesSubTabButton> {
               widget.onSelect();
               return KeyEventResult.handled;
             }
+            if (event.logicalKey == LogicalKeyboardKey.tab) {
+              final isShift = HardwareKeyboard.instance.isShiftPressed;
+              if (isShift && widget.onTabPrev != null) {
+                widget.onTabPrev!();
+                return KeyEventResult.handled;
+              } else if (!isShift && widget.onTabNext != null) {
+                widget.onTabNext!();
+                return KeyEventResult.handled;
+              }
+            }
             if (event.logicalKey == LogicalKeyboardKey.arrowRight &&
                 widget.onArrowRight != null) {
               widget.onArrowRight!();
@@ -243,28 +274,31 @@ class _SalesSubTabButtonState extends State<_SalesSubTabButton> {
         },
         child: InkWell(
           canRequestFocus: false,
-          onTap: widget.onSelect,
+          onTap: () {
+            widget.focusNode.requestFocus();
+            widget.onSelect();
+          },
           borderRadius: BorderRadius.circular(6),
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 150),
             padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
             decoration: BoxDecoration(
-              color: _isFocused
-                  ? accent.withAlpha(25)
-                  : (isSelected
-                      ? BoutiqueColors.accentSoft.withAlpha(60)
-                      : Colors.transparent),
+              color: isSelected
+                  ? BoutiqueColors.accentSoft.withAlpha(80)
+                  : (_isFocused ? BoutiqueColors.accent.withAlpha(20) : Colors.transparent),
               borderRadius: BorderRadius.circular(6),
               border: Border.all(
-                color: _isFocused ? accent : Colors.transparent,
-                width: _isFocused ? 2.0 : 1.0,
+                color: isSelected
+                    ? accent
+                    : (_isFocused ? BoutiqueColors.border : Colors.transparent),
+                width: isSelected ? 1.5 : 1.0,
               ),
-              boxShadow: _isFocused
+              boxShadow: isSelected
                   ? [
                       BoxShadow(
-                        color: accent.withAlpha(60),
-                        blurRadius: 6,
-                        spreadRadius: 1,
+                        color: accent.withAlpha(30),
+                        blurRadius: 4,
+                        offset: const Offset(0, 1),
                       ),
                     ]
                   : null,
