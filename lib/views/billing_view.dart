@@ -10,9 +10,6 @@ import 'billing/create_bill_screen.dart';
 import 'billing/bill_history_screen.dart';
 import 'billing/customer_ledger_screen.dart';
 
-const _brown = Color(0xFF3E2723);
-const _brownLight = Color(0xFF8D6E63);
-const _border = Color(0xFFE5DDD0);
 
 class BillingView extends StatefulWidget {
   final AdminState state;
@@ -154,7 +151,7 @@ class BillingViewState extends State<BillingView> {
             padding: const EdgeInsets.symmetric(horizontal: 20),
             decoration: const BoxDecoration(
               color: Colors.white,
-              border: Border(bottom: BorderSide(color: _border)),
+              border: Border(bottom: BorderSide(color: BoutiqueColors.borderLight)),
             ),
             child: Row(
               children: [
@@ -312,33 +309,24 @@ class BillingViewState extends State<BillingView> {
               padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
               decoration: BoxDecoration(
                 color: isSelected
-                    ? _brown.withAlpha(20)
-                    : (isFocused ? _brown.withAlpha(25) : Colors.transparent),
+                    ? BoutiqueColors.accentSoft.withAlpha(90)
+                    : (isFocused ? BoutiqueColors.accent.withAlpha(25) : Colors.transparent),
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(
-                  color: isFocused
-                      ? _brown
-                      : (isSelected ? _brown.withAlpha(100) : Colors.transparent),
-                  width: isFocused ? 2.0 : 1.0,
+                  color: isSelected
+                      ? BoutiqueColors.accent
+                      : (isFocused ? BoutiqueColors.accent : Colors.transparent),
+                  width: isSelected ? 1.5 : (isFocused ? 1.5 : 1.0),
                 ),
-                boxShadow: isFocused
+                boxShadow: (isSelected || isFocused)
                     ? [
                         BoxShadow(
-                          color: _brown.withAlpha(40),
-                          blurRadius: 6,
-                          spreadRadius: 1,
+                          color: BoutiqueColors.accent.withAlpha(35),
+                          blurRadius: 4,
                           offset: const Offset(0, 1),
                         ),
                       ]
-                    : (isSelected
-                        ? [
-                            BoxShadow(
-                              color: _brown.withAlpha(25),
-                              blurRadius: 4,
-                              offset: const Offset(0, 1),
-                            ),
-                          ]
-                        : null),
+                    : null,
               ),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -347,14 +335,19 @@ class BillingViewState extends State<BillingView> {
                     Icon(
                       icon,
                       size: 16,
-                      color: (isSelected || isFocused) ? _brown : _brownLight,
+                      color: (isSelected || isFocused)
+                          ? BoutiqueColors.accent
+                          : BoutiqueColors.textSecondary,
                     ),
                     const SizedBox(width: 8),
                     Text(
                       label,
                       style: TextStyle(
-                        fontWeight: (isSelected || isFocused) ? FontWeight.bold : FontWeight.w500,
-                        color: (isSelected || isFocused) ? _brown : _brownLight,
+                        fontWeight:
+                            (isSelected || isFocused) ? FontWeight.bold : FontWeight.w500,
+                        color: (isSelected || isFocused)
+                            ? BoutiqueColors.accent
+                            : BoutiqueColors.textSecondary,
                         fontSize: 14,
                       ),
                     ),
@@ -363,10 +356,11 @@ class BillingViewState extends State<BillingView> {
                       '($shortcut)',
                       style: TextStyle(
                         fontSize: 11,
-                        fontWeight: (isSelected || isFocused) ? FontWeight.bold : FontWeight.w500,
+                        fontWeight:
+                            (isSelected || isFocused) ? FontWeight.bold : FontWeight.w500,
                         color: (isSelected || isFocused)
-                            ? _brown.withAlpha(220)
-                            : _brownLight.withAlpha(160),
+                            ? BoutiqueColors.accent.withAlpha(200)
+                            : BoutiqueColors.textSecondary.withAlpha(160),
                       ),
                     ),
                   ]),
@@ -378,8 +372,10 @@ class BillingViewState extends State<BillingView> {
                     width: isSelected ? 48 : (isFocused ? 32 : 0),
                     decoration: BoxDecoration(
                       color: isSelected
-                          ? _brown
-                          : (isFocused ? _brown.withAlpha(140) : Colors.transparent),
+                          ? BoutiqueColors.accent
+                          : (isFocused
+                              ? BoutiqueColors.accent.withAlpha(140)
+                              : Colors.transparent),
                       borderRadius: BorderRadius.circular(2),
                     ),
                   ),
