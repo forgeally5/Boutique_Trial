@@ -4,6 +4,7 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter/services.dart' show rootBundle;
+import '../state/admin_state.dart';
 
 class BoutiquePdfGenerator {
   static pw.Font? _fontRegular;
@@ -304,17 +305,18 @@ class BoutiquePdfGenerator {
                       final qty = (r['qty'] as num?)?.toDouble() ?? 1.0;
                       final price = (r['price'] as num?)?.toDouble() ?? (r['rate'] as num?)?.toDouble() ?? 0.0;
                       final weight = (r['weight'] as num?)?.toDouble() ?? 0.0;
-                      final unit = (r['unit']?.toString().isNotEmpty == true) ? r['unit'].toString() : 'g';
                       final isWeight = r['pricingType'] == 'Weight-Based' || weight > 0;
+                      final weightUnit = AdminState.resolveWeightUnit(r);
+                      final pieceUnit = (r['unit']?.toString().isNotEmpty == true && r['unit'].toString().toLowerCase() != weightUnit.toLowerCase()) ? r['unit'].toString() : 'pc';
                       final weightStr = weight.toStringAsFixed(weight.truncateToDouble() == weight ? 0 : 2);
                       var lineAmt = (r['lineAmount'] as num?)?.toDouble() ?? (r['amount'] as num?)?.toDouble() ?? 0.0;
                       if (lineAmt <= 0 && price > 0) {
                         lineAmt = isWeight && weight > 0 ? (price * weight) : (price * qty);
                       }
 
-                      final priceDisplay = isWeight ? '${price.toStringAsFixed(2)}/$unit' : price.toStringAsFixed(2);
+                      final priceDisplay = isWeight ? '${price.toStringAsFixed(2)}/$weightUnit' : price.toStringAsFixed(2);
                       final qtyDisplay = isWeight
-                          ? (qty > 1 ? '${qty.toInt()} pc ($weightStr$unit)' : (weight > 0 ? '$weightStr$unit' : '${qty.toInt()}'))
+                          ? (qty > 1 ? '${qty.toInt()} $pieceUnit ($weightStr $weightUnit)' : (weight > 0 ? '$weightStr $weightUnit' : '${qty.toInt()} $pieceUnit'))
                           : '${qty.toInt()}';
                       
                       return pw.TableRow(

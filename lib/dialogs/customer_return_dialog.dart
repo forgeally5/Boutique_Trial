@@ -509,7 +509,7 @@ class _CustomerReturnDialogState extends State<CustomerReturnDialog> {
                                 Expanded(
                                   child: () {
                                     final weight = (item['weight'] as num?)?.toDouble() ?? 0.0;
-                                    final unit = (item['unit']?.toString().isNotEmpty == true) ? item['unit'].toString() : 'g';
+                                    final weightUnit = AdminState.resolveWeightUnit(item);
                                     final isWeight = item['pricingType'] == 'Weight-Based' || weight > 0;
                                     final weightStr = weight.toStringAsFixed(weight.truncateToDouble() == weight ? 0 : 2);
                                     final originalRate = (item['originalRate'] as num?)?.toDouble() ?? 0.0;
@@ -526,7 +526,7 @@ class _CustomerReturnDialogState extends State<CustomerReturnDialog> {
                                         const SizedBox(height: 2),
                                         Text(
                                           isWeight
-                                              ? 'Max Purchased: $maxQty unit(s) ($weightStr$unit) • Rate: ₹${originalRate.toStringAsFixed(2)}/$unit • Net Price: ₹${numFmt.format(unitPrice)}'
+                                              ? 'Max Purchased: $maxQty unit(s) ($weightStr $weightUnit) • Rate: ₹${originalRate.toStringAsFixed(2)}/$weightUnit • Net Price: ₹${numFmt.format(unitPrice)}'
                                               : 'Max Purchased: $maxQty unit(s) • Net Price: ₹${numFmt.format(unitPrice)} / pc',
                                           style: const TextStyle(fontSize: 11, color: BoutiqueColors.textSecondary),
                                         ),

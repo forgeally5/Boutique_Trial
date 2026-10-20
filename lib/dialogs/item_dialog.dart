@@ -536,7 +536,7 @@ class _ItemDialogState extends State<ItemDialog> {
         child: FocusScope(
           autofocus: true,
           child: FocusTraversalGroup(
-            policy: WidgetOrderTraversalPolicy(),
+            policy: OrderedTraversalPolicy(),
             child: Container(
               width: 860,
               constraints: const BoxConstraints(maxHeight: 680),
@@ -699,11 +699,14 @@ class _ItemDialogState extends State<ItemDialog> {
                               ),
                             ),
                             const SizedBox(width: 4),
-                            IconButton(
-                              focusNode: FocusNode(skipTraversal: true),
-                              onPressed: () => _showManageMasterListDialog('Category'),
-                              icon: const Icon(Icons.settings_outlined, color: _brown),
-                              tooltip: 'Manage Categories',
+                            FocusTraversalOrder(
+                              order: const NumericFocusOrder(1.1),
+                              child: IconButton(
+                                onPressed: () => _showManageMasterListDialog('Category'),
+                                icon: const Icon(Icons.settings_outlined, color: _brown),
+                                focusColor: const Color(0x263E2723),
+                                tooltip: 'Manage Categories',
+                              ),
                             ),
                           ],
                         ),
@@ -733,11 +736,14 @@ class _ItemDialogState extends State<ItemDialog> {
                               ),
                             ),
                             const SizedBox(width: 4),
-                            IconButton(
-                              focusNode: FocusNode(skipTraversal: true),
-                              onPressed: () => _showManageMasterListDialog('Item Name'),
-                              icon: const Icon(Icons.settings_outlined, color: _brown),
-                              tooltip: 'Manage Item Names',
+                            FocusTraversalOrder(
+                              order: const NumericFocusOrder(2.1),
+                              child: IconButton(
+                                onPressed: () => _showManageMasterListDialog('Item Name'),
+                                icon: const Icon(Icons.settings_outlined, color: _brown),
+                                focusColor: const Color(0x263E2723),
+                                tooltip: 'Manage Item Names',
+                              ),
                             ),
                           ],
                         ),
@@ -783,11 +789,14 @@ class _ItemDialogState extends State<ItemDialog> {
                                     ),
                             ),
                             const SizedBox(width: 4),
-                            IconButton(
-                              focusNode: FocusNode(skipTraversal: true),
-                              onPressed: () => _showManageMasterListDialog('Vendor'),
-                              icon: const Icon(Icons.settings_outlined, color: _brown),
-                              tooltip: 'Manage Vendors',
+                            FocusTraversalOrder(
+                              order: const NumericFocusOrder(5.1),
+                              child: IconButton(
+                                onPressed: () => _showManageMasterListDialog('Vendor'),
+                                icon: const Icon(Icons.settings_outlined, color: _brown),
+                                focusColor: const Color(0x263E2723),
+                                tooltip: 'Manage Vendors',
+                              ),
                             ),
                           ],
                         ),
@@ -824,6 +833,7 @@ class _ItemDialogState extends State<ItemDialog> {
                                   isNum: true,
                                   isInt: true,
                                   hint: '0',
+                                  focusOrder: 6.5,
                                 ),
                               ),
                             ],
@@ -846,11 +856,14 @@ class _ItemDialogState extends State<ItemDialog> {
                               ),
                             ),
                             const SizedBox(width: 4),
-                            IconButton(
-                              focusNode: FocusNode(skipTraversal: true),
-                              onPressed: () => _showManageMasterListDialog('Unit'),
-                              icon: const Icon(Icons.settings_outlined, color: _brown),
-                              tooltip: 'Manage Units',
+                            FocusTraversalOrder(
+                              order: const NumericFocusOrder(7.1),
+                              child: IconButton(
+                                onPressed: () => _showManageMasterListDialog('Unit'),
+                                icon: const Icon(Icons.settings_outlined, color: _brown),
+                                focusColor: const Color(0x263E2723),
+                                tooltip: 'Manage Units',
+                              ),
                             ),
                           ],
                         ),
@@ -1008,7 +1021,6 @@ class _ItemDialogState extends State<ItemDialog> {
                                         FocusTraversalOrder(
                                           order: const NumericFocusOrder(8.3),
                                           child: IconButton(
-                                            focusNode: FocusNode(skipTraversal: true),
                                             onPressed: () => _showManageMasterListDialog('Weight Unit'),
                                             icon: const Icon(Icons.settings_outlined, color: _brown),
                                             tooltip: 'Manage Units',
@@ -1077,7 +1089,6 @@ class _ItemDialogState extends State<ItemDialog> {
                                         FocusTraversalOrder(
                                           order: const NumericFocusOrder(8.7),
                                           child: IconButton(
-                                            focusNode: FocusNode(skipTraversal: true),
                                             onPressed: () => _showManageMasterListDialog('Weight Unit'),
                                             icon: const Icon(Icons.settings_outlined, color: _brown),
                                             tooltip: 'Manage Units',
@@ -1328,45 +1339,54 @@ class _ItemDialogState extends State<ItemDialog> {
                       ),
                     ]),
                   const Spacer(),
-                  TextButton(
-                    onPressed: () => Navigator.pop(context),
-                    child: const Text('Cancel', style: TextStyle(color: _lightBrown)),
+                  FocusTraversalOrder(
+                    order: const NumericFocusOrder(21),
+                    child: TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('Cancel', style: TextStyle(color: _lightBrown)),
+                    ),
                   ),
                   const SizedBox(width: 12),
-                  AnimatedOpacity(
-                    opacity: _isFormValid ? 1.0 : 0.4,
-                    duration: const Duration(milliseconds: 200),
-                    child: OutlinedButton.icon(
-                      onPressed: (_isFormValid && !_isUploading) ? () => _save(downloadInwardExcel: true) : null,
-                      icon: const Icon(Icons.download_rounded, size: 16),
-                      label: const Text('Save & Inward Bill (.xlsx)', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: const Color(0xFF1E7E34),
-                        side: const BorderSide(color: Color(0xFF1E7E34)),
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  FocusTraversalOrder(
+                    order: const NumericFocusOrder(22),
+                    child: AnimatedOpacity(
+                      opacity: _isFormValid ? 1.0 : 0.4,
+                      duration: const Duration(milliseconds: 200),
+                      child: OutlinedButton.icon(
+                        onPressed: (_isFormValid && !_isUploading) ? () => _save(downloadInwardExcel: true) : null,
+                        icon: const Icon(Icons.download_rounded, size: 16),
+                        label: const Text('Save & Inward Bill (.xlsx)', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: const Color(0xFF1E7E34),
+                          side: const BorderSide(color: Color(0xFF1E7E34)),
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        ),
                       ),
                     ),
                   ),
                   const SizedBox(width: 12),
-                  AnimatedOpacity(
-                    opacity: _isFormValid ? 1.0 : 0.4,
-                    duration: const Duration(milliseconds: 200),
-                    child: ElevatedButton.icon(
-                      onPressed: _isUploading ? null : () => _save(downloadInwardExcel: false),
-                      icon: _isUploading 
-                          ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: _brown, strokeWidth: 2.5))
-                          : Icon(isEdit ? Icons.save_rounded : Icons.add_rounded, size: 18),
-                      label: Text(
-                        _isUploading ? 'Uploading...' : (isEdit ? 'Update Product' : 'Save Product'),
-                        style: TextStyle(color: _isUploading ? _brown : Colors.white),
-                      ),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: _isUploading ? Colors.grey.shade300 : _brown,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                        elevation: 0,
+                  FocusTraversalOrder(
+                    order: const NumericFocusOrder(23),
+                    child: AnimatedOpacity(
+                      opacity: _isFormValid ? 1.0 : 0.4,
+                      duration: const Duration(milliseconds: 200),
+                      child: ElevatedButton.icon(
+                        onPressed: _isUploading ? null : () => _save(downloadInwardExcel: false),
+                        icon: _isUploading 
+                            ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: _brown, strokeWidth: 2.5))
+                            : Icon(isEdit ? Icons.save_rounded : Icons.add_rounded, size: 18),
+                        label: Text(
+                          _isUploading ? 'Uploading...' : (isEdit ? 'Update Product' : 'Save Product'),
+                          style: TextStyle(color: _isUploading ? _brown : Colors.white),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: _isUploading ? Colors.grey.shade300 : _brown,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          elevation: 0,
+                        ),
                       ),
                     ),
                   ),

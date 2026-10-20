@@ -31,6 +31,7 @@ class BillingViewState extends State<BillingView> {
   // 0 = Create Bill, 1 = Bill History, 2 = Customer Ledger
   int _tab = 0;
   Map<String, dynamic>? _billToEdit;
+  final GlobalKey<BillHistoryScreenState> _billHistoryKey = GlobalKey<BillHistoryScreenState>();
 
   // One FocusNode per tab button so we can explicitly request focus on each
   final _tabFocus = [
@@ -42,6 +43,16 @@ class BillingViewState extends State<BillingView> {
   final FocusNode _createBillFocusNode = FocusNode(debugLabel: 'create_bill_first_field');
   final FocusNode _billHistoryFocusNode = FocusNode(debugLabel: 'bill_history_first_field');
   final FocusNode _customerLedgerFocusNode = FocusNode(debugLabel: 'customer_ledger_first_field');
+
+  void _cancelEditBill() {
+    if (_billToEdit != null) {
+      setState(() {
+        _billToEdit = null;
+        _tab = 1;
+      });
+      _focusFirstFieldForTab(1);
+    }
+  }
 
   @override
   void initState() {
@@ -189,12 +200,16 @@ class BillingViewState extends State<BillingView> {
               ],
             ),
           ),
-          // Content — Escape from anywhere inside content returns focus to the active tab button
+          // Content — Escape from anywhere inside content returns focus to the active tab button or cancels bill edit
           Expanded(
             child: Focus(
               onKeyEvent: (node, event) {
                 if (event is KeyDownEvent &&
                     event.logicalKey == LogicalKeyboardKey.escape) {
+                  if (_billToEdit != null) {
+                    _cancelEditBill();
+                    return KeyEventResult.handled;
+                  }
                   _tabFocus[_tab].requestFocus();
                   return KeyEventResult.handled;
                 }
@@ -211,34 +226,42 @@ class BillingViewState extends State<BillingView> {
                         initialBill: _billToEdit,
                         firstFieldFocusNode: _createBillFocusNode,
                         onReturnToMainTab: () => _tabFocus[0].requestFocus(),
+                        onCancelEdit: _cancelEditBill,
                         onSaved: () {
                           setState(() {
                             _billToEdit = null;
                             _tab = 1;
                           });
+                          _billHistoryKey.currentState?.reloadBills();
                           _focusFirstFieldForTab(1);
                         },
                       ),
                     ),
-                  if (_tab == 1 && canViewHistory)
-                    BillHistoryScreen(
-                      state: widget.state,
-                      searchFocusNode: _billHistoryFocusNode,
-                      onReturnToMainTab: () => _tabFocus[0].requestFocus(),
-                      onEditBill: (bill) {
-                        setState(() {
-                          _billToEdit = bill;
-                          _tab = 0;
-                        });
-                        _focusFirstFieldForTab(0);
-                      },
+                  if (canViewHistory)
+                    Offstage(
+                      offstage: _tab != 1,
+                      child: BillHistoryScreen(
+                        key: _billHistoryKey,
+                        state: widget.state,
+                        searchFocusNode: _billHistoryFocusNode,
+                        onReturnToMainTab: () => _tabFocus[1].requestFocus(),
+                        onEditBill: (bill) {
+                          setState(() {
+                            _billToEdit = bill;
+                            _tab = 0;
+                          });
+                          _focusFirstFieldForTab(0);
+                        },
+                      ),
                     ),
-                  if (_tab == 2)
-                    CustomerLedgerScreen(
+                  Offstage(
+                    offstage: _tab != 2,
+                    child: CustomerLedgerScreen(
                       state: widget.state,
                       searchFocusNode: _customerLedgerFocusNode,
-                      onReturnToMainTab: () => _tabFocus[0].requestFocus(),
+                      onReturnToMainTab: () => _tabFocus[2].requestFocus(),
                     ),
+                  ),
                 ],
               ),
             ),

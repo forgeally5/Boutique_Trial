@@ -59,6 +59,7 @@ class BillRow {
     'qty': qty,
     'weight': weight,
     'unit': product?.unit ?? '',
+    'weightUnit': (product?.weightUnit.isNotEmpty == true) ? product!.weightUnit : 'g',
     'price': price,
     'discountValue': discountValue,
     'discountType': discountType,

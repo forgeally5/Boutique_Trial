@@ -207,7 +207,33 @@ class AdminState extends ChangeNotifier {
     _fetchDeletedMastersFromServer();
   }
 
+  static AdminState? instance;
+
+  static String resolveWeightUnit(Map<String, dynamic> r) {
+    final wu = r['weightUnit']?.toString().trim();
+    if (wu != null && wu.isNotEmpty && wu.toLowerCase() != 'piece') {
+      return wu;
+    }
+    final tagId = r['tagId']?.toString().trim() ?? '';
+    if (tagId.isNotEmpty && instance != null) {
+      try {
+        final p = instance!.products.firstWhere(
+          (prod) => prod.tagId.toLowerCase() == tagId.toLowerCase(),
+        );
+        if (p.weightUnit.isNotEmpty && p.weightUnit.toLowerCase() != 'piece') {
+          return p.weightUnit;
+        }
+      } catch (_) {}
+    }
+    final u = r['unit']?.toString().trim();
+    if (u != null && u.isNotEmpty && u.toLowerCase() != 'piece') {
+      return u;
+    }
+    return 'g';
+  }
+
   AdminState() {
+    instance = this;
     // Initialize diamond rates to 0.0
     for (var clarity in clarities) {
       for (var range in colorRanges) {

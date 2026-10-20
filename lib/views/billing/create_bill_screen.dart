@@ -19,6 +19,7 @@ class CreateBillScreen extends StatefulWidget {
   final Map<String, dynamic>? initialBill;
   final FocusNode? firstFieldFocusNode;
   final VoidCallback? onReturnToMainTab;
+  final VoidCallback? onCancelEdit;
   const CreateBillScreen({
     super.key,
     required this.state,
@@ -26,6 +27,7 @@ class CreateBillScreen extends StatefulWidget {
     this.initialBill,
     this.firstFieldFocusNode,
     this.onReturnToMainTab,
+    this.onCancelEdit,
   });
 
   @override
@@ -87,6 +89,10 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
   List<Product> _cachedProducts = [];
 
   List<Map<String, String>> _knownCustomerData = [];
+
+  bool _initialIsSplit = false;
+  String _initialSingleMode = 'Cash';
+  List<Map<String, dynamic>> _initialSplitPayments = [];
 
   @override
   void initState() {
@@ -199,7 +205,18 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
     _customerNameCtrl.text = b['customerName']?.toString() ?? '';
     _customerMobileCtrl.text = b['customerMobile']?.toString() ?? '';
     _customerAddressCtrl.text = b['customerAddress']?.toString() ?? '';
-    _narrationCtrl.text = b['narration']?.toString() ?? '';
+    
+    // Clean narration if it contains json
+    String narrText = b['narration']?.toString() ?? '';
+    if (narrText.trim().startsWith('{') && narrText.trim().endsWith('}')) {
+      try {
+        final parsed = jsonDecode(narrText);
+        if (parsed is Map) {
+          narrText = (parsed['note'] ?? parsed['narration'] ?? '').toString();
+        }
+      } catch (_) {}
+    }
+    _narrationCtrl.text = narrText;
     
     // Load custom details if any
     final custom = b['customCustomerDetails'];
@@ -268,6 +285,78 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
       }
     }
     
+    // Payment details initialization
+    final mode = (b['paymentMode'] ?? b['payment_mode'])?.toString() ?? 'Cash';
+    dynamic rawPayments = b['payments'];
+    if (rawPayments is String && rawPayments.isNotEmpty) {
+      try {
+        rawPayments = jsonDecode(rawPayments);
+      } catch (_) {}
+    }
+    
+    final List<Map<String, dynamic>> validPayments = [];
+    if (rawPayments is List) {
+      for (final item in rawPayments) {
+        if (item is Map) {
+          final m = item['mode']?.toString() ?? 'Cash';
+          final a = (item['amount'] as num?)?.toDouble() ?? double.tryParse(item['amount']?.toString() ?? '') ?? 0.0;
+          if (a > 0 || (rawPayments.length == 1 && item['amount'] != null)) {
+            validPayments.add({'mode': m, 'amount': a});
+          }
+        }
+      }
+    }
+    
+    if (validPayments.isEmpty) {
+      final rawNarr = (b['narration'] ?? '').toString().trim();
+      if (rawNarr.startsWith('{') && rawNarr.endsWith('}')) {
+        try {
+          final parsedNarr = jsonDecode(rawNarr);
+          if (parsedNarr is Map && parsedNarr['payments'] != null) {
+            dynamic pList = parsedNarr['payments'];
+            if (pList is String) {
+              try { pList = jsonDecode(pList); } catch (_) {}
+            }
+            if (pList is List) {
+              for (final item in pList) {
+                if (item is Map) {
+                  final m = item['mode']?.toString() ?? 'Cash';
+                  final a = (item['amount'] as num?)?.toDouble() ?? double.tryParse(item['amount']?.toString() ?? '') ?? 0.0;
+                  validPayments.add({'mode': m, 'amount': a});
+                }
+              }
+            }
+          }
+        } catch (_) {}
+      }
+    }
+
+    final isSplit = mode.toLowerCase().contains('split') || validPayments.length > 1;
+    _initialIsSplit = isSplit;
+    if (isSplit) {
+      _initialSplitPayments = validPayments.isNotEmpty ? validPayments : [
+        {'mode': 'Cash', 'amount': (b['totalPayable'] as num?)?.toDouble() ?? 0.0}
+      ];
+      _initialSingleMode = 'Cash';
+    } else {
+      _initialIsSplit = false;
+      _initialSplitPayments = [];
+      if (validPayments.isNotEmpty) {
+        _initialSingleMode = validPayments.first['mode']?.toString() ?? mode;
+      } else {
+        _initialSingleMode = mode.toLowerCase().contains('split') ? 'Cash' : mode;
+      }
+    }
+
+    final amtReceived = b['amountReceived'] ?? b['amount_received'];
+    final total = (b['totalPayable'] as num?)?.toDouble() ?? 0.0;
+    if (amtReceived != null) {
+      final rVal = (amtReceived as num).toDouble();
+      if (!_initialIsSplit && rVal != total && rVal > 0) {
+        _amountReceivedCtrl.text = rVal == rVal.toInt() ? rVal.toInt().toString() : rVal.toStringAsFixed(2);
+      }
+    }
+
     _rowVersion.value++;
   }
 
@@ -931,6 +1020,77 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
     await Printing.layoutPdf(onLayout: (_) async => bytes);
   }
 
+  void _triggerCancelOrReturn() {
+    if (widget.initialBill != null) {
+      if (widget.onCancelEdit != null) {
+        widget.onCancelEdit!();
+      } else {
+        widget.onSaved?.call();
+      }
+    } else {
+      widget.onReturnToMainTab?.call();
+    }
+  }
+
+  Widget _buildEditBanner() {
+    final customerName = _customerNameCtrl.text.trim();
+    final nameStr = customerName.isNotEmpty ? customerName : 'Walk-in Customer';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF8E1),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFFFD54F), width: 1.5),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.amber.withAlpha(20),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.edit_note_rounded, color: Color(0xFFB45309), size: 24),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Editing Invoice ${_billNoCtrl.text}  •  $nameStr  •  $_billType',
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF78350F),
+                  ),
+                ),
+                const SizedBox(height: 2),
+                const Text(
+                  'Make your changes below and click Save & Checkout, or press Esc / Cancel to return to Bill History.',
+                  style: TextStyle(fontSize: 12, color: Color(0xFF92400E)),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          OutlinedButton.icon(
+            onPressed: _triggerCancelOrReturn,
+            icon: const Icon(Icons.close_rounded, size: 16),
+            label: const Text('Back to Bill History (Esc)', style: TextStyle(fontWeight: FontWeight.bold)),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: const Color(0xFFB45309),
+              side: const BorderSide(color: Color(0xFFB45309), width: 1.2),
+              backgroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   // ── Build ─────────────────────────────────────────────────────────────────
   // NOTE: No ListenableBuilder(widget.state) here — we track products via
   // _onStateProductsUpdate() listener which only updates _cachedProducts.
@@ -946,15 +1106,20 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
         actions: <Type, Action<Intent>>{
           _CancelEditIntent: CallbackAction<_CancelEditIntent>(
             onInvoke: (_CancelEditIntent intent) {
-              if (widget.initialBill != null) {
-                widget.onSaved?.call();
-              }
+              _triggerCancelOrReturn();
               return null;
             },
           ),
         },
         child: Focus(
           autofocus: true,
+          onKeyEvent: (node, event) {
+            if (event is KeyDownEvent && event.logicalKey == LogicalKeyboardKey.escape) {
+              _triggerCancelOrReturn();
+              return KeyEventResult.handled;
+            }
+            return KeyEventResult.ignored;
+          },
           child: Container(
             color: BoutiqueColors.bgMain,
           child: LayoutBuilder(
@@ -976,6 +1141,10 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
                 padding: const EdgeInsets.all(32),
               child: Column(
                 children: [
+                  if (widget.initialBill != null) ...[
+                    _buildEditBanner(),
+                    const SizedBox(height: 16),
+                  ],
                   _buildCustomerSection(),
                   const SizedBox(height: 24),
                   _buildItemTable(),
@@ -995,7 +1164,7 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
               padding: const EdgeInsets.all(32),
               child: SingleChildScrollView(
                 child: _BillSummaryPanel(
-                  key: ValueKey(_topScanKey),
+                  key: ValueKey('${_topScanKey}_${widget.initialBill?['billNo'] ?? 'create'}'),
                   rows: _rows,
                   rowVersion: _rowVersion,
                   extraDiscountCtrl: _extraDiscountCtrl,
@@ -1007,6 +1176,9 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
                   amountReceivedCtrl: _amountReceivedCtrl,
                   isSaving: _isSaving,
                   hasValidRows: _hasValidRows,
+                  initialIsSplit: _initialIsSplit,
+                  initialSingleMode: _initialSingleMode,
+                  initialSplitPayments: _initialSplitPayments,
                   onDiscountTypeChanged: (t) => setState(() => _extraDiscountType = t),
                   onGstTypeChanged: (t) {
                     setState(() {
@@ -2365,6 +2537,9 @@ class _BillSummaryPanel extends StatefulWidget {
   final bool hasValidRows;
   final ValueChanged<String> onDiscountTypeChanged;
   final ValueChanged<String> onGstTypeChanged;
+  final bool initialIsSplit;
+  final String initialSingleMode;
+  final List<Map<String, dynamic>>? initialSplitPayments;
   final void Function(bool isSplit, String singleMode, List<Map<String, dynamic>> splitPayments) onSave;
   final void Function(bool isSplit, String singleMode, List<Map<String, dynamic>> splitPayments) onDownload;
 
@@ -2381,6 +2556,9 @@ class _BillSummaryPanel extends StatefulWidget {
     required this.amountReceivedCtrl,
     required this.isSaving,
     required this.hasValidRows,
+    this.initialIsSplit = false,
+    this.initialSingleMode = 'Cash',
+    this.initialSplitPayments,
     required this.onDiscountTypeChanged,
     required this.onGstTypeChanged,
     required this.onSave,
@@ -2392,16 +2570,79 @@ class _BillSummaryPanel extends StatefulWidget {
 }
 
 class _BillSummaryPanelState extends State<_BillSummaryPanel> {
-  bool _isSplitPayment = false;
-  String _singlePaymentMode = 'Cash';
-  final List<Map<String, dynamic>> _splitPayments = [
-    {
-      'mode': 'Cash',
-      'amountCtrl': TextEditingController(text: ''),
-      'focusNode': FocusNode(),
-    }
-  ];
+  late bool _isSplitPayment;
+  late String _singlePaymentMode;
+  late final List<Map<String, dynamic>> _splitPayments;
   final List<String> _paymentModes = ['Cash', 'GPay', 'Bank Transfer', 'Card', 'UPI', 'Other'];
+
+  @override
+  void initState() {
+    super.initState();
+    _isSplitPayment = widget.initialIsSplit;
+    _singlePaymentMode = widget.initialSingleMode;
+    if (!_paymentModes.contains(_singlePaymentMode)) {
+      _singlePaymentMode = 'Cash';
+    }
+
+    _splitPayments = [];
+    if (widget.initialSplitPayments != null && widget.initialSplitPayments!.isNotEmpty) {
+      for (final p in widget.initialSplitPayments!) {
+        final mode = p['mode']?.toString() ?? 'Cash';
+        final amt = (p['amount'] as num?)?.toDouble() ?? double.tryParse(p['amount']?.toString() ?? '') ?? 0.0;
+        final amtText = amt > 0 ? (amt == amt.toInt() ? amt.toInt().toString() : amt.toStringAsFixed(2)) : '';
+        _splitPayments.add({
+          'mode': _paymentModes.contains(mode) ? mode : 'Cash',
+          'amountCtrl': TextEditingController(text: amtText),
+          'focusNode': FocusNode(),
+        });
+      }
+    }
+
+    if (_splitPayments.isEmpty) {
+      _splitPayments.add({
+        'mode': 'Cash',
+        'amountCtrl': TextEditingController(text: ''),
+        'focusNode': FocusNode(),
+      });
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant _BillSummaryPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.initialIsSplit != widget.initialIsSplit ||
+        oldWidget.initialSingleMode != widget.initialSingleMode ||
+        oldWidget.initialSplitPayments != widget.initialSplitPayments) {
+      setState(() {
+        _isSplitPayment = widget.initialIsSplit;
+        _singlePaymentMode = _paymentModes.contains(widget.initialSingleMode) ? widget.initialSingleMode : 'Cash';
+        for (var p in _splitPayments) {
+          (p['amountCtrl'] as TextEditingController).dispose();
+          (p['focusNode'] as FocusNode?)?.dispose();
+        }
+        _splitPayments.clear();
+        if (widget.initialSplitPayments != null && widget.initialSplitPayments!.isNotEmpty) {
+          for (final p in widget.initialSplitPayments!) {
+            final mode = p['mode']?.toString() ?? 'Cash';
+            final amt = (p['amount'] as num?)?.toDouble() ?? double.tryParse(p['amount']?.toString() ?? '') ?? 0.0;
+            final amtText = amt > 0 ? (amt == amt.toInt() ? amt.toInt().toString() : amt.toStringAsFixed(2)) : '';
+            _splitPayments.add({
+              'mode': _paymentModes.contains(mode) ? mode : 'Cash',
+              'amountCtrl': TextEditingController(text: amtText),
+              'focusNode': FocusNode(),
+            });
+          }
+        }
+        if (_splitPayments.isEmpty) {
+          _splitPayments.add({
+            'mode': 'Cash',
+            'amountCtrl': TextEditingController(text: ''),
+            'focusNode': FocusNode(),
+          });
+        }
+      });
+    }
+  }
 
   void _addNewSplitPayment() {
     final newFocusNode = FocusNode();

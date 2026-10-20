@@ -49,12 +49,14 @@ class BillHistoryScreen extends StatefulWidget {
   });
 
   @override
-  State<BillHistoryScreen> createState() => _BillHistoryScreenState();
+  State<BillHistoryScreen> createState() => BillHistoryScreenState();
 }
 
 enum BillTileAction { due, view, edit, delete }
 
-class _BillHistoryScreenState extends State<BillHistoryScreen> {
+class BillHistoryScreenState extends State<BillHistoryScreen> {
+  void reloadBills() => _loadBills();
+
   final _fmt = DateFormat('dd/MM/yyyy');
   late DateTime _dateFrom;
   late DateTime _dateTo;
@@ -536,6 +538,7 @@ class _BillHistoryScreenState extends State<BillHistoryScreen> {
       builder: (ctx) => _BillDetailDialog(
         bill: bill,
         onUpdated: () => _loadBills(),
+        onEditBill: widget.onEditBill,
       ),
     );
   }
@@ -1670,7 +1673,8 @@ class _BillHistoryTileState extends State<_BillHistoryTile> {
 class _BillDetailDialog extends StatefulWidget {
   final Map<String, dynamic> bill;
   final VoidCallback? onUpdated;
-  const _BillDetailDialog({required this.bill, this.onUpdated});
+  final ValueChanged<Map<String, dynamic>>? onEditBill;
+  const _BillDetailDialog({required this.bill, this.onUpdated, this.onEditBill});
 
   @override
   State<_BillDetailDialog> createState() => _BillDetailDialogState();
@@ -2112,6 +2116,15 @@ class _BillDetailDialogState extends State<_BillDetailDialog> {
                       onPressed: () => _handleSavePdf(context),
                       tooltip: 'Save PDF to device',
                     ),
+                    if (widget.onEditBill != null)
+                      IconButton(
+                        icon: const Icon(Icons.edit_outlined, color: BoutiqueColors.accent),
+                        onPressed: () {
+                          Navigator.pop(context);
+                          widget.onEditBill!(bill);
+                        },
+                        tooltip: 'Edit Bill',
+                      ),
                     const SizedBox(width: 4),
                     IconButton(
                       icon: const Icon(Icons.close_rounded, color: BoutiqueColors.textSecondary),
@@ -2271,13 +2284,14 @@ class _BillDetailDialogState extends State<_BillDetailDialog> {
                             final price = (r['price'] as num?)?.toDouble() ?? 0.0;
                             final lineAmt = (r['lineAmount'] as num?)?.toDouble() ?? 0.0;
                             final weight = (r['weight'] as num?)?.toDouble() ?? 0.0;
-                            final unit = (r['unit']?.toString().isNotEmpty == true) ? r['unit'].toString() : 'g';
                             final isWeight = r['pricingType'] == 'Weight-Based' || weight > 0;
+                            final weightUnit = AdminState.resolveWeightUnit(r);
+                            final pieceUnit = (r['unit']?.toString().isNotEmpty == true && r['unit'].toString().toLowerCase() != weightUnit.toLowerCase()) ? r['unit'].toString() : 'pc';
                             final weightStr = weight.toStringAsFixed(weight.truncateToDouble() == weight ? 0 : 2);
 
-                            final priceDisplay = isWeight ? '${price.toStringAsFixed(2)}/$unit' : price.toStringAsFixed(2);
+                            final priceDisplay = isWeight ? '${price.toStringAsFixed(2)}/$weightUnit' : price.toStringAsFixed(2);
                             final qtyDisplay = isWeight
-                                ? (qty > 1 ? '${qty.toInt()} pc ($weightStr$unit)' : (weight > 0 ? '$weightStr$unit' : '${qty.toInt()}'))
+                                ? (qty > 1 ? '${qty.toInt()} $pieceUnit ($weightStr $weightUnit)' : (weight > 0 ? '$weightStr $weightUnit' : '${qty.toInt()} $pieceUnit'))
                                 : '${qty.toInt()}';
                             
                             String nameDisplay = itemName;
