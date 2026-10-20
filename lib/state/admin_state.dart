@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'dart:async';
+import 'dart:convert';
 import '../utils/connectivity_helper.dart';
 import '../models/product.dart';
 import '../models/live_rate.dart';
@@ -203,6 +204,7 @@ class AdminState extends ChangeNotifier {
     _deletedWeightUnits.addAll(LocalDbService().getDeletedMasters('weight_units'));
     _deletedItemNames.addAll(LocalDbService().getDeletedMasters('item_names'));
     _deletedVendors.addAll(LocalDbService().getDeletedMasters('vendors'));
+    _fetchDeletedMastersFromServer();
   }
 
   AdminState() {
@@ -303,7 +305,7 @@ class AdminState extends ChangeNotifier {
       }
     }
     final list = deduped.values.toList();
-    list.sort((a, b) => _compareTags(a.tagId, b.tagId));
+    list.sort((a, b) => _compareTags(b.tagId, a.tagId));
     return list;
   }
 
@@ -371,6 +373,102 @@ class AdminState extends ChangeNotifier {
     'Kumkum Box',
   ];
 
+  bool _isCatDeleted(String c) {
+    final lower = c.trim().toLowerCase();
+    return _deletedCategories.any((d) => d.trim().toLowerCase() == lower);
+  }
+
+  bool _isMatDeleted(String m) {
+    final lower = m.trim().toLowerCase();
+    return _deletedMaterials.any((d) => d.trim().toLowerCase() == lower);
+  }
+
+  bool _isUnitDeleted(String u) {
+    final lower = u.trim().toLowerCase();
+    return _deletedUnits.any((d) => d.trim().toLowerCase() == lower);
+  }
+
+  bool _isWeightUnitDeleted(String w) {
+    final lower = w.trim().toLowerCase();
+    return _deletedWeightUnits.any((d) => d.trim().toLowerCase() == lower);
+  }
+
+  bool _isItemNameDeleted(String n) {
+    final lower = n.trim().toLowerCase();
+    return _deletedItemNames.any((d) => d.trim().toLowerCase() == lower);
+  }
+
+  bool _isVendorDeleted(String v) {
+    final lower = v.trim().toLowerCase();
+    return _deletedVendors.any((d) => d.trim().toLowerCase() == lower);
+  }
+
+  Future<void> _syncDeletedMastersToServer() async {
+    try {
+      final map = {
+        'categories': _deletedCategories.toList(),
+        'materials': _deletedMaterials.toList(),
+        'units': _deletedUnits.toList(),
+        'weight_units': _deletedWeightUnits.toList(),
+        'item_names': _deletedItemNames.toList(),
+        'vendors': _deletedVendors.toList(),
+      };
+      await ApiService().saveSetting('deleted_masters_v2', jsonEncode(map));
+    } catch (e) {
+      debugPrint('[AdminState] _syncDeletedMastersToServer error: $e');
+    }
+  }
+
+  Future<void> _fetchDeletedMastersFromServer() async {
+    try {
+      final raw = await ApiService().getSetting('deleted_masters_v2');
+      if (raw != null) {
+        final decoded = raw is String ? jsonDecode(raw) : raw;
+        if (decoded is Map) {
+          if (decoded['categories'] is List) {
+            for (final c in decoded['categories']) {
+              _deletedCategories.add(c.toString());
+              LocalDbService().saveDeletedMaster('categories', c.toString());
+            }
+          }
+          if (decoded['materials'] is List) {
+            for (final m in decoded['materials']) {
+              _deletedMaterials.add(m.toString());
+              LocalDbService().saveDeletedMaster('materials', m.toString());
+            }
+          }
+          if (decoded['units'] is List) {
+            for (final u in decoded['units']) {
+              _deletedUnits.add(u.toString());
+              LocalDbService().saveDeletedMaster('units', u.toString());
+            }
+          }
+          if (decoded['weight_units'] is List) {
+            for (final w in decoded['weight_units']) {
+              _deletedWeightUnits.add(w.toString());
+              LocalDbService().saveDeletedMaster('weight_units', w.toString());
+            }
+          }
+          if (decoded['item_names'] is List) {
+            for (final i in decoded['item_names']) {
+              _deletedItemNames.add(i.toString());
+              LocalDbService().saveDeletedMaster('item_names', i.toString());
+            }
+          }
+          if (decoded['vendors'] is List) {
+            for (final v in decoded['vendors']) {
+              _deletedVendors.add(v.toString());
+              LocalDbService().saveDeletedMaster('vendors', v.toString());
+            }
+          }
+          _debouncedNotify();
+        }
+      }
+    } catch (e) {
+      debugPrint('[AdminState] _fetchDeletedMastersFromServer error: $e');
+    }
+  }
+
   List<String> get categories {
     final set = <String>{
       'All Categories',
@@ -378,7 +476,7 @@ class AdminState extends ChangeNotifier {
       ..._dynamicCategories,
       ..._products.map((p) => p.category).where((c) => c.isNotEmpty)
     };
-    return set.where((c) => !_deletedCategories.contains(c) || c == 'All Categories').toList();
+    return set.where((c) => !_isCatDeleted(c) || c == 'All Categories').toList();
   }
 
   List<String> get materials {
@@ -387,7 +485,7 @@ class AdminState extends ChangeNotifier {
       ..._dynamicMaterials,
       ..._products.map((p) => p.material).where((m) => m.isNotEmpty)
     };
-    return set.where((m) => !_deletedMaterials.contains(m)).toList();
+    return set.where((m) => !_isMatDeleted(m)).toList();
   }
 
   List<String> get units {
@@ -396,7 +494,7 @@ class AdminState extends ChangeNotifier {
       ..._dynamicUnits,
       ..._products.map((p) => p.unit).where((u) => u.isNotEmpty)
     };
-    return set.where((u) => !_deletedUnits.contains(u)).toList();
+    return set.where((u) => !_isUnitDeleted(u)).toList();
   }
 
   List<String> get weightUnits {
@@ -405,7 +503,7 @@ class AdminState extends ChangeNotifier {
       ..._dynamicWeightUnits,
       ..._products.map((p) => p.weightUnit).where((u) => u.isNotEmpty)
     };
-    return set.where((u) => !_deletedWeightUnits.contains(u)).toList();
+    return set.where((u) => !_isWeightUnitDeleted(u)).toList();
   }
 
   List<String> get itemNames {
@@ -414,7 +512,7 @@ class AdminState extends ChangeNotifier {
       ..._dynamicItemNames,
       ..._products.map((p) => p.name.trim()).where((n) => n.isNotEmpty)
     };
-    final list = set.where((n) => !_deletedItemNames.contains(n)).toList();
+    final list = set.where((n) => !_isItemNameDeleted(n)).toList();
     list.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
     return list;
   }
@@ -424,7 +522,7 @@ class AdminState extends ChangeNotifier {
       ..._dynamicVendors,
       ..._products.map((p) => p.vendor.trim()).where((v) => v.isNotEmpty)
     };
-    final list = set.where((v) => !_deletedVendors.contains(v)).toList();
+    final list = set.where((v) => !_isVendorDeleted(v)).toList();
     list.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
     return list;
   }
@@ -467,9 +565,10 @@ class AdminState extends ChangeNotifier {
 
   Future<void> deleteCategory(String cat) async {
     final trimmed = cat.trim();
-    _dynamicCategories.remove(trimmed);
+    _dynamicCategories.removeWhere((c) => c.trim().toLowerCase() == trimmed.toLowerCase());
     _deletedCategories.add(trimmed);
     LocalDbService().saveDeletedMaster('categories', trimmed);
+    _syncDeletedMastersToServer();
     notifyListeners();
     try { await ApiService().deleteMasterItem('categories', trimmed); } catch (_) {}
   }
@@ -510,9 +609,10 @@ class AdminState extends ChangeNotifier {
 
   Future<void> deleteMaterial(String mat) async {
     final trimmed = mat.trim();
-    _dynamicMaterials.remove(trimmed);
+    _dynamicMaterials.removeWhere((m) => m.trim().toLowerCase() == trimmed.toLowerCase());
     _deletedMaterials.add(trimmed);
     LocalDbService().saveDeletedMaster('materials', trimmed);
+    _syncDeletedMastersToServer();
     notifyListeners();
     try { await ApiService().deleteMasterItem('materials', trimmed); } catch (_) {}
   }
@@ -552,9 +652,10 @@ class AdminState extends ChangeNotifier {
 
   Future<void> deleteVendor(String vendor) async {
     final trimmed = vendor.trim();
-    _dynamicVendors.remove(trimmed);
+    _dynamicVendors.removeWhere((v) => v.trim().toLowerCase() == trimmed.toLowerCase());
     _deletedVendors.add(trimmed);
     LocalDbService().saveDeletedMaster('vendors', trimmed);
+    _syncDeletedMastersToServer();
     notifyListeners();
     try { await ApiService().deleteMasterItem('vendors', trimmed); } catch (_) {}
   }
@@ -595,9 +696,10 @@ class AdminState extends ChangeNotifier {
 
   Future<void> deleteUnit(String unit) async {
     final trimmed = unit.trim();
-    _dynamicUnits.remove(trimmed);
+    _dynamicUnits.removeWhere((u) => u.trim().toLowerCase() == trimmed.toLowerCase());
     _deletedUnits.add(trimmed);
     LocalDbService().saveDeletedMaster('units', trimmed);
+    _syncDeletedMastersToServer();
     notifyListeners();
     try { await ApiService().deleteMasterItem('units', trimmed); } catch (_) {}
   }
@@ -642,9 +744,10 @@ class AdminState extends ChangeNotifier {
   Future<void> deleteWeightUnit(String unit) async {
     final trimmed = unit.trim();
     if (trimmed.isEmpty) return;
-    _dynamicWeightUnits.remove(trimmed);
+    _dynamicWeightUnits.removeWhere((w) => w.trim().toLowerCase() == trimmed.toLowerCase());
     _deletedWeightUnits.add(trimmed);
     LocalDbService().saveDeletedMaster('weight_units', trimmed);
+    _syncDeletedMastersToServer();
     notifyListeners();
     try { await ApiService().deleteMasterItem('weight_units', trimmed); } catch (_) {}
   }
@@ -685,9 +788,10 @@ class AdminState extends ChangeNotifier {
 
   Future<void> deleteItemName(String name) async {
     final trimmed = name.trim();
-    _dynamicItemNames.remove(trimmed);
+    _dynamicItemNames.removeWhere((n) => n.trim().toLowerCase() == trimmed.toLowerCase());
     _deletedItemNames.add(trimmed);
     LocalDbService().saveDeletedMaster('item_names', trimmed);
+    _syncDeletedMastersToServer();
     notifyListeners();
     try { await ApiService().deleteMasterItem('item_names', trimmed); } catch (_) {}
   }
@@ -718,21 +822,22 @@ class AdminState extends ChangeNotifier {
     }
 
     try {
+      await _fetchDeletedMastersFromServer();
       final cats = await ApiService().getMasterItems('categories');
       for (final c in cats) {
-        if (!_deletedCategories.contains(c) && !_dynamicCategories.contains(c)) {
+        if (!_isCatDeleted(c) && !_dynamicCategories.contains(c)) {
           _dynamicCategories.add(c);
         }
       }
       final mats = await ApiService().getMasterItems('materials');
       for (final m in mats) {
-        if (!_deletedMaterials.contains(m) && !_dynamicMaterials.contains(m)) {
+        if (!_isMatDeleted(m) && !_dynamicMaterials.contains(m)) {
           _dynamicMaterials.add(m);
         }
       }
       final vends = await ApiService().getMasterItems('vendors');
       for (final v in vends) {
-        if (!_deletedVendors.contains(v) && !_dynamicVendors.contains(v)) {
+        if (!_isVendorDeleted(v) && !_dynamicVendors.contains(v)) {
           _dynamicVendors.add(v);
         }
       }

@@ -31,6 +31,7 @@ class ItemDialog extends StatefulWidget {
 class _ItemDialogState extends State<ItemDialog> {
   // FocusNodes
   final FocusNode _firstFieldFocusNode = FocusNode();
+  final FocusNode _categoryFocusNode = FocusNode();
 
   // Controllers
   late TextEditingController _tagIdCtrl;
@@ -52,11 +53,11 @@ class _ItemDialogState extends State<ItemDialog> {
 
   String _discountType = '%'; // "%" or "₹"
   String _pricingType = 'Quantity-Based'; // "Quantity-Based" or "Weight-Based"
-  String _category = 'Idols';
+  String _category = '';
   String _deity = 'General';
   String _material = 'Brass';
-  String _status = 'In Stock';
-  String _unit = 'Piece';
+  String _status = '';
+  String _unit = '';
   String _weightUnit = 'Grams';
   String _vendor = '';
   bool _isReserved = false;
@@ -231,10 +232,8 @@ class _ItemDialogState extends State<ItemDialog> {
     if (p != null && p.name.isNotEmpty) {
       _itemName = p.name;
     } else {
-      if (_availableItemNames.isNotEmpty) {
-        _itemName = _availableItemNames.first;
-        _nameCtrl.text = _itemName;
-      }
+      _itemName = '';
+      _nameCtrl.text = '';
     }
 
     if (p != null) {
@@ -262,16 +261,17 @@ class _ItemDialogState extends State<ItemDialog> {
       _pricingType = p.pricingType.isNotEmpty ? p.pricingType : 'Quantity-Based';
       _imageUrl = p.imageUrl;
     } else {
-      if (_availableCategories.isNotEmpty) {
-        _category = _availableCategories.first;
-      }
+      _category = '';
+      _status = '';
+      _vendor = '';
+      _unit = '';
     }
 
     widget.adminState.addListener(_onAdminStateChanged);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
-        _firstFieldFocusNode.requestFocus();
+        _categoryFocusNode.requestFocus();
       }
     });
   }
@@ -279,6 +279,7 @@ class _ItemDialogState extends State<ItemDialog> {
   @override
   void dispose() {
     _firstFieldFocusNode.dispose();
+    _categoryFocusNode.dispose();
     widget.adminState.removeListener(_onAdminStateChanged);
     _tagIdCtrl.dispose();
     _nameCtrl.dispose();
@@ -440,11 +441,11 @@ class _ItemDialogState extends State<ItemDialog> {
     final product = Product(
       tagId: _tagIdCtrl.text.trim().toUpperCase(),
       name: resolvedName,
-      category: _category,
+      category: _category.trim().isNotEmpty ? _category.trim() : 'Others',
       deity: _deity,
       material: _material,
       size: _sizeCtrl.text.trim(),
-      status: _status,
+      status: _status.trim().isNotEmpty ? _status.trim() : 'In Stock',
       vendor: _vendor,
       notes: _notesCtrl.text.trim(),
       pricingType: _pricingType,
@@ -454,16 +455,18 @@ class _ItemDialogState extends State<ItemDialog> {
       ratePerGram: _pricingType == 'Weight-Based' ? (double.tryParse(_ratePerGramCtrl.text) ?? 0.0) : 0.0,
       makingCharges: 0.0,
       quantity: newQty,
-      unit: _unit,
-      mrp: _pricingType == 'Weight-Based' ? 0.0 : ((double.tryParse(_mrpCtrl.text) ?? 0.0) > 0 ? double.tryParse(_mrpCtrl.text)! : _sellingPrice),
+      unit: _unit.trim().isNotEmpty ? _unit.trim() : 'Piece',
+      mrp: _pricingType == 'Weight-Based' ? 0.0 : _sellingPrice,
       sellingPrice: _pricingType == 'Weight-Based' ? 0.0 : _sellingPrice,
       discountValue: _discountAmount,
       discountType: _discountType,
       finalPrice: _pricingType == 'Weight-Based' ? 0.0 : _finalPrice,
       gstRate: double.tryParse(_gstRateCtrl.text) ?? 0.0,
-      isReserved: _isReserved,
-      reservedQuantity: _isReserved ? (int.tryParse(_reservedQtyCtrl.text) ?? (int.tryParse(_quantityCtrl.text) ?? 0)) : 0,
-      reservedFor: _isReserved ? _reservedForCtrl.text.trim() : '',
+      isReserved: widget.initialProduct != null ? _isReserved : false,
+      reservedQuantity: (widget.initialProduct != null && _isReserved)
+          ? (int.tryParse(_reservedQtyCtrl.text) ?? (int.tryParse(_quantityCtrl.text) ?? 0))
+          : 0,
+      reservedFor: (widget.initialProduct != null && _isReserved) ? _reservedForCtrl.text.trim() : '',
       addedDate: widget.initialProduct?.addedDate ?? DateTime.now(),
       imageUrl: _imageUrl,
     );
@@ -667,11 +670,12 @@ class _ItemDialogState extends State<ItemDialog> {
                           label: 'Tag ID / SKU *',
                           controller: _tagIdCtrl,
                           focusNode: _firstFieldFocusNode,
-                          autofocus: true,
+                          autofocus: false,
                           error: _tagIdError(),
                           hint: 'e.g. IDOL-001',
                           onChanged: (_) => setState(() => _tagIdTouched = true),
                           inputFormatters: [UpperCaseFormatter()],
+                          focusOrder: 20,
                         ),
                       ),
                       const SizedBox(width: 16),
@@ -681,12 +685,44 @@ class _ItemDialogState extends State<ItemDialog> {
                           children: [
                             Expanded(
                               child: _dropdownWithError(
+                                label: 'Category *',
+                                value: _category,
+                                hint: 'Select Category',
+                                items: _availableCategories,
+                                error: _categoryError(),
+                                focusNode: _categoryFocusNode,
+                                focusOrder: 1,
+                                onChanged: (v) => setState(() {
+                                  _category = v ?? '';
+                                  _categoryTouched = true;
+                                }),
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            IconButton(
+                              focusNode: FocusNode(skipTraversal: true),
+                              onPressed: () => _showManageMasterListDialog('Category'),
+                              icon: const Icon(Icons.settings_outlined, color: _brown),
+                              tooltip: 'Manage Categories',
+                            ),
+                          ],
+                        ),
+                      ),
+                    ]),
+                    const SizedBox(height: 16),
+                    Row(children: [
+                      Expanded(
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Expanded(
+                              child: _dropdownWithError(
                                 label: 'Item Name *',
-                                value: _availableItemNames.contains(_itemName)
-                                    ? _itemName
-                                    : (_availableItemNames.isNotEmpty ? _availableItemNames.first : ''),
+                                value: _itemName,
+                                hint: 'Select Item Name',
                                 items: _availableItemNames,
                                 error: _nameError(),
+                                focusOrder: 2,
                                 onChanged: (v) => setState(() {
                                   if (v != null) {
                                     _itemName = v;
@@ -698,6 +734,7 @@ class _ItemDialogState extends State<ItemDialog> {
                             ),
                             const SizedBox(width: 4),
                             IconButton(
+                              focusNode: FocusNode(skipTraversal: true),
                               onPressed: () => _showManageMasterListDialog('Item Name'),
                               icon: const Icon(Icons.settings_outlined, color: _brown),
                               tooltip: 'Manage Item Names',
@@ -705,64 +742,15 @@ class _ItemDialogState extends State<ItemDialog> {
                           ],
                         ),
                       ),
-                    ]),
-                    const SizedBox(height: 16),
-                    Row(children: [
-                      Expanded(
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            Expanded(
-                              child: _dropdownWithError(
-                                label: 'Category *',
-                                value: _availableCategories.contains(_category) ? _category : (_availableCategories.isNotEmpty ? _availableCategories.first : 'Others'),
-                                items: _availableCategories,
-                                error: _categoryError(),
-                                onChanged: (v) => setState(() {
-                                  _category = v!;
-                                  _categoryTouched = true;
-                                }),
-                              ),
-                            ),
-                            const SizedBox(width: 4),
-                            IconButton(
-                              onPressed: () => _showManageMasterListDialog('Category'),
-                              icon: const Icon(Icons.settings_outlined, color: _brown),
-                              tooltip: 'Manage Categories',
-                            ),
-                          ],
-                        ),
-                      ),
                       const SizedBox(width: 16),
-                      Expanded(
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            Expanded(
-                              child: _dropdown(
-                                'Material',
-                                _availableMaterials.contains(_material) ? _material : (_availableMaterials.isNotEmpty ? _availableMaterials.first : 'Brass'),
-                                _availableMaterials,
-                                (v) => setState(() => _material = v!),
-                              ),
-                            ),
-                            const SizedBox(width: 4),
-                            IconButton(
-                              onPressed: () => _showManageMasterListDialog('Material'),
-                              icon: const Icon(Icons.settings_outlined, color: _brown),
-                              tooltip: 'Manage Materials',
-                            ),
-                          ],
-                        ),
-                      ),
-                    ]),
-                    const SizedBox(height: 16),
-                    Row(children: [
-                      Expanded(child: _dropdown('Deity / Theme', _deity, _deities,
-                          (v) => setState(() => _deity = v!))),
-                      const SizedBox(width: 16),
-                      Expanded(child: _dropdown('Status', _status, _statuses,
-                          (v) => setState(() => _status = v!))),
+                      Expanded(child: _dropdown(
+                        'Status',
+                        _status,
+                        _statuses,
+                        (v) => setState(() => _status = v ?? ''),
+                        hint: 'Select Status',
+                        focusOrder: 3,
+                      )),
                     ]),
                     const SizedBox(height: 16),
                     Row(children: [
@@ -770,6 +758,7 @@ class _ItemDialogState extends State<ItemDialog> {
                         label: 'Size / Dimensions',
                         controller: _sizeCtrl,
                         hint: 'e.g. 6 inch',
+                        focusOrder: 4,
                       )),
                       const SizedBox(width: 16),
                       Expanded(
@@ -782,16 +771,20 @@ class _ItemDialogState extends State<ItemDialog> {
                                       label: 'Vendor / Supplier',
                                       controller: _vendorCtrl,
                                       hint: 'Supplier name',
+                                      focusOrder: 5,
                                     )
                                   : _dropdown(
                                       'Vendor / Supplier',
-                                      _availableVendors.contains(_vendor) ? _vendor : (_availableVendors.isNotEmpty ? _availableVendors.first : ''),
+                                      _vendor,
                                       _availableVendors,
-                                      (v) => setState(() => _vendor = v!),
+                                      (v) => setState(() => _vendor = v ?? ''),
+                                      hint: 'Select Vendor',
+                                      focusOrder: 5,
                                     ),
                             ),
                             const SizedBox(width: 4),
                             IconButton(
+                              focusNode: FocusNode(skipTraversal: true),
                               onPressed: () => _showManageMasterListDialog('Vendor'),
                               icon: const Icon(Icons.settings_outlined, color: _brown),
                               tooltip: 'Manage Vendors',
@@ -845,13 +838,16 @@ class _ItemDialogState extends State<ItemDialog> {
                             Expanded(
                               child: _dropdown(
                                 'Unit *',
-                                _availableUnits.contains(_unit) ? _unit : (_availableUnits.isNotEmpty ? _availableUnits.first : 'Piece'),
+                                _unit,
                                 _availableUnits,
-                                (v) => setState(() => _unit = v!),
+                                (v) => setState(() => _unit = v ?? ''),
+                                hint: 'Select Unit',
+                                focusOrder: 7,
                               ),
                             ),
                             const SizedBox(width: 4),
                             IconButton(
+                              focusNode: FocusNode(skipTraversal: true),
                               onPressed: () => _showManageMasterListDialog('Unit'),
                               icon: const Icon(Icons.settings_outlined, color: _brown),
                               tooltip: 'Manage Units',
@@ -866,11 +862,6 @@ class _ItemDialogState extends State<ItemDialog> {
                     // ── Section 3: Pricing & Discount ─────────────────────
                     _sectionHeader('Pricing & Discount', Icons.currency_rupee_rounded),
                     const SizedBox(height: 12),
-                    FocusTraversalGroup(
-                      policy: OrderedTraversalPolicy(),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
                     Row(
                       children: [
                         Expanded(
@@ -980,146 +971,139 @@ class _ItemDialogState extends State<ItemDialog> {
                       ],
                     ),
                     const SizedBox(height: 16),
-                    Row(children: [
-                      Expanded(
-                        child: _pricingType == 'Weight-Based'
-                          ? Row(
-                              crossAxisAlignment: CrossAxisAlignment.end,
-                              children: [
-                                Expanded(
-                                  flex: 2,
-                                  child: _field(
-                                    label: 'Rate per $_weightUnit (₹) *',
-                                    controller: _ratePerGramCtrl,
-                                    isNum: true,
-                                    hint: 'e.g. 85.50',
-                                    focusOrder: 3,
-                                  ),
+                    if (_pricingType == 'Weight-Based')
+                      Row(children: [
+                        Expanded(
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Expanded(
+                                flex: 2,
+                                child: _field(
+                                  label: 'Rate per $_weightUnit (₹) *',
+                                  controller: _ratePerGramCtrl,
+                                  isNum: true,
+                                  hint: 'e.g. 85.50',
+                                  focusOrder: 8,
                                 ),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  flex: 1,
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Row(
-                                        children: [
-                                          Expanded(
-                                            child: _dropdown(
-                                              'Unit',
-                                              _availableWeightUnits.contains(_weightUnit) ? _weightUnit : (_availableWeightUnits.isNotEmpty ? _availableWeightUnits.first : 'g'),
-                                              _availableWeightUnits,
-                                              (v) => setState(() => _weightUnit = v!),
-                                              focusOrder: 4,
-                                            ),
-                                          ),
-                                          const SizedBox(width: 4),
-                                          FocusTraversalOrder(
-                                            order: const NumericFocusOrder(5),
-                                            child: IconButton(
-                                              onPressed: () => _showManageMasterListDialog('Weight Unit'),
-                                              icon: const Icon(Icons.settings_outlined, color: _brown),
-                                              tooltip: 'Manage Units',
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            )
-                          : _field(
-                              label: 'Price (₹) *',
-                              controller: _sellingPriceCtrl,
-                              isNum: true,
-                              hint: '0.00',
-                              focusOrder: 3,
-                              onChanged: (v) {
-                                if (_mrpCtrl.text.isEmpty) {
-                                  _mrpCtrl.text = v;
-                                }
-                                setState(() => _sellingPriceTouched = true);
-                              },
-                            ),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: _pricingType == 'Weight-Based'
-                          ? Row(
-                              crossAxisAlignment: CrossAxisAlignment.end,
-                              children: [
-                                Expanded(
-                                  flex: 2,
-                                  child: Row(
-                                    children: [
-                                      Expanded(
-                                        child: _field(
-                                          label: 'Total Stock ($_weightUnit)',
-                                          controller: _grossWeightCtrl,
-                                          readOnly: widget.initialProduct != null,
-                                          isNum: true,
-                                          hint: 'e.g. 500.0',
-                                          focusOrder: 6,
-                                        ),
-                                      ),
-                                      if (widget.initialProduct != null) ...[
-                                        const SizedBox(width: 8),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                flex: 1,
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
                                         Expanded(
-                                          child: _field(
-                                            label: 'Add Stock (+)',
-                                            controller: _addWeightCtrl,
-                                            isNum: true,
-                                            hint: '0.0',
-                                            focusOrder: 6.5,
+                                          child: _dropdown(
+                                            'Unit',
+                                            _availableWeightUnits.contains(_weightUnit) ? _weightUnit : (_availableWeightUnits.isNotEmpty ? _availableWeightUnits.first : 'g'),
+                                            _availableWeightUnits,
+                                            (v) => setState(() => _weightUnit = v!),
+                                            focusOrder: 8.2,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 4),
+                                        FocusTraversalOrder(
+                                          order: const NumericFocusOrder(8.3),
+                                          child: IconButton(
+                                            focusNode: FocusNode(skipTraversal: true),
+                                            onPressed: () => _showManageMasterListDialog('Weight Unit'),
+                                            icon: const Icon(Icons.settings_outlined, color: _brown),
+                                            tooltip: 'Manage Units',
                                           ),
                                         ),
                                       ],
-                                    ],
-                                  ),
+                                    ),
+                                  ],
                                 ),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  flex: 1,
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Row(
-                                        children: [
-                                          Expanded(
-                                            child: _dropdown(
-                                              'Unit',
-                                              _availableWeightUnits.contains(_weightUnit) ? _weightUnit : (_availableWeightUnits.isNotEmpty ? _availableWeightUnits.first : 'g'),
-                                              _availableWeightUnits,
-                                              (v) => setState(() => _weightUnit = v!),
-                                              focusOrder: 7,
-                                            ),
-                                          ),
-                                          const SizedBox(width: 4),
-                                          FocusTraversalOrder(
-                                            order: const NumericFocusOrder(8),
-                                            child: IconButton(
-                                              onPressed: () => _showManageMasterListDialog('Weight Unit'),
-                                              icon: const Icon(Icons.settings_outlined, color: _brown),
-                                              tooltip: 'Manage Units',
-                                            ),
-                                          ),
-                                        ],
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Expanded(
+                                flex: 2,
+                                child: Row(
+                                  children: [
+                                    Expanded(
+                                      child: _field(
+                                        label: 'Total Stock ($_weightUnit)',
+                                        controller: _grossWeightCtrl,
+                                        readOnly: widget.initialProduct != null,
+                                        isNum: true,
+                                        hint: 'e.g. 500.0',
+                                        focusOrder: 8.4,
+                                      ),
+                                    ),
+                                    if (widget.initialProduct != null) ...[
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: _field(
+                                          label: 'Add Stock (+)',
+                                          controller: _addWeightCtrl,
+                                          isNum: true,
+                                          hint: '0.0',
+                                          focusOrder: 8.5,
+                                        ),
                                       ),
                                     ],
-                                  ),
+                                  ],
                                 ),
-                              ],
-                            )
-                          : _field(
-                              label: 'MRP (₹)',
-                              controller: _mrpCtrl,
-                              isNum: true,
-                              hint: '0.00',
-                              focusOrder: 4,
-                            ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                flex: 1,
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: _dropdown(
+                                            'Unit',
+                                            _availableWeightUnits.contains(_weightUnit) ? _weightUnit : (_availableWeightUnits.isNotEmpty ? _availableWeightUnits.first : 'g'),
+                                            _availableWeightUnits,
+                                            (v) => setState(() => _weightUnit = v!),
+                                            focusOrder: 8.6,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 4),
+                                        FocusTraversalOrder(
+                                          order: const NumericFocusOrder(8.7),
+                                          child: IconButton(
+                                            focusNode: FocusNode(skipTraversal: true),
+                                            onPressed: () => _showManageMasterListDialog('Weight Unit'),
+                                            icon: const Icon(Icons.settings_outlined, color: _brown),
+                                            tooltip: 'Manage Units',
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ])
+                    else
+                      _field(
+                        label: 'Price (₹) *',
+                        controller: _sellingPriceCtrl,
+                        isNum: true,
+                        hint: '0.00',
+                        focusOrder: 8,
+                        onChanged: (v) {
+                          _mrpCtrl.text = v;
+                          setState(() => _sellingPriceTouched = true);
+                        },
                       ),
-                    ]),
                     const SizedBox(height: 16),
 
                     // Discount row
@@ -1132,7 +1116,7 @@ class _ItemDialogState extends State<ItemDialog> {
                           isNum: true,
                           error: _discountError(),
                           hint: '0',
-                          focusOrder: 11,
+                          focusOrder: 9,
                         ),
                       ),
                       const SizedBox(width: 8),
@@ -1151,14 +1135,14 @@ class _ItemDialogState extends State<ItemDialog> {
                               color: Colors.white,
                             ),
                             child: Row(children: [
-                              _discountTypeBtn('%', focusOrder: 12),
-                              _discountTypeBtn('₹', focusOrder: 13),
+                              _discountTypeBtn('%', focusOrder: 10),
+                              _discountTypeBtn('₹', focusOrder: 10.5),
                             ]),
                           ),
                         ],
                       ),
                       const SizedBox(width: 16),
-                      // Final Price — AnimatedBuilder so only this rebuilds on price/discount keystrokes
+                      // Final Price & Discount Amount
                       if (_pricingType == 'Quantity-Based')
                         Expanded(
                           flex: 2,
@@ -1167,11 +1151,10 @@ class _ItemDialogState extends State<ItemDialog> {
                             builder: (context, _) {
                               final sp = double.tryParse(_sellingPriceCtrl.text) ?? 0.0;
                               final d = double.tryParse(_discountCtrl.text) ?? 0.0;
-                              final fp = _discountType == '%'
-                                  ? (sp - sp * d / 100).clamp(0.0, double.infinity)
-                                  : (sp - d).clamp(0.0, double.infinity);
-                              final mrp = double.tryParse(_mrpCtrl.text) ?? 0.0;
-                              final pctOff = (mrp > 0 && fp < mrp) ? (mrp - fp) / mrp * 100 : null;
+                              final discountAmount = _discountType == '%'
+                                  ? (sp * d / 100).clamp(0.0, sp)
+                                  : d.clamp(0.0, sp);
+                              final fp = (sp - discountAmount).clamp(0.0, double.infinity);
                               return Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
@@ -1197,19 +1180,26 @@ class _ItemDialogState extends State<ItemDialog> {
                                           color: Color(0xFF2E7D32),
                                         ),
                                       ),
+                                      if (discountAmount > 0) ...[
+                                        const Spacer(),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                          decoration: BoxDecoration(
+                                            color: const Color(0xFFC8E6C9),
+                                            borderRadius: BorderRadius.circular(6),
+                                          ),
+                                          child: Text(
+                                            'Disc: ₹${discountAmount.toStringAsFixed(2)}',
+                                            style: const TextStyle(
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.bold,
+                                              color: Color(0xFF1B5E20),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
                                     ]),
                                   ),
-                                  if (pctOff != null) ...[  
-                                    const SizedBox(height: 6),
-                                    Row(children: [
-                                      const Icon(Icons.info_outline, size: 14, color: _lightBrown),
-                                      const SizedBox(width: 4),
-                                      Text(
-                                        '${pctOff.toStringAsFixed(1)}% off MRP',
-                                        style: const TextStyle(fontSize: 12, color: _lightBrown),
-                                      ),
-                                    ]),
-                                  ],
                                 ],
                               );
                             },
@@ -1230,89 +1220,89 @@ class _ItemDialogState extends State<ItemDialog> {
                       focusOrder: 14,
                     ),
                     const SizedBox(height: 12),
-                    FocusTraversalOrder(
-                      order: const NumericFocusOrder(15),
-                      child: Focus(
-                        onKeyEvent: (node, event) {
-                          if (event is KeyDownEvent && (event.logicalKey == LogicalKeyboardKey.enter || event.logicalKey == LogicalKeyboardKey.space)) {
-                            setState(() => _isReserved = !_isReserved);
-                            return KeyEventResult.handled;
-                          }
-                          return KeyEventResult.ignored;
-                        },
-                        child: GestureDetector(
-                          onTap: () => setState(() => _isReserved = !_isReserved),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                            decoration: BoxDecoration(
-                              color: _isReserved ? const Color(0xFFE8F5E9) : Colors.white,
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(
-                                color: _isReserved ? Colors.green : _border,
-                              ),
-                            ),
-                            child: Row(children: [
-                              Icon(
-                                _isReserved ? Icons.check_box : Icons.check_box_outline_blank,
-                                color: _isReserved ? Colors.green : _lightBrown,
-                              ),
-                              const SizedBox(width: 10),
-                              const Text(
-                                'Reserved for Customer',
-                                style: TextStyle(fontWeight: FontWeight.w600, color: _brown),
-                              ),
-                            ]),
-                          ),
-                        ),
-                      ),
-                    ),
-                    if (_isReserved) ...[
+                    if (isEdit) ...[
                       const SizedBox(height: 12),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _field(
-                              label: 'Reserved Qty',
-                              controller: _reservedQtyCtrl,
-                              isNum: true,
-                              hint: 'e.g. 2',
-                              focusOrder: 16,
+                      FocusTraversalOrder(
+                        order: const NumericFocusOrder(15),
+                        child: Focus(
+                          onKeyEvent: (node, event) {
+                            if (event is KeyDownEvent && (event.logicalKey == LogicalKeyboardKey.enter || event.logicalKey == LogicalKeyboardKey.space)) {
+                              setState(() => _isReserved = !_isReserved);
+                              return KeyEventResult.handled;
+                            }
+                            return KeyEventResult.ignored;
+                          },
+                          child: GestureDetector(
+                            onTap: () => setState(() => _isReserved = !_isReserved),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                              decoration: BoxDecoration(
+                                color: _isReserved ? const Color(0xFFE8F5E9) : Colors.white,
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: _isReserved ? Colors.green : _border,
+                                ),
+                              ),
+                              child: Row(children: [
+                                Icon(
+                                  _isReserved ? Icons.check_box : Icons.check_box_outline_blank,
+                                  color: _isReserved ? Colors.green : _lightBrown,
+                                ),
+                                const SizedBox(width: 10),
+                                const Text(
+                                  'Reserved for Customer',
+                                  style: TextStyle(fontWeight: FontWeight.w600, color: _brown),
+                                ),
+                              ]),
                             ),
                           ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: _field(
-                              label: 'Customer Details (Name/Number)',
-                              controller: _reservedForCtrl,
-                              hint: 'e.g. John Doe - 9876543210',
-                              focusOrder: 17,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFFFF3E0),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: const Color(0xFFFFCC80)),
                         ),
-                        child: Row(children: [
-                          const Icon(Icons.info_outline, size: 14, color: Color(0xFFB45309)),
-                          const SizedBox(width: 6),
-                          Expanded(
-                            child: Text(
-                              'Reserved Qty will be deducted from sellable stock. Available = Total − Issue − Reserved.',
-                              style: const TextStyle(fontSize: 11, color: Color(0xFFB45309)),
+                      ),
+                      if (_isReserved) ...[
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _field(
+                                label: 'Reserved Qty',
+                                controller: _reservedQtyCtrl,
+                                isNum: true,
+                                hint: 'e.g. 2',
+                                focusOrder: 16,
+                              ),
                             ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: _field(
+                                label: 'Customer Details (Name/Number)',
+                                controller: _reservedForCtrl,
+                                hint: 'e.g. John Doe - 9876543210',
+                                focusOrder: 17,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFFF3E0),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: const Color(0xFFFFCC80)),
                           ),
-                        ]),
-                      ),
+                          child: Row(children: [
+                            const Icon(Icons.info_outline, size: 14, color: Color(0xFFB45309)),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                'Reserved Qty will be deducted from sellable stock. Available = Total − Issue − Reserved.',
+                                style: const TextStyle(fontSize: 11, color: Color(0xFFB45309)),
+                              ),
+                            ),
+                          ]),
+                        ),
+                      ],
                     ],
-                        ],
-                      ),
-                    ),
                   ],
                 ),
               ),
@@ -1531,11 +1521,13 @@ class _ItemDialogState extends State<ItemDialog> {
     );
   }
 
-  Widget _dropdown(String label, String value, List<String> items, ValueChanged<String?> onChanged, {double? focusOrder}) {
+  Widget _dropdown(String label, String value, List<String> items, ValueChanged<String?> onChanged, {String? hint, double? focusOrder, FocusNode? focusNode}) {
     return _CustomDropdown(
       label: label,
       value: value,
       items: items,
+      hint: hint,
+      focusNode: focusNode,
       onChanged: onChanged,
       showSearchableDropdownDialog: _showSearchableDropdownDialog,
       focusOrder: focusOrder,
@@ -1546,6 +1538,8 @@ class _ItemDialogState extends State<ItemDialog> {
     required String label,
     required String value,
     required List<String> items,
+    String? hint,
+    FocusNode? focusNode,
     String? error,
     required ValueChanged<String?> onChanged,
     double? focusOrder,
@@ -1554,6 +1548,8 @@ class _ItemDialogState extends State<ItemDialog> {
       label: label,
       value: value,
       items: items,
+      hint: hint,
+      focusNode: focusNode,
       error: error,
       onChanged: onChanged,
       showSearchableDropdownDialog: _showSearchableDropdownDialog,
@@ -1592,6 +1588,8 @@ class _CustomDropdown extends StatefulWidget {
   final String value;
   final List<String> items;
   final String? error;
+  final String? hint;
+  final FocusNode? focusNode;
   final ValueChanged<String?> onChanged;
   final Function({required String label, required String currentValue, required List<String> items, required ValueChanged<String?> onSelected}) showSearchableDropdownDialog;
   final double? focusOrder;
@@ -1601,6 +1599,8 @@ class _CustomDropdown extends StatefulWidget {
     required this.value,
     required this.items,
     this.error,
+    this.hint,
+    this.focusNode,
     required this.onChanged,
     required this.showSearchableDropdownDialog,
     this.focusOrder,
@@ -1621,7 +1621,7 @@ class _CustomDropdownState extends State<_CustomDropdown> {
   void _openDialog() {
     widget.showSearchableDropdownDialog(
       label: widget.label,
-      currentValue: widget.items.contains(widget.value) ? widget.value : (widget.items.isNotEmpty ? widget.items.first : ''),
+      currentValue: widget.value,
       items: widget.items,
       onSelected: widget.onChanged,
     );
@@ -1652,7 +1652,12 @@ class _CustomDropdownState extends State<_CustomDropdown> {
   }
 
   Widget _buildFocus() {
+    final hasValue = widget.value.isNotEmpty && widget.items.contains(widget.value);
+    final textToShow = hasValue ? widget.value : (widget.hint ?? 'Select ${widget.label.replaceAll('*', '').trim()}');
+    final textColor = hasValue ? _brown : const Color(0xFFBCAAA4);
+
     return Focus(
+      focusNode: widget.focusNode,
       onFocusChange: (focused) {
         if (mounted) {
           setState(() {
@@ -1689,8 +1694,8 @@ class _CustomDropdownState extends State<_CustomDropdown> {
             suffixIcon: const Icon(Icons.arrow_drop_down, color: _lightBrown),
           ),
           child: Text(
-            widget.items.contains(widget.value) ? widget.value : (widget.items.isNotEmpty ? widget.items.first : ''),
-            style: const TextStyle(color: _brown, fontSize: 14),
+            textToShow,
+            style: TextStyle(color: textColor, fontSize: 14),
             overflow: TextOverflow.ellipsis,
           ),
         ),
@@ -1756,6 +1761,11 @@ class _SearchableDropdownDialogState extends State<_SearchableDropdownDialog> {
   void initState() {
     super.initState();
     _filtered = List.from(widget.items);
+    if (widget.currentValue.isNotEmpty && _filtered.contains(widget.currentValue)) {
+      _highlightIdx = _filtered.indexOf(widget.currentValue);
+    } else if (_filtered.isNotEmpty) {
+      _highlightIdx = 0;
+    }
   }
 
   void _onSearch(String query) {
@@ -1768,6 +1778,9 @@ class _SearchableDropdownDialogState extends State<_SearchableDropdownDialog> {
         _filtered = widget.items
             .where((item) => item.toLowerCase().contains(q))
             .toList();
+      }
+      if (_filtered.isNotEmpty) {
+        _highlightIdx = 0;
       }
     });
   }
@@ -1797,6 +1810,9 @@ class _SearchableDropdownDialogState extends State<_SearchableDropdownDialog> {
     } else if (key == LogicalKeyboardKey.enter || key == LogicalKeyboardKey.numpadEnter) {
       if (_highlightIdx >= 0 && _highlightIdx < _filtered.length) {
         widget.onSelected(_filtered[_highlightIdx]);
+        return KeyEventResult.handled;
+      } else if (_filtered.isNotEmpty) {
+        widget.onSelected(_filtered.first);
         return KeyEventResult.handled;
       }
     } else if (key == LogicalKeyboardKey.escape) {

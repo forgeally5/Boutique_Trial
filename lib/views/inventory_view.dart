@@ -346,6 +346,22 @@ class _InventoryViewState extends State<InventoryView> {
     );
   }
 
+  void _handleRefresh() {
+    _searchCtrl.clear();
+    widget.globalSearchCtrl?.clear();
+    setState(() {
+      _searchQuery = '';
+      _selectedCategory = 'All Categories';
+      _selectedStatus = 'All Statuses';
+      _selectedDateRange = null;
+      _filterLowStockOnly = false;
+      _selectedProductIndex = 0;
+      _selectedDrawerProduct = null;
+    });
+    _clearItemFocusNodes();
+    state.fetchProducts();
+  }
+
   void _confirmDeleteProduct(BuildContext context, String tagId) {
     showDialog(
       context: context,
@@ -486,7 +502,7 @@ class _InventoryViewState extends State<InventoryView> {
                                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                                           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                                         ),
-                                        onPressed: () => state.fetchProducts(),
+                                        onPressed: _handleRefresh,
                                       ),
                               ),
                               const SizedBox(width: 8),
@@ -689,6 +705,20 @@ class _InventoryViewState extends State<InventoryView> {
                             decoration: BoutiqueInputDecoration.field(
                               hintText: 'Search product name or tag ID...',
                               prefixIcon: const Icon(Icons.search_rounded, size: 18, color: BoutiqueColors.textSecondary),
+                              suffixIcon: _searchCtrl.text.isNotEmpty
+                                  ? IconButton(
+                                      icon: const Icon(Icons.clear_rounded, size: 16, color: BoutiqueColors.textSecondary),
+                                      onPressed: () {
+                                        _searchCtrl.clear();
+                                        widget.globalSearchCtrl?.clear();
+                                        setState(() {
+                                          _searchQuery = '';
+                                          _selectedProductIndex = 0;
+                                        });
+                                        _clearItemFocusNodes();
+                                      },
+                                    )
+                                  : null,
                             ),
                             onSubmitted: (val) {
                               final filteredList = _getFilteredList(state.products);
@@ -1264,7 +1294,7 @@ class _InventoryViewState extends State<InventoryView> {
                   ],
                 ),
                 subtitle: Text(
-                  '${p.category}$matStr • Qty: ${p.sellableQuantity} ${p.unit}${p.reservedQuantity > 0 ? ' (Res: ${p.reservedQuantity})' : ''}',
+                  '${p.category}$matStr • Qty: ${p.sellableQuantity} ${p.unit}${p.reservedQuantity > 0 ? ' (Res: ${p.reservedQuantity})' : ''}${p.notes.trim().isNotEmpty ? ' • Notes: ${p.notes.trim()}' : ''}',
                   style: const TextStyle(fontSize: 12, color: BoutiqueColors.textSecondary),
                 ),
                 trailing: Row(
@@ -1462,7 +1492,15 @@ class _InventoryViewState extends State<InventoryView> {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       _buildPriceDisplay(p),
-                      Text('Qty: ${p.sellableQuantity}${p.reservedQuantity > 0 ? '\n(Res: ${p.reservedQuantity})' : ''}', textAlign: TextAlign.right, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: BoutiqueColors.textSecondary)),
+                      Expanded(
+                        child: Text(
+                          'Qty: ${p.sellableQuantity}${p.reservedQuantity > 0 ? '\n(Res: ${p.reservedQuantity})' : ''}${p.notes.trim().isNotEmpty ? '\n${p.notes.trim()}' : ''}',
+                          textAlign: TextAlign.right,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: BoutiqueColors.textSecondary),
+                        ),
+                      ),
                     ],
                   ),
                 ],
@@ -1482,15 +1520,13 @@ class _InventoryViewState extends State<InventoryView> {
       );
     }
     
-    final effectiveSellingPrice = p.finalPrice > 0
-        ? p.finalPrice
-        : (p.sellingPrice > 0 ? p.sellingPrice : p.mrp);
+    final basePrice = p.sellingPrice > 0 ? p.sellingPrice : p.mrp;
+    final finalPrice = p.finalPrice > 0 ? p.finalPrice : basePrice;
+    final hasDiscount = (p.discountValue > 0 || (p.mrp > finalPrice && p.mrp > 0)) && finalPrice < basePrice;
 
-    final showStrikethrough = p.mrp > 0 && p.mrp > effectiveSellingPrice;
-
-    if (!showStrikethrough) {
+    if (!hasDiscount) {
       return Text(
-        '₹${effectiveSellingPrice.toStringAsFixed(effectiveSellingPrice.truncateToDouble() == effectiveSellingPrice ? 0 : 2)}',
+        '₹${basePrice.toStringAsFixed(basePrice.truncateToDouble() == basePrice ? 0 : 2)}',
         style: const TextStyle(fontFamily: 'serif', fontSize: 16, fontWeight: FontWeight.bold, color: BoutiqueColors.textPrimary),
       );
     }
@@ -1498,7 +1534,7 @@ class _InventoryViewState extends State<InventoryView> {
       mainAxisSize: MainAxisSize.min,
       children: [
         Text(
-          '₹${p.mrp.toStringAsFixed(p.mrp.truncateToDouble() == p.mrp ? 0 : 2)}',
+          '₹${basePrice.toStringAsFixed(basePrice.truncateToDouble() == basePrice ? 0 : 2)}',
           style: const TextStyle(
             fontFamily: 'serif',
             fontSize: 13,
@@ -1516,7 +1552,7 @@ class _InventoryViewState extends State<InventoryView> {
             border: Border.all(color: const Color(0xFF81C784), width: 0.8),
           ),
           child: Text(
-            '₹${effectiveSellingPrice.toStringAsFixed(effectiveSellingPrice.truncateToDouble() == effectiveSellingPrice ? 0 : 2)}',
+            '₹${finalPrice.toStringAsFixed(finalPrice.truncateToDouble() == finalPrice ? 0 : 2)}',
             style: const TextStyle(
               fontFamily: 'serif',
               fontSize: 14,
