@@ -50,6 +50,20 @@ class _CustomerReturnTabState extends State<CustomerReturnTab> {
     super.dispose();
   }
 
+  Future<void> _refresh() async {
+    final now = DateTime.now();
+    final fyStart = now.month >= 4
+        ? DateTime(now.year, 4, 1)
+        : DateTime(now.year - 1, 4, 1);
+    _searchCtrl.clear();
+    setState(() {
+      _dateFrom = fyStart;
+      _dateTo = now;
+      _statusFilter = 'All';
+    });
+    await _load();
+  }
+
   Future<void> _load() async {
     setState(() => _loading = true);
     try {
@@ -245,7 +259,7 @@ class _CustomerReturnTabState extends State<CustomerReturnTab> {
                 ),
                 const SizedBox(width: 12),
                 // Refresh
-                _iconBtn(Icons.refresh_rounded, BoutiqueColors.accent, _load,
+                _iconBtn(Icons.refresh_rounded, BoutiqueColors.accent, _refresh,
                     'Refresh'),
                 // Print
                 _iconBtn(Icons.print_outlined, BoutiqueColors.accent,

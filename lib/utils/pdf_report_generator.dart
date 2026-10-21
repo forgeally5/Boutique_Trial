@@ -786,6 +786,258 @@ Future<Uint8List> generateCategoryClosingStockPdf({
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// STOCK LEDGER REPORT PDF
+// ═══════════════════════════════════════════════════════════════════════════
+Future<Uint8List> generateStockLedgerPdf({
+  required List<Map<String, dynamic>> rows,
+  required String categoryFilter,
+  DateTime? dateFrom,
+  DateTime? dateTo,
+}) async {
+  final pdf = pw.Document();
+  final boldFont = await _boldFont();
+  final regularFont = await _regularFont();
+  final logoImage = await _getPdfLogo();
+
+  double totalInwardSum = 0;
+  double totalIssueSum = 0;
+  double totalSoldSum = 0;
+  double totalClosingSum = 0;
+
+  for (final r in rows) {
+    totalInwardSum += (r['inwardQty'] as num?)?.toDouble() ?? 0.0;
+    totalIssueSum += (r['issueQty'] as num?)?.toDouble() ?? 0.0;
+    totalSoldSum += (r['soldQty'] as num?)?.toDouble() ?? 0.0;
+    totalClosingSum += (r['closingQty'] as num?)?.toDouble() ?? 0.0;
+  }
+
+  final subtitle = categoryFilter != 'All'
+      ? 'Category: $categoryFilter | Total Records: ${rows.length}'
+      : 'Stock Ledger Statement | All Categories (${rows.length} Records)';
+
+  const columns = [
+    'Category',
+    'Product Name',
+    'Date',
+    'Price (Rs.)',
+    'Total Inward',
+    'Issue',
+    'Sales',
+    'Closing',
+  ];
+  const flexes = [3, 4, 2, 2, 2, 1, 1, 2];
+
+  pdf.addPage(
+    pw.MultiPage(
+      pageFormat: PdfPageFormat.a4.landscape,
+      margin: const pw.EdgeInsets.all(24),
+      footer: (context) => _buildFooter(regularFont, context),
+      build: (context) => [
+        _buildPdfHeader(
+          reportTitle: 'STOCK LEDGER STATEMENT',
+          subtitle: (dateFrom != null && dateTo != null)
+              ? '$subtitle | Period: ${_dateFmt.format(dateFrom)} to ${_dateFmt.format(dateTo)}'
+              : subtitle,
+          boldFont: boldFont,
+          regularFont: regularFont,
+          logoImage: logoImage,
+        ),
+        pw.SizedBox(height: 12),
+        pw.Container(
+          decoration: pw.BoxDecoration(
+            border: pw.Border.all(color: _kBorderColor, width: 0.5),
+            borderRadius: pw.BorderRadius.circular(4),
+          ),
+          child: pw.Column(
+            children: [
+              pw.Container(
+                color: _kBgLight,
+                padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                child: pw.Row(
+                  children: List.generate(columns.length, (i) {
+                    final isRight = i >= 3 && i <= 4;
+                    final isCenter = i == 2 || i >= 5;
+                    return pw.Expanded(
+                      flex: flexes[i],
+                      child: pw.Text(
+                        columns[i],
+                        textAlign: isRight
+                            ? pw.TextAlign.right
+                            : (isCenter ? pw.TextAlign.center : pw.TextAlign.left),
+                        style: pw.TextStyle(
+                          font: boldFont,
+                          fontSize: 8,
+                          color: _kBurgundyPdf,
+                        ),
+                      ),
+                    );
+                  }),
+                ),
+              ),
+              ...rows.asMap().entries.map((entry) {
+                final idx = entry.key;
+                final r = entry.value;
+                final isEven = idx % 2 == 0;
+                final rawDate = r['date'];
+                final date = rawDate is DateTime
+                    ? rawDate
+                    : (DateTime.tryParse(rawDate?.toString() ?? '') ?? DateTime.now());
+                final dateStr = _dateFmt.format(date);
+                final price = (r['price'] as num?)?.toDouble() ?? 0.0;
+                final inward = (r['inwardQty'] as num?)?.toDouble() ?? 0.0;
+                final unit = r['unit']?.toString() ?? 'Nos';
+                final isWeight = r['isWeight'] == true;
+                final issue = (r['issueQty'] as num?)?.toDouble() ?? 0.0;
+                final sold = (r['soldQty'] as num?)?.toDouble() ?? 0.0;
+                final closing = (r['closingQty'] as num?)?.toDouble() ?? 0.0;
+
+                String fmtPdfQty(double val) {
+                  if (isWeight) return val.toStringAsFixed(2);
+                  return val % 1 == 0 ? val.toInt().toString() : val.toStringAsFixed(2);
+                }
+
+                return pw.Container(
+                  color: isEven ? PdfColors.white : _kRowAlt,
+                  padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                  child: pw.Row(
+                    children: [
+                      pw.Expanded(
+                        flex: flexes[0],
+                        child: pw.Text(
+                          r['category']?.toString() ?? '',
+                          style: pw.TextStyle(font: regularFont, fontSize: 7.5, color: _kTextDark),
+                        ),
+                      ),
+                      pw.Expanded(
+                        flex: flexes[1],
+                        child: pw.Text(
+                          r['name']?.toString() ?? '',
+                          style: pw.TextStyle(font: boldFont, fontSize: 7.5, color: _kTextDark),
+                        ),
+                      ),
+                      pw.Expanded(
+                        flex: flexes[2],
+                        child: pw.Text(
+                          dateStr,
+                          textAlign: pw.TextAlign.center,
+                          style: pw.TextStyle(font: regularFont, fontSize: 7.5, color: _kTextDark),
+                        ),
+                      ),
+                      pw.Expanded(
+                        flex: flexes[3],
+                        child: pw.Text(
+                          price > 0 ? _numFmt.format(price) : '-',
+                          textAlign: pw.TextAlign.right,
+                          style: pw.TextStyle(font: regularFont, fontSize: 7.5, color: _kTextDark),
+                        ),
+                      ),
+                      pw.Expanded(
+                        flex: flexes[4],
+                        child: pw.Text(
+                          '${fmtPdfQty(inward)} ${unit.isNotEmpty ? unit : (isWeight ? 'Gram' : 'Nos')}',
+                          textAlign: pw.TextAlign.right,
+                          style: pw.TextStyle(font: boldFont, fontSize: 7.5, color: _kTextDark),
+                        ),
+                      ),
+                      pw.Expanded(
+                        flex: flexes[5],
+                        child: pw.Text(
+                          issue > 0 ? fmtPdfQty(issue) : '-',
+                          textAlign: pw.TextAlign.center,
+                          style: pw.TextStyle(font: regularFont, fontSize: 7.5, color: _kTextDark),
+                        ),
+                      ),
+                      pw.Expanded(
+                        flex: flexes[6],
+                        child: pw.Text(
+                          sold > 0 ? fmtPdfQty(sold) : '-',
+                          textAlign: pw.TextAlign.center,
+                          style: pw.TextStyle(font: regularFont, fontSize: 7.5, color: _kTextDark),
+                        ),
+                      ),
+                      pw.Expanded(
+                        flex: flexes[7],
+                        child: pw.Text(
+                          fmtPdfQty(closing),
+                          textAlign: pw.TextAlign.center,
+                          style: pw.TextStyle(font: boldFont, fontSize: 7.5, color: _kBurgundyPdf),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }),
+              pw.Container(
+                decoration: const pw.BoxDecoration(
+                  color: _kRowAlt,
+                  border: pw.Border(top: pw.BorderSide(color: _kBurgundyPdf, width: 0.8)),
+                ),
+                padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                child: pw.Row(
+                  children: [
+                    pw.Expanded(
+                      flex: flexes[0] + flexes[1] + flexes[2] + flexes[3],
+                      child: pw.Text(
+                        'GRAND TOTAL',
+                        textAlign: pw.TextAlign.right,
+                        style: pw.TextStyle(font: boldFont, fontSize: 8, color: _kBurgundyPdf),
+                      ),
+                    ),
+                    pw.SizedBox(width: 8),
+                    pw.Expanded(
+                      flex: flexes[4],
+                      child: pw.Text(
+                        totalInwardSum % 1 == 0 ? totalInwardSum.toInt().toString() : totalInwardSum.toStringAsFixed(2),
+                        textAlign: pw.TextAlign.right,
+                        style: pw.TextStyle(font: boldFont, fontSize: 8, color: _kBurgundyPdf),
+                      ),
+                    ),
+                    pw.Expanded(
+                      flex: flexes[5],
+                      child: pw.Text(
+                        totalIssueSum > 0 ? (totalIssueSum % 1 == 0 ? totalIssueSum.toInt().toString() : totalIssueSum.toStringAsFixed(2)) : '-',
+                        textAlign: pw.TextAlign.center,
+                        style: pw.TextStyle(font: boldFont, fontSize: 8, color: _kBurgundyPdf),
+                      ),
+                    ),
+                    pw.Expanded(
+                      flex: flexes[6],
+                      child: pw.Text(
+                        totalSoldSum > 0 ? (totalSoldSum % 1 == 0 ? totalSoldSum.toInt().toString() : totalSoldSum.toStringAsFixed(2)) : '-',
+                        textAlign: pw.TextAlign.center,
+                        style: pw.TextStyle(font: boldFont, fontSize: 8, color: _kBurgundyPdf),
+                      ),
+                    ),
+                    pw.Expanded(
+                      flex: flexes[7],
+                      child: pw.Text(
+                        totalClosingSum % 1 == 0 ? totalClosingSum.toInt().toString() : totalClosingSum.toStringAsFixed(2),
+                        textAlign: pw.TextAlign.center,
+                        style: pw.TextStyle(font: boldFont, fontSize: 8, color: _kBurgundyPdf),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        _buildSummaryBox({
+          'Total Categories': '${rows.map((r) => r['category']).toSet().length}',
+          'Total Ledger Entries': '${rows.length}',
+          'Total Inward': totalInwardSum.toStringAsFixed(2),
+          'Total Issued': totalIssueSum.toStringAsFixed(2),
+          'Total Sold': totalSoldSum.toStringAsFixed(2),
+          'Total Closing Stock': totalClosingSum.toStringAsFixed(2),
+        }, boldFont, regularFont),
+      ],
+    ),
+  );
+
+  return pdf.save();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // SALES REPORT PDF
 // ═══════════════════════════════════════════════════════════════════════════
 Future<Uint8List> generateSalesIndividualPdf({

@@ -1022,52 +1022,54 @@ class ExcelGenerator {
     required List<Map<String, dynamic>> rows,
     String categoryFilter = 'All',
     String statusFilter = 'All',
+    DateTime? dateFrom,
+    DateTime? dateTo,
   }) async {
     final Workbook workbook = Workbook();
     final Worksheet sheet = workbook.worksheets[0];
     sheet.name = 'Stock Report';
 
+    // ── Row 1: Company Title Banner ──────────────────────────────────
     final titleRange = sheet.getRangeByName('A1:L1');
     titleRange.merge();
-    titleRange.setText('PRODUCT-WISE STOCK REPORT');
+    titleRange.setText('RITUMITA BOUTIQUE');
     titleRange.cellStyle.bold = true;
-    titleRange.cellStyle.fontSize = 13;
+    titleRange.cellStyle.fontSize = 14;
     titleRange.cellStyle.backColor = '#5A121A';
     titleRange.cellStyle.fontColor = '#FFFFFF';
     titleRange.cellStyle.hAlign = HAlignType.center;
     titleRange.cellStyle.vAlign = VAlignType.center;
 
-    final metaRange = sheet.getRangeByName('A2:F2');
-    metaRange.merge();
-    metaRange.setText(
-      'Category: $categoryFilter • Status: $statusFilter',
+    // ── Row 2: Subtitle & Metadata ────────────────────────────────────
+    final subTitleRange = sheet.getRangeByName('A2:L2');
+    subTitleRange.merge();
+    String periodStr = '';
+    if (dateFrom != null && dateTo != null) {
+      periodStr = ' • Period: ${_fileDateFmt.format(dateFrom)} to ${_fileDateFmt.format(dateTo)}';
+    }
+    subTitleRange.setText(
+      'PRODUCT-WISE STOCK REPORT • Category: $categoryFilter • Status: $statusFilter$periodStr • Generated: ${_dateTimeFmt.format(DateTime.now())}',
     );
-    metaRange.cellStyle.bold = true;
-    metaRange.cellStyle.fontSize = 10;
-    metaRange.cellStyle.backColor = '#FDFBF7';
-    metaRange.cellStyle.vAlign = VAlignType.center;
+    subTitleRange.cellStyle.bold = true;
+    subTitleRange.cellStyle.fontSize = 9;
+    subTitleRange.cellStyle.backColor = '#FDFBF7';
+    subTitleRange.cellStyle.fontColor = '#5A121A';
+    subTitleRange.cellStyle.hAlign = HAlignType.center;
+    subTitleRange.cellStyle.vAlign = VAlignType.center;
 
-    final metaDate = sheet.getRangeByName('G2:L2');
-    metaDate.merge();
-    metaDate.setText('Generated: ${_dateTimeFmt.format(DateTime.now())}');
-    metaDate.cellStyle.bold = true;
-    metaDate.cellStyle.fontSize = 10;
-    metaDate.cellStyle.backColor = '#FDFBF7';
-    metaDate.cellStyle.hAlign = HAlignType.right;
-    metaDate.cellStyle.vAlign = VAlignType.center;
-
+    // ── Row 3: Table Headers ──────────────────────────────────────────
     final headers = [
       'S.No',
       'Tag ID',
       'Product Name',
       'Category',
-      'Total Recv',
-      'Issued',
-      'Sold',
-      'Stock Balance',
+      'Total Purchased',
+      'Issued Qty',
+      'Sold Qty',
+      'Balance Qty',
       'Unit',
-      'Sell Price (Rs.)',
-      'Stock Value (Rs.)',
+      'Sell Price (₹)',
+      'Stock Value (₹)',
       'Status',
     ];
 
@@ -1079,130 +1081,206 @@ class ExcelGenerator {
       cell.cellStyle.backColor = '#8B263E';
       cell.cellStyle.fontColor = '#FFFFFF';
       cell.cellStyle.hAlign =
-          (col == 0 || col == 1 || col >= 4 && col <= 8 || col == 11)
+          (col == 0 || col == 1 || col == 8 || col == 11)
               ? HAlignType.center
-              : (col == 9 || col == 10 ? HAlignType.right : HAlignType.left);
+              : (col >= 4 && col <= 7 || col >= 9 && col <= 10)
+                  ? HAlignType.right
+                  : HAlignType.left;
       cell.cellStyle.vAlign = VAlignType.center;
+      cell.cellStyle.borders.all.lineStyle = LineStyle.thin;
+      cell.cellStyle.borders.all.color = '#721E31';
     }
 
     int rowIndex = 4;
-    int totalBalance = 0;
-    double totalStockVal = 0.0;
+    int totalPurchasedSum = 0;
+    int totalIssuedSum = 0;
+    int totalSoldSum = 0;
+    int totalBalanceSum = 0;
+    double totalStockValSum = 0.0;
+
+    String currentCategory = '';
 
     for (int i = 0; i < rows.length; i++) {
       final r = rows[i];
+      final itemCat = (r['category']?.toString().trim().isNotEmpty ?? false)
+          ? r['category'].toString().trim()
+          : 'Uncategorized';
+
+      // Group separator row by Category
+      if (itemCat.toUpperCase() != currentCategory.toUpperCase()) {
+        currentCategory = itemCat;
+        final catBanner = sheet.getRangeByIndex(rowIndex, 1, rowIndex, 12);
+        catBanner.merge();
+        final countInCat = rows
+            .where((x) =>
+                (x['category']?.toString().trim().toUpperCase() ?? '') ==
+                currentCategory.toUpperCase())
+            .length;
+        catBanner.setText('❖ CATEGORY: ${currentCategory.toUpperCase()} ($countInCat Items)');
+        catBanner.cellStyle.bold = true;
+        catBanner.cellStyle.fontSize = 10;
+        catBanner.cellStyle.backColor = '#F0E5D8';
+        catBanner.cellStyle.fontColor = '#5A121A';
+        catBanner.cellStyle.vAlign = VAlignType.center;
+        catBanner.cellStyle.borders.all.lineStyle = LineStyle.thin;
+        catBanner.cellStyle.borders.all.color = '#D8C3B0';
+        rowIndex++;
+      }
+
       final pricingType = r['pricingType']?.toString() ?? 'Quantity-Based';
       final grossWeight = (r['grossWeight'] as num?)?.toDouble() ?? 0.0;
       final ratePerGram = (r['ratePerGram'] as num?)?.toDouble() ?? 0.0;
       final weightUnit = r['weightUnit']?.toString() ?? 'g';
 
-      final balance =
-          (r['balance'] as num?)?.toInt() ??
+      final balance = (r['balance'] as num?)?.toInt() ??
           (r['quantity'] as num?)?.toInt() ??
           0;
       final totalRec = (r['totalReceived'] as num?)?.toInt() ?? 0;
       final issue = (r['issueQty'] as num?)?.toInt() ?? 0;
       final sold = (r['soldQty'] as num?)?.toInt() ?? 0;
       final sp = (r['sellingPrice'] as num?)?.toDouble() ?? 0.0;
-      
-      final displaySp = pricingType == 'Weight-Based' ? ratePerGram : sp;
-      final stockVal = pricingType == 'Weight-Based' ? (grossWeight * ratePerGram) : (balance * sp);
 
-      totalBalance += balance;
-      totalStockVal += stockVal;
-      
+      final displaySp = pricingType == 'Weight-Based' ? ratePerGram : sp;
+      final stockVal = pricingType == 'Weight-Based'
+          ? (grossWeight * ratePerGram)
+          : (balance * sp);
+
+      totalPurchasedSum += totalRec;
+      totalIssuedSum += issue;
+      totalSoldSum += sold;
+      totalBalanceSum += balance;
+      totalStockValSum += stockVal;
+
       String balanceStr = balance.toString();
       if (pricingType == 'Weight-Based' && grossWeight > 0) {
         balanceStr = '${grossWeight.toStringAsFixed(2)}$weightUnit ($balance pc)';
       }
 
+      // S.No
       sheet.getRangeByIndex(rowIndex, 1).setNumber((i + 1).toDouble());
       sheet.getRangeByIndex(rowIndex, 1).cellStyle.hAlign = HAlignType.center;
 
-      sheet
-          .getRangeByIndex(rowIndex, 2)
-          .setText(r['tagId']?.toString() ?? '—');
+      // Tag ID
+      sheet.getRangeByIndex(rowIndex, 2).setText(r['tagId']?.toString() ?? '—');
       sheet.getRangeByIndex(rowIndex, 2).cellStyle.hAlign = HAlignType.center;
       sheet.getRangeByIndex(rowIndex, 2).cellStyle.bold = true;
 
-      sheet
-          .getRangeByIndex(rowIndex, 3)
-          .setText(r['name']?.toString() ?? '—');
+      // Name
+      sheet.getRangeByIndex(rowIndex, 3).setText(r['name']?.toString() ?? '—');
       sheet.getRangeByIndex(rowIndex, 3).cellStyle.hAlign = HAlignType.left;
 
-      sheet
-          .getRangeByIndex(rowIndex, 4)
-          .setText(r['category']?.toString() ?? '—');
+      // Category
+      sheet.getRangeByIndex(rowIndex, 4).setText(r['category']?.toString() ?? '—');
       sheet.getRangeByIndex(rowIndex, 4).cellStyle.hAlign = HAlignType.left;
 
+      // Total Purchased
       sheet.getRangeByIndex(rowIndex, 5).setNumber(totalRec.toDouble());
-      sheet.getRangeByIndex(rowIndex, 5).cellStyle.hAlign = HAlignType.center;
+      sheet.getRangeByIndex(rowIndex, 5).cellStyle.hAlign = HAlignType.right;
 
+      // Issued
       sheet.getRangeByIndex(rowIndex, 6).setNumber(issue.toDouble());
-      sheet.getRangeByIndex(rowIndex, 6).cellStyle.hAlign = HAlignType.center;
+      sheet.getRangeByIndex(rowIndex, 6).cellStyle.hAlign = HAlignType.right;
 
+      // Sold
       sheet.getRangeByIndex(rowIndex, 7).setNumber(sold.toDouble());
-      sheet.getRangeByIndex(rowIndex, 7).cellStyle.hAlign = HAlignType.center;
+      sheet.getRangeByIndex(rowIndex, 7).cellStyle.hAlign = HAlignType.right;
 
+      // Balance
       sheet.getRangeByIndex(rowIndex, 8).setText(balanceStr);
-      sheet.getRangeByIndex(rowIndex, 8).cellStyle.hAlign = HAlignType.center;
+      sheet.getRangeByIndex(rowIndex, 8).cellStyle.hAlign = HAlignType.right;
       sheet.getRangeByIndex(rowIndex, 8).cellStyle.bold = true;
 
-      sheet
-          .getRangeByIndex(rowIndex, 9)
-          .setText(r['unit']?.toString() ?? 'Piece');
+      // Unit
+      sheet.getRangeByIndex(rowIndex, 9).setText(r['unit']?.toString() ?? 'Piece');
       sheet.getRangeByIndex(rowIndex, 9).cellStyle.hAlign = HAlignType.center;
 
+      // Sell Price
       sheet.getRangeByIndex(rowIndex, 10).setNumber(displaySp);
+      sheet.getRangeByIndex(rowIndex, 10).numberFormat = '#,##0.00';
       sheet.getRangeByIndex(rowIndex, 10).cellStyle.hAlign = HAlignType.right;
 
+      // Stock Value
       sheet.getRangeByIndex(rowIndex, 11).setNumber(stockVal);
+      sheet.getRangeByIndex(rowIndex, 11).numberFormat = '#,##0.00';
       sheet.getRangeByIndex(rowIndex, 11).cellStyle.hAlign = HAlignType.right;
       sheet.getRangeByIndex(rowIndex, 11).cellStyle.bold = true;
 
-      sheet
-          .getRangeByIndex(rowIndex, 12)
-          .setText(r['status']?.toString() ?? 'In Stock');
+      // Status
+      sheet.getRangeByIndex(rowIndex, 12).setText(r['status']?.toString() ?? 'In Stock');
       sheet.getRangeByIndex(rowIndex, 12).cellStyle.hAlign = HAlignType.center;
 
+      for (int c = 1; c <= 12; c++) {
+        sheet.getRangeByIndex(rowIndex, c).cellStyle.borders.all.lineStyle = LineStyle.thin;
+        sheet.getRangeByIndex(rowIndex, c).cellStyle.borders.all.color = '#EADBCC';
+      }
+
       if (i % 2 == 1) {
-        sheet.getRangeByIndex(rowIndex, 1, rowIndex, 12).cellStyle.backColor =
-            '#FAF7F2';
+        sheet.getRangeByIndex(rowIndex, 1, rowIndex, 12).cellStyle.backColor = '#FAF7F2';
       }
       rowIndex++;
     }
 
-    // Total Row
-    final totalRange = sheet.getRangeByIndex(rowIndex, 1, rowIndex, 7);
+    // ── Summary Grand Total Row ───────────────────────────────────────
+    final totalRange = sheet.getRangeByIndex(rowIndex, 1, rowIndex, 4);
     totalRange.merge();
-    totalRange.setText('TOTAL');
+    totalRange.setText('GRAND TOTAL (${rows.length} ITEMS)');
     totalRange.cellStyle.bold = true;
+    totalRange.cellStyle.fontSize = 10;
     totalRange.cellStyle.hAlign = HAlignType.right;
+    totalRange.cellStyle.vAlign = VAlignType.center;
 
-    sheet.getRangeByIndex(rowIndex, 8).setNumber(totalBalance.toDouble());
+    sheet.getRangeByIndex(rowIndex, 5).setNumber(totalPurchasedSum.toDouble());
+    sheet.getRangeByIndex(rowIndex, 5).cellStyle.bold = true;
+    sheet.getRangeByIndex(rowIndex, 5).cellStyle.hAlign = HAlignType.right;
+
+    sheet.getRangeByIndex(rowIndex, 6).setNumber(totalIssuedSum.toDouble());
+    sheet.getRangeByIndex(rowIndex, 6).cellStyle.bold = true;
+    sheet.getRangeByIndex(rowIndex, 6).cellStyle.hAlign = HAlignType.right;
+
+    sheet.getRangeByIndex(rowIndex, 7).setNumber(totalSoldSum.toDouble());
+    sheet.getRangeByIndex(rowIndex, 7).cellStyle.bold = true;
+    sheet.getRangeByIndex(rowIndex, 7).cellStyle.hAlign = HAlignType.right;
+
+    sheet.getRangeByIndex(rowIndex, 8).setNumber(totalBalanceSum.toDouble());
     sheet.getRangeByIndex(rowIndex, 8).cellStyle.bold = true;
-    sheet.getRangeByIndex(rowIndex, 8).cellStyle.hAlign = HAlignType.center;
+    sheet.getRangeByIndex(rowIndex, 8).cellStyle.hAlign = HAlignType.right;
 
-    sheet.getRangeByIndex(rowIndex, 11).setNumber(totalStockVal);
+    sheet.getRangeByIndex(rowIndex, 9).setText('—');
+    sheet.getRangeByIndex(rowIndex, 9).cellStyle.hAlign = HAlignType.center;
+
+    sheet.getRangeByIndex(rowIndex, 10).setText('—');
+    sheet.getRangeByIndex(rowIndex, 10).cellStyle.hAlign = HAlignType.center;
+
+    sheet.getRangeByIndex(rowIndex, 11).setNumber(totalStockValSum);
+    sheet.getRangeByIndex(rowIndex, 11).numberFormat = '#,##0.00';
     sheet.getRangeByIndex(rowIndex, 11).cellStyle.bold = true;
     sheet.getRangeByIndex(rowIndex, 11).cellStyle.hAlign = HAlignType.right;
 
-    sheet.getRangeByIndex(rowIndex, 1, rowIndex, 12).cellStyle.backColor =
-        '#F0E5D8';
+    sheet.getRangeByIndex(rowIndex, 12).setText('—');
+    sheet.getRangeByIndex(rowIndex, 12).cellStyle.hAlign = HAlignType.center;
+
+    sheet.getRangeByIndex(rowIndex, 1, rowIndex, 12).cellStyle.backColor = '#F0E5D8';
+    sheet.getRangeByIndex(rowIndex, 1, rowIndex, 12).cellStyle.fontColor = '#5A121A';
+
+    for (int c = 1; c <= 12; c++) {
+      sheet.getRangeByIndex(rowIndex, c).cellStyle.borders.top.lineStyle = LineStyle.thin;
+      sheet.getRangeByIndex(rowIndex, c).cellStyle.borders.bottom.lineStyle = LineStyle.medium;
+      sheet.getRangeByIndex(rowIndex, c).cellStyle.borders.all.color = '#8B263E';
+    }
 
     // Widths
-    sheet.getRangeByIndex(1, 1).columnWidth = 6.0;
-    sheet.getRangeByIndex(1, 2).columnWidth = 14.0;
-    sheet.getRangeByIndex(1, 3).columnWidth = 24.0;
-    sheet.getRangeByIndex(1, 4).columnWidth = 16.0;
-    sheet.getRangeByIndex(1, 5).columnWidth = 12.0;
-    sheet.getRangeByIndex(1, 6).columnWidth = 10.0;
-    sheet.getRangeByIndex(1, 7).columnWidth = 10.0;
-    sheet.getRangeByIndex(1, 8).columnWidth = 14.0;
-    sheet.getRangeByIndex(1, 9).columnWidth = 10.0;
-    sheet.getRangeByIndex(1, 10).columnWidth = 14.0;
-    sheet.getRangeByIndex(1, 11).columnWidth = 16.0;
-    sheet.getRangeByIndex(1, 12).columnWidth = 12.0;
+    sheet.getRangeByIndex(1, 1).columnWidth = 6.0;   // S.No
+    sheet.getRangeByIndex(1, 2).columnWidth = 14.0;  // Tag ID
+    sheet.getRangeByIndex(1, 3).columnWidth = 28.0;  // Product Name
+    sheet.getRangeByIndex(1, 4).columnWidth = 18.0;  // Category
+    sheet.getRangeByIndex(1, 5).columnWidth = 14.0;  // Total Purchased
+    sheet.getRangeByIndex(1, 6).columnWidth = 12.0;  // Issued Qty
+    sheet.getRangeByIndex(1, 7).columnWidth = 12.0;  // Sold Qty
+    sheet.getRangeByIndex(1, 8).columnWidth = 14.0;  // Balance Qty
+    sheet.getRangeByIndex(1, 9).columnWidth = 10.0;  // Unit
+    sheet.getRangeByIndex(1, 10).columnWidth = 14.0; // Sell Price
+    sheet.getRangeByIndex(1, 11).columnWidth = 18.0; // Stock Value
+    sheet.getRangeByIndex(1, 12).columnWidth = 14.0; // Status
 
     final List<int> bytes = workbook.saveAsStream();
     workbook.dispose();
@@ -1210,7 +1288,7 @@ class ExcelGenerator {
     final dateStr = _fileDateFmt.format(DateTime.now());
     await downloadFile(
       bytes,
-      'stock_report_$dateStr.xlsx',
+      'Stock_Report_$dateStr.xlsx',
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     );
   }
@@ -1717,6 +1795,336 @@ class ExcelGenerator {
     await downloadFile(
       bytes,
       'inward_history_${safeTag}_$dateStr.xlsx',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
+  }
+
+  /// Generate & download Stock Ledger Excel matching user's custom template
+  /// Layout matches photo: Category, Product Name, Date, Price, Total Inward, Issue, Sales, Closing
+  static Future<void> downloadStockLedgerExcel({
+    required List<Map<String, dynamic>> rows,
+    String categoryFilter = 'All',
+    DateTime? dateFrom,
+    DateTime? dateTo,
+  }) async {
+    final Workbook workbook = Workbook();
+    final Worksheet sheet = workbook.worksheets[0];
+    sheet.name = 'Stock Ledger';
+
+    // ── Row 2: Top Group Headers ─────────────────────────────────────
+    // Particulars (over Product Name & Date)
+    final particularsRange = sheet.getRangeByName('C2:D2');
+    particularsRange.merge();
+    particularsRange.setText('Particulars');
+    particularsRange.cellStyle.bold = true;
+    particularsRange.cellStyle.fontSize = 10;
+    particularsRange.cellStyle.backColor = '#8EAADB';
+    particularsRange.cellStyle.fontColor = '#002060';
+    particularsRange.cellStyle.hAlign = HAlignType.center;
+    particularsRange.cellStyle.vAlign = VAlignType.center;
+
+    // Price top header
+    final priceTop = sheet.getRangeByName('E2');
+    priceTop.setText('PRICE');
+    priceTop.cellStyle.bold = true;
+    priceTop.cellStyle.fontSize = 10;
+    priceTop.cellStyle.backColor = '#8EAADB';
+    priceTop.cellStyle.fontColor = '#002060';
+    priceTop.cellStyle.hAlign = HAlignType.center;
+    priceTop.cellStyle.vAlign = VAlignType.center;
+
+    // Inward Units header
+    final inwardTop = sheet.getRangeByName('F2');
+    inwardTop.setText('Inward Units');
+    inwardTop.cellStyle.bold = true;
+    inwardTop.cellStyle.fontSize = 10;
+    inwardTop.cellStyle.backColor = '#8EAADB';
+    inwardTop.cellStyle.fontColor = '#002060';
+    inwardTop.cellStyle.hAlign = HAlignType.center;
+    inwardTop.cellStyle.vAlign = VAlignType.center;
+
+    // ISSUE header
+    final issueTop = sheet.getRangeByName('G2');
+    issueTop.setText('ISSUE');
+    issueTop.cellStyle.bold = true;
+    issueTop.cellStyle.fontSize = 10;
+    issueTop.cellStyle.backColor = '#8EAADB';
+    issueTop.cellStyle.fontColor = '#002060';
+    issueTop.cellStyle.hAlign = HAlignType.center;
+    issueTop.cellStyle.vAlign = VAlignType.center;
+
+    // Sales header
+    final salesTop = sheet.getRangeByName('H2');
+    salesTop.setText('Sales');
+    salesTop.cellStyle.bold = true;
+    salesTop.cellStyle.fontSize = 10;
+    salesTop.cellStyle.backColor = '#8EAADB';
+    salesTop.cellStyle.fontColor = '#002060';
+    salesTop.cellStyle.hAlign = HAlignType.center;
+    salesTop.cellStyle.vAlign = VAlignType.center;
+
+    // Closing header
+    final closingTop = sheet.getRangeByName('I2');
+    closingTop.setText('Closing');
+    closingTop.cellStyle.bold = true;
+    closingTop.cellStyle.fontSize = 10;
+    closingTop.cellStyle.backColor = '#8EAADB';
+    closingTop.cellStyle.fontColor = '#002060';
+    closingTop.cellStyle.hAlign = HAlignType.center;
+    closingTop.cellStyle.vAlign = VAlignType.center;
+
+    // Notice box on the top right (matching photo callout)
+    final noteRange = sheet.getRangeByName('K2:M3');
+    noteRange.merge();
+    noteRange.setText('TOTAL INWARD = ALL INWARDS IN THIS PRODUCT NAME');
+    noteRange.cellStyle.bold = true;
+    noteRange.cellStyle.fontSize = 9;
+    noteRange.cellStyle.backColor = '#D9E1F2';
+    noteRange.cellStyle.fontColor = '#1F3864';
+    noteRange.cellStyle.hAlign = HAlignType.center;
+    noteRange.cellStyle.vAlign = VAlignType.center;
+    noteRange.cellStyle.borders.all.lineStyle = LineStyle.thin;
+    noteRange.cellStyle.borders.all.color = '#8EAADB';
+
+    // ── Row 3: Sub Headers ───────────────────────────────────────────
+    final subHeaders = [
+      {'col': 2, 'text': 'CATEGORY', 'name': 'B3'},
+      {'col': 3, 'text': 'PRODUCT NAME', 'name': 'C3'},
+      {'col': 4, 'text': 'DATE', 'name': 'D3'},
+      {'col': 5, 'text': 'PRICE', 'name': 'E3'},
+      {'col': 6, 'text': 'TOTAL INWARD', 'name': 'F3'},
+      {'col': 7, 'text': 'ISSUE', 'name': 'G3'},
+      {'col': 8, 'text': 'Sales', 'name': 'H3'},
+      {'col': 9, 'text': 'Closing', 'name': 'I3'},
+    ];
+
+    for (final sh in subHeaders) {
+      final cell = sheet.getRangeByIndex(3, sh['col'] as int);
+      cell.setText(sh['text'] as String);
+      cell.cellStyle.bold = true;
+      cell.cellStyle.fontSize = 9;
+      cell.cellStyle.backColor = '#D9E1F2';
+      cell.cellStyle.fontColor = '#002060';
+      cell.cellStyle.hAlign = (sh['col'] == 2 || sh['col'] == 3) ? HAlignType.left : HAlignType.center;
+      cell.cellStyle.vAlign = VAlignType.center;
+      cell.cellStyle.borders.all.lineStyle = LineStyle.thin;
+      cell.cellStyle.borders.all.color = '#8EAADB';
+    }
+
+    // Set borders on Row 2 headers
+    for (int col = 3; col <= 9; col++) {
+      sheet.getRangeByIndex(2, col).cellStyle.borders.all.lineStyle = LineStyle.thin;
+      sheet.getRangeByIndex(2, col).cellStyle.borders.all.color = '#8EAADB';
+    }
+
+    // ── Data Rows ───────────────────────────────────────────────────
+    int rowIndex = 4;
+    String lastCategory = '';
+    double sumInward = 0.0;
+    double sumIssue = 0.0;
+    double sumSales = 0.0;
+    double sumClosing = 0.0;
+
+    for (final r in rows) {
+      final category = (r['category']?.toString().trim().isNotEmpty ?? false)
+          ? r['category'].toString().trim()
+          : 'Uncategorized';
+      final name = r['name']?.toString() ?? '';
+      final rawDate = r['date'];
+      final date = rawDate is DateTime
+          ? rawDate
+          : (DateTime.tryParse(rawDate?.toString() ?? '') ?? DateTime.now());
+      final dateStr = _fmt.format(date);
+      final price = (r['price'] as num?)?.toDouble() ?? 0.0;
+      final inwardQty = (r['inwardQty'] as num?)?.toDouble() ?? 0.0;
+      final unit = r['unit']?.toString() ?? 'Nos';
+      final isWeight = r['isWeight'] == true;
+      final issueQty = (r['issueQty'] as num?)?.toDouble() ?? 0.0;
+      final soldQty = (r['soldQty'] as num?)?.toDouble() ?? 0.0;
+      final closingQty = (r['closingQty'] as num?)?.toDouble() ?? 0.0;
+
+      sumInward += inwardQty;
+      sumIssue += issueQty;
+      sumSales += soldQty;
+      sumClosing += closingQty;
+
+      // Col B: Category (only shown on the first row of each category group)
+      final cellCat = sheet.getRangeByIndex(rowIndex, 2);
+      if (category != lastCategory) {
+        cellCat.setText(category);
+        cellCat.cellStyle.bold = true;
+        cellCat.cellStyle.fontColor = '#002060';
+        lastCategory = category;
+      } else {
+        cellCat.setText('');
+      }
+      cellCat.cellStyle.vAlign = VAlignType.center;
+      cellCat.cellStyle.borders.all.lineStyle = LineStyle.thin;
+      cellCat.cellStyle.borders.all.color = '#E0E7F1';
+
+      // Col C: Product Name
+      final cellName = sheet.getRangeByIndex(rowIndex, 3);
+      cellName.setText(name);
+      cellName.cellStyle.bold = true;
+      cellName.cellStyle.vAlign = VAlignType.center;
+      cellName.cellStyle.borders.all.lineStyle = LineStyle.thin;
+      cellName.cellStyle.borders.all.color = '#E0E7F1';
+
+      // Col D: Date
+      final cellDate = sheet.getRangeByIndex(rowIndex, 4);
+      cellDate.setText(dateStr);
+      cellDate.cellStyle.hAlign = HAlignType.center;
+      cellDate.cellStyle.vAlign = VAlignType.center;
+      cellDate.cellStyle.borders.all.lineStyle = LineStyle.thin;
+      cellDate.cellStyle.borders.all.color = '#E0E7F1';
+
+      // Col E: Price
+      final cellPrice = sheet.getRangeByIndex(rowIndex, 5);
+      if (price > 0) {
+        cellPrice.setNumber(price);
+        cellPrice.numberFormat = '#,##0.00';
+      } else {
+        cellPrice.setText('');
+      }
+      cellPrice.cellStyle.hAlign = HAlignType.right;
+      cellPrice.cellStyle.vAlign = VAlignType.center;
+      cellPrice.cellStyle.borders.all.lineStyle = LineStyle.thin;
+      cellPrice.cellStyle.borders.all.color = '#E0E7F1';
+
+      // Col F: Total Inward (e.g. 3 Nos, 196.00 Gram)
+      final cellInward = sheet.getRangeByIndex(rowIndex, 6);
+      final displayUnit = unit.isNotEmpty ? unit : (isWeight ? 'Gram' : 'Nos');
+      final inwardFormatted = isWeight
+          ? inwardQty.toStringAsFixed(2)
+          : (inwardQty % 1 == 0 ? inwardQty.toInt().toString() : inwardQty.toStringAsFixed(2));
+      cellInward.setText('$inwardFormatted $displayUnit');
+      cellInward.cellStyle.hAlign = HAlignType.right;
+      cellInward.cellStyle.vAlign = VAlignType.center;
+      cellInward.cellStyle.borders.all.lineStyle = LineStyle.thin;
+      cellInward.cellStyle.borders.all.color = '#E0E7F1';
+
+      // Col G: Issue
+      final cellIssue = sheet.getRangeByIndex(rowIndex, 7);
+      if (issueQty > 0) {
+        cellIssue.setNumber(issueQty);
+        cellIssue.numberFormat = isWeight ? '0.00' : (issueQty % 1 == 0 ? '0' : '0.00');
+      } else {
+        cellIssue.setText('');
+      }
+      cellIssue.cellStyle.hAlign = HAlignType.center;
+      cellIssue.cellStyle.vAlign = VAlignType.center;
+      cellIssue.cellStyle.borders.all.lineStyle = LineStyle.thin;
+      cellIssue.cellStyle.borders.all.color = '#E0E7F1';
+
+      // Col H: Sales
+      final cellSales = sheet.getRangeByIndex(rowIndex, 8);
+      if (soldQty > 0) {
+        cellSales.setNumber(soldQty);
+        cellSales.numberFormat = isWeight ? '0.00' : (soldQty % 1 == 0 ? '0' : '0.00');
+      } else {
+        cellSales.setText('');
+      }
+      cellSales.cellStyle.hAlign = HAlignType.center;
+      cellSales.cellStyle.vAlign = VAlignType.center;
+      cellSales.cellStyle.borders.all.lineStyle = LineStyle.thin;
+      cellSales.cellStyle.borders.all.color = '#E0E7F1';
+
+      // Col I: Closing
+      final cellClosing = sheet.getRangeByIndex(rowIndex, 9);
+      cellClosing.setNumber(closingQty);
+      cellClosing.numberFormat = isWeight ? '0.00' : (closingQty % 1 == 0 ? '0' : '0.00');
+      cellClosing.cellStyle.bold = true;
+      cellClosing.cellStyle.hAlign = HAlignType.center;
+      cellClosing.cellStyle.vAlign = VAlignType.center;
+      cellClosing.cellStyle.borders.all.lineStyle = LineStyle.thin;
+      cellClosing.cellStyle.borders.all.color = '#E0E7F1';
+
+      rowIndex++;
+    }
+
+    // ── Summary Grand Total Row ───────────────────────────────────────
+    final totalLabel = sheet.getRangeByIndex(rowIndex, 2, rowIndex, 5);
+    totalLabel.merge();
+    totalLabel.setText('TOTAL');
+    totalLabel.cellStyle.bold = true;
+    totalLabel.cellStyle.fontSize = 10;
+    totalLabel.cellStyle.backColor = '#D9E1F2';
+    totalLabel.cellStyle.fontColor = '#002060';
+    totalLabel.cellStyle.hAlign = HAlignType.right;
+    totalLabel.cellStyle.vAlign = VAlignType.center;
+
+    final cellTotInward = sheet.getRangeByIndex(rowIndex, 6);
+    cellTotInward.setNumber(sumInward);
+    cellTotInward.numberFormat = sumInward % 1 == 0 ? '#,##0' : '#,##0.00';
+    cellTotInward.cellStyle.bold = true;
+    cellTotInward.cellStyle.backColor = '#D9E1F2';
+    cellTotInward.cellStyle.fontColor = '#002060';
+    cellTotInward.cellStyle.hAlign = HAlignType.right;
+    cellTotInward.cellStyle.vAlign = VAlignType.center;
+
+    final cellTotIssue = sheet.getRangeByIndex(rowIndex, 7);
+    if (sumIssue > 0) {
+      cellTotIssue.setNumber(sumIssue);
+      cellTotIssue.numberFormat = sumIssue % 1 == 0 ? '#,##0' : '#,##0.00';
+    } else {
+      cellTotIssue.setText('-');
+    }
+    cellTotIssue.cellStyle.bold = true;
+    cellTotIssue.cellStyle.backColor = '#D9E1F2';
+    cellTotIssue.cellStyle.fontColor = '#002060';
+    cellTotIssue.cellStyle.hAlign = HAlignType.center;
+    cellTotIssue.cellStyle.vAlign = VAlignType.center;
+
+    final cellTotSales = sheet.getRangeByIndex(rowIndex, 8);
+    if (sumSales > 0) {
+      cellTotSales.setNumber(sumSales);
+      cellTotSales.numberFormat = sumSales % 1 == 0 ? '#,##0' : '#,##0.00';
+    } else {
+      cellTotSales.setText('-');
+    }
+    cellTotSales.cellStyle.bold = true;
+    cellTotSales.cellStyle.backColor = '#D9E1F2';
+    cellTotSales.cellStyle.fontColor = '#002060';
+    cellTotSales.cellStyle.hAlign = HAlignType.center;
+    cellTotSales.cellStyle.vAlign = VAlignType.center;
+
+    final cellTotClosing = sheet.getRangeByIndex(rowIndex, 9);
+    cellTotClosing.setNumber(sumClosing);
+    cellTotClosing.numberFormat = sumClosing % 1 == 0 ? '#,##0' : '#,##0.00';
+    cellTotClosing.cellStyle.bold = true;
+    cellTotClosing.cellStyle.backColor = '#D9E1F2';
+    cellTotClosing.cellStyle.fontColor = '#002060';
+    cellTotClosing.cellStyle.hAlign = HAlignType.center;
+    cellTotClosing.cellStyle.vAlign = VAlignType.center;
+
+    for (int col = 2; col <= 9; col++) {
+      sheet.getRangeByIndex(rowIndex, col).cellStyle.borders.top.lineStyle = LineStyle.thin;
+      sheet.getRangeByIndex(rowIndex, col).cellStyle.borders.bottom.lineStyle = LineStyle.medium;
+      sheet.getRangeByIndex(rowIndex, col).cellStyle.borders.all.color = '#8EAADB';
+    }
+
+    // Set Column Widths
+    sheet.getRangeByIndex(1, 1).columnWidth = 3.0;   // A
+    sheet.getRangeByIndex(1, 2).columnWidth = 26.0;  // B: CATEGORY
+    sheet.getRangeByIndex(1, 3).columnWidth = 36.0;  // C: PRODUCT NAME
+    sheet.getRangeByIndex(1, 4).columnWidth = 14.0;  // D: DATE
+    sheet.getRangeByIndex(1, 5).columnWidth = 13.0;  // E: PRICE
+    sheet.getRangeByIndex(1, 6).columnWidth = 18.0;  // F: TOTAL INWARD
+    sheet.getRangeByIndex(1, 7).columnWidth = 12.0;  // G: ISSUE
+    sheet.getRangeByIndex(1, 8).columnWidth = 12.0;  // H: Sales
+    sheet.getRangeByIndex(1, 9).columnWidth = 14.0;  // I: Closing
+    sheet.getRangeByIndex(1, 10).columnWidth = 4.0;  // J
+    sheet.getRangeByIndex(1, 11).columnWidth = 16.0; // K
+    sheet.getRangeByIndex(1, 12).columnWidth = 16.0; // L
+    sheet.getRangeByIndex(1, 13).columnWidth = 16.0; // M
+
+    final List<int> bytes = workbook.saveAsStream();
+    workbook.dispose();
+
+    final dateStr = _fileDateFmt.format(DateTime.now());
+    await downloadFile(
+      bytes,
+      'Stock_Ledger_$dateStr.xlsx',
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     );
   }

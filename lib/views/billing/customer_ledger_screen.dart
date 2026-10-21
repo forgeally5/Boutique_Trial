@@ -171,6 +171,16 @@ class _CustomerLedgerScreenState extends State<CustomerLedgerScreen> {
     return receipts;
   }
 
+  Future<void> _handleRefresh() async {
+    _searchCtrl.clear();
+    setState(() {
+      _searchQuery = '';
+      _selectedCustomerKey = null;
+      _highlightedIndex = -1;
+    });
+    await _fetchPendingBills();
+  }
+
   Future<void> _fetchPendingBills() async {
     setState(() => _isLoading = true);
     try {
@@ -413,7 +423,7 @@ class _CustomerLedgerScreenState extends State<CustomerLedgerScreen> {
                     Tooltip(
                       message: 'Refresh Ledger',
                       child: OutlinedButton.icon(
-                        onPressed: _fetchPendingBills,
+                        onPressed: _handleRefresh,
                         icon: const Icon(
                           Icons.refresh_rounded,
                           color: BoutiqueColors.accent,

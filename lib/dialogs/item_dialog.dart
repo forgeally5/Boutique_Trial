@@ -484,22 +484,35 @@ class _ItemDialogState extends State<ItemDialog> {
         }
       } else {
         await widget.adminState.updateProduct(product);
-        if (effectiveAddedQty > 0 || effectiveAddedWeight > 0) {
+        final bool priceChanged = widget.initialProduct != null &&
+            (widget.initialProduct!.sellingPrice != product.sellingPrice ||
+             widget.initialProduct!.ratePerGram != product.ratePerGram ||
+             widget.initialProduct!.mrp != product.mrp ||
+             widget.initialProduct!.finalPrice != product.finalPrice);
+
+        if (effectiveAddedQty > 0 || effectiveAddedWeight > 0 || priceChanged) {
           try {
             final now = DateTime.now();
             final itemMap = ApiService().createInwardItemMap(
               product: product,
-              addedQty: effectiveAddedQty,
-              addedWeight: effectiveAddedWeight,
+              addedQty: effectiveAddedQty > 0 ? effectiveAddedQty : newQty,
+              addedWeight: effectiveAddedWeight > 0 ? effectiveAddedWeight : newGrossWeight,
               oldQty: initialProductQty,
               newQty: newQty,
               oldWeight: initialProductWeight,
               newWeight: newGrossWeight,
               addedDate: now,
             );
+            final oldRate = widget.initialProduct != null
+                ? (widget.initialProduct!.sellingPrice > 0 ? widget.initialProduct!.sellingPrice : widget.initialProduct!.ratePerGram)
+                : 0.0;
+            final newRate = product.sellingPrice > 0 ? product.sellingPrice : product.ratePerGram;
+            final narrationText = (effectiveAddedQty == 0 && effectiveAddedWeight == 0 && priceChanged)
+                ? 'Price Update (₹${oldRate.toStringAsFixed(0)} -> ₹${newRate.toStringAsFixed(0)})'
+                : 'Stock Update / Inward';
             await ApiService().recordInwardBill(
               items: [itemMap],
-              narration: 'Stock Update / Inward',
+              narration: narrationText,
               date: now,
             );
           } catch (e) {

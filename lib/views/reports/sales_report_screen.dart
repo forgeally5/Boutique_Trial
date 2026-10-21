@@ -454,6 +454,21 @@ class _IndividualSalesTabState extends State<_IndividualSalesTab> {
     }
   }
 
+  Future<void> _refresh() async {
+    final now = DateTime.now();
+    final fyStart = now.month >= 4
+        ? DateTime(now.year, 4, 1)
+        : DateTime(now.year - 1, 4, 1);
+    _searchCtrl.clear();
+    setState(() {
+      _dateFrom = fyStart;
+      _dateTo = now;
+      _categoryFilter = 'All';
+      _paymentFilter = 'All';
+    });
+    await _load();
+  }
+
   void _applyFilters() {
     final q = _searchCtrl.text.trim().toLowerCase();
     setState(() {
@@ -626,7 +641,7 @@ class _IndividualSalesTabState extends State<_IndividualSalesTab> {
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     ),
-                    onPressed: _load,
+                    onPressed: _refresh,
                   ),
                 ),
                 IconButton(
@@ -1003,6 +1018,20 @@ class _TotalSalesTabState extends State<_TotalSalesTab> {
     }
   }
 
+  Future<void> _refresh() async {
+    final now = DateTime.now();
+    final fyStart = now.month >= 4
+        ? DateTime(now.year, 4, 1)
+        : DateTime(now.year - 1, 4, 1);
+    _searchCtrl.clear();
+    setState(() {
+      _dateFrom = fyStart;
+      _dateTo = now;
+      _paymentFilter = 'All';
+    });
+    await _load();
+  }
+
   void _applyFilters() {
     final q = _searchCtrl.text.trim().toLowerCase();
     setState(() {
@@ -1170,7 +1199,7 @@ class _TotalSalesTabState extends State<_TotalSalesTab> {
                     child: IconButton(
                       icon: const Icon(Icons.refresh_rounded,
                           color: BoutiqueColors.accent),
-                      onPressed: _load,
+                      onPressed: _refresh,
                       tooltip: 'Refresh',
                     ),
                   ),
@@ -1613,6 +1642,21 @@ class _ProductWiseSalesTabState extends State<_ProductWiseSalesTab> {
     }
   }
 
+  Future<void> _refresh() async {
+    final now = DateTime.now();
+    final fyStart = now.month >= 4
+        ? DateTime(now.year, 4, 1)
+        : DateTime(now.year - 1, 4, 1);
+    _searchCtrl.clear();
+    setState(() {
+      _dateFrom = fyStart;
+      _dateTo = now;
+      _categoryFilter = 'All';
+      _paymentFilter = 'All';
+    });
+    await _load();
+  }
+
   void _applyFilters() {
     final q = _searchCtrl.text.trim().toLowerCase();
     
@@ -1877,7 +1921,7 @@ class _ProductWiseSalesTabState extends State<_ProductWiseSalesTab> {
                     child: IconButton(
                       icon: const Icon(Icons.refresh_rounded,
                           color: BoutiqueColors.accent),
-                      onPressed: _load,
+                      onPressed: _refresh,
                       tooltip: 'Refresh',
                     ),
                   ),

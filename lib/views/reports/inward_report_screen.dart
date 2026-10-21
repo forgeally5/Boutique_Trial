@@ -40,7 +40,20 @@ class InwardReportScreenState extends State<InwardReportScreen> {
   final FocusNode _tableFocusNode = FocusNode(debugLabel: 'inward_table_focus');
   final ScrollController _tableScrollCtrl = ScrollController();
 
-  Future<void> refresh() async => _fetchInwardTransactions();
+  Future<void> refresh() async {
+    final now = DateTime.now();
+    final fyStart = now.month >= 4
+        ? DateTime(now.year, 4, 1)
+        : DateTime(now.year - 1, 4, 1);
+    _searchCtrl.clear();
+    setState(() {
+      _searchQuery = '';
+      _startDate = fyStart;
+      _endDate = now;
+      _selectedRowIndex = -1;
+    });
+    await _fetchInwardTransactions();
+  }
 
   @override
   void initState() {
@@ -1094,7 +1107,7 @@ class InwardReportScreenState extends State<InwardReportScreen> {
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                       ),
-                      onPressed: _fetchInwardTransactions,
+                      onPressed: refresh,
                     ),
                   ),
                 ),

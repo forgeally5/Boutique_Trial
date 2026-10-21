@@ -52,6 +52,19 @@ class _VendorIssueTabState extends State<VendorIssueTab> {
     super.dispose();
   }
 
+  Future<void> _refresh() async {
+    final now = DateTime.now();
+    final fyStart = now.month >= 4 ? DateTime(now.year, 4, 1) : DateTime(now.year - 1, 4, 1);
+    _searchCtrl.clear();
+    setState(() {
+      _dateFrom = fyStart;
+      _dateTo = now;
+      _issueTypeFilter = 'All';
+      _actionFilter = 'All';
+    });
+    await _load();
+  }
+
   Future<void> _load() async {
     setState(() => _loading = true);
     try {
@@ -255,7 +268,7 @@ class _VendorIssueTabState extends State<VendorIssueTab> {
                 if (!context.mounted) return;
                 BoutiqueToast.showSuccess(context, 'Issue Report (.xlsx) downloaded!');
               }, 'Download Excel (.xlsx)'),
-              _iconBtn(Icons.refresh_rounded, BoutiqueColors.accent, _load, 'Refresh'),
+              _iconBtn(Icons.refresh_rounded, BoutiqueColors.accent, _refresh, 'Refresh'),
             ],
           ),
         ),

@@ -87,6 +87,20 @@ class _IssueReportScreenState extends State<IssueReportScreen> {
   }
 
   // ── Data Loading ───────────────────────────────────────────────────────────
+  Future<void> _refresh() async {
+    final now = DateTime.now();
+    final fyStart = now.month >= 4
+        ? DateTime(now.year, 4, 1)
+        : DateTime(now.year - 1, 4, 1);
+    _searchCtrl.clear();
+    setState(() {
+      _dateFrom = fyStart;
+      _dateTo = now;
+      _typeFilter = 'All';
+    });
+    await _load();
+  }
+
   Future<void> _load() async {
     setState(() => _loading = true);
     try {
@@ -500,7 +514,7 @@ class _IssueReportScreenState extends State<IssueReportScreen> {
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 ),
-                onPressed: _load,
+                onPressed: _refresh,
               ),
             ),
           ),
