@@ -835,6 +835,7 @@ class _ItemDialogState extends State<ItemDialog> {
                                 error: _quantityError(),
                                 hint: '0',
                                 onChanged: (_) => setState(() => _quantityTouched = true),
+                                focusOrder: 6,
                               ),
                             ),
                             if (widget.initialProduct != null) ...[
@@ -901,7 +902,7 @@ class _ItemDialogState extends State<ItemDialog> {
                               children: [
                                 Expanded(
                                   child: FocusTraversalOrder(
-                                    order: const NumericFocusOrder(1),
+                                    order: const NumericFocusOrder(7.2),
                                     child: Focus(
                                       onKeyEvent: (node, event) {
                                         if (event is KeyDownEvent && (event.logicalKey == LogicalKeyboardKey.enter || event.logicalKey == LogicalKeyboardKey.space)) {
@@ -927,7 +928,7 @@ class _ItemDialogState extends State<ItemDialog> {
                                 ),
                                 Expanded(
                                   child: FocusTraversalOrder(
-                                    order: const NumericFocusOrder(2),
+                                    order: const NumericFocusOrder(7.3),
                                     child: Focus(
                                       onKeyEvent: (node, event) {
                                         if (event is KeyDownEvent && (event.logicalKey == LogicalKeyboardKey.enter || event.logicalKey == LogicalKeyboardKey.space)) {
@@ -966,12 +967,12 @@ class _ItemDialogState extends State<ItemDialog> {
                                   controller: _gstRateCtrl,
                                   isNum: true,
                                   hint: '0',
-                                  focusOrder: 9,
+                                  focusOrder: 7.4,
                                 ),
                               ),
                               const SizedBox(width: 4),
                               FocusTraversalOrder(
-                                order: const NumericFocusOrder(10),
+                                order: const NumericFocusOrder(7.5),
                                 child: PopupMenuButton<String>(
                                   icon: const Icon(Icons.arrow_drop_down, color: _brown),
                                   tooltip: 'Common GST Rates',
