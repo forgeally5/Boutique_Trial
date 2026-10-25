@@ -595,9 +595,9 @@ class _IssueReportScreenState extends State<IssueReportScreen> {
   Widget _tableHeader() {
     const cols = [
       'Date', 'Party/Customer', 'Contact', 'Product',
-      'Qty', 'Issue / Reason', 'Refund (₹)', 'Status', 'Actions'
+      'Qty', 'Issue / Reason', 'Refund (₹)', 'Actions'
     ];
-    const flexes = [2, 3, 2, 4, 1, 3, 2, 2, 3];
+    const flexes = [2, 3, 2, 4, 1, 3, 2, 3];
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       decoration: const BoxDecoration(
@@ -625,31 +625,6 @@ class _IssueReportScreenState extends State<IssueReportScreen> {
   Widget _tableRow(Map<String, dynamic> r, int i) {
     final isAlt = i.isOdd;
     final isVendor = r['_type'] == 'Vendor Issue';
-    final action = r['status']?.toString() ?? '—';
-
-    // Status badge colours
-    Color statusColor;
-    Color statusBg;
-    if (isVendor) {
-      if (action == 'Replacement Received' || action == 'Refund Received') {
-        statusColor = BoutiqueColors.success;
-        statusBg = BoutiqueColors.successBg;
-      } else if (action == 'Discarded') {
-        statusColor = BoutiqueColors.destructive;
-        statusBg = const Color(0xFFFFEBEE);
-      } else {
-        statusColor = BoutiqueColors.warning;
-        statusBg = BoutiqueColors.warningBg;
-      }
-    } else {
-      // Customer Return
-      statusColor = action == 'Processed'
-          ? BoutiqueColors.success
-          : BoutiqueColors.warning;
-      statusBg = action == 'Processed'
-          ? BoutiqueColors.successBg
-          : BoutiqueColors.warningBg;
-    }
 
     return Container(
       color: isAlt ? BoutiqueColors.bgSubtle : BoutiqueColors.bgCard,
@@ -680,28 +655,6 @@ class _IssueReportScreenState extends State<IssueReportScreen> {
             child: _cell(
                 '₹${_numFmt.format((r['refundAmount'] as num?)?.toDouble() ?? 0)}',
                 bold: true),
-          ),
-          // Status badge
-          Expanded(
-            flex: 2,
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                    color: statusBg,
-                    borderRadius: BorderRadius.circular(6)),
-                child: Text(
-                  action,
-                  style: TextStyle(
-                      fontSize: 10,
-                      color: statusColor,
-                      fontWeight: FontWeight.bold),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            ),
           ),
           // Action (download & edit)
           Expanded(

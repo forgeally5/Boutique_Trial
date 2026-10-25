@@ -72,26 +72,36 @@ class BoutiquePdfGenerator {
     final customerMobile = bill['customerMobile']?.toString().trim() ?? '';
     final customerAddress = bill['customerAddress']?.toString().trim() ?? '';
     
+    final isReturn = billType == 'Return' || billType == 'Customer Return';
+    
     final rawItems = (bill['items'] as List<dynamic>?) ?? [];
     final items = List<dynamic>.from(rawItems);
     
-    var subtotal = (bill['subtotal'] as num?)?.toDouble() ?? 0.0;
+    var subtotal = (bill['subtotal'] as num?)?.toDouble() ?? (bill['sub_total'] as num?)?.toDouble() ?? 0.0;
     var discAmt = (bill['extraDiscountAmount'] as num?)?.toDouble() ?? 0.0;
     var taxAmt = (bill['taxAmount'] as num?)?.toDouble() ?? 0.0;
-    var total = (bill['totalPayable'] as num?)?.toDouble() ?? 0.0;
+    var total = (bill['totalPayable'] as num?)?.toDouble() ?? (bill['total_payable'] as num?)?.toDouble() ?? 0.0;
     final adjustment = (bill['adjustment'] as num?)?.toDouble() ?? 0.0;
 
-    // Fallback if total or subtotal is 0 but items have amounts
-    if (total == 0 && items.isNotEmpty) {
-      double itemsTotal = 0.0;
-      for (final it in items) {
-        final p = (it['price'] as num?)?.toDouble() ?? (it['rate'] as num?)?.toDouble() ?? 0.0;
-        final q = (it['qty'] as num?)?.toDouble() ?? 1.0;
-        final w = (it['weight'] as num?)?.toDouble() ?? 0.0;
-        var a = (it['lineAmount'] as num?)?.toDouble() ?? (it['amount'] as num?)?.toDouble() ?? 0.0;
-        if (a <= 0 && p > 0) a = w > 0 ? (p * w) : (p * q);
-        itemsTotal += a;
+    double itemsTotal = 0.0;
+    for (final it in items) {
+      final p = (it['price'] as num?)?.toDouble() ??
+          (it['unitPrice'] as num?)?.toDouble() ??
+          (it['rate'] as num?)?.toDouble() ??
+          0.0;
+      final q = (it['qty'] as num?)?.toDouble() ?? (it['quantity'] as num?)?.toDouble() ?? 1.0;
+      final w = (it['weight'] as num?)?.toDouble() ?? 0.0;
+      var a = (it['lineAmount'] as num?)?.toDouble() ?? (it['amount'] as num?)?.toDouble() ?? 0.0;
+      if (a <= 0 && p > 0) a = w > 0 ? (p * w) : (p * q);
+      itemsTotal += a;
+    }
+
+    if (isReturn) {
+      if (itemsTotal > 0) {
+        subtotal = itemsTotal;
+        total = itemsTotal;
       }
+    } else if (total == 0 && items.isNotEmpty) {
       total = itemsTotal;
       if (subtotal == 0) subtotal = itemsTotal;
     } else if (subtotal == 0 && total > 0) {
@@ -122,7 +132,7 @@ class BoutiquePdfGenerator {
       taxAmt = 0.0;
     }
 
-    final amountReceived = (bill['amountReceived'] as num?)?.toDouble() ?? total;
+    final amountReceived = isReturn ? total : ((bill['amountReceived'] as num?)?.toDouble() ?? total);
     final pendingBalance = (bill['pendingBalance'] as num?)?.toDouble() ??
         (total - amountReceived).clamp(0.0, double.infinity);
     final rawPayments = (bill['payments'] as List<dynamic>?) ?? [];
@@ -302,17 +312,23 @@ class BoutiquePdfGenerator {
                       final itemName = r['name']?.toString() ?? r['productName']?.toString() ?? '';
                       final tagId = r['tagId']?.toString() ?? '';
                       final displayName = tagId.isNotEmpty && !itemName.contains(tagId) ? '$itemName ($tagId)' : itemName;
-                      final qty = (r['qty'] as num?)?.toDouble() ?? 1.0;
-                      final price = (r['price'] as num?)?.toDouble() ?? (r['rate'] as num?)?.toDouble() ?? 0.0;
+                      final qty = (r['qty'] as num?)?.toDouble() ?? (r['quantity'] as num?)?.toDouble() ?? 1.0;
                       final weight = (r['weight'] as num?)?.toDouble() ?? 0.0;
                       final isWeight = r['pricingType'] == 'Weight-Based' || weight > 0;
                       final weightUnit = AdminState.resolveWeightUnit(r);
                       final pieceUnit = (r['unit']?.toString().isNotEmpty == true && r['unit'].toString().toLowerCase() != weightUnit.toLowerCase()) ? r['unit'].toString() : 'pc';
                       final weightStr = weight.toStringAsFixed(weight.truncateToDouble() == weight ? 0 : 2);
                       var lineAmt = (r['lineAmount'] as num?)?.toDouble() ?? (r['amount'] as num?)?.toDouble() ?? 0.0;
-                      if (lineAmt <= 0 && price > 0) {
-                        lineAmt = isWeight && weight > 0 ? (price * weight) : (price * qty);
+                      final rawPrice = (r['price'] as num?)?.toDouble() ??
+                          (r['unitPrice'] as num?)?.toDouble() ??
+                          (r['rate'] as num?)?.toDouble() ??
+                          0.0;
+                      if (lineAmt <= 0 && rawPrice > 0) {
+                        lineAmt = isWeight && weight > 0 ? (rawPrice * weight) : (rawPrice * qty);
                       }
+                      final price = rawPrice > 0
+                          ? rawPrice
+                          : (isWeight && weight > 0 ? (lineAmt / weight) : (qty > 0 ? (lineAmt / qty) : 0.0));
 
                       final priceDisplay = isWeight ? '${price.toStringAsFixed(2)}/$weightUnit' : price.toStringAsFixed(2);
                       final qtyDisplay = isWeight
@@ -442,8 +458,8 @@ class BoutiquePdfGenerator {
                             pw.Row(
                               mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                               children: [
-                                pw.Text('RECEIVED', style: pw.TextStyle(fontSize: 7.5, color: textLight, fontWeight: pw.FontWeight.bold, letterSpacing: 0.8)),
-                                underlineText(amountReceived.toStringAsFixed(2)),
+                                pw.Text(isReturn ? 'REFUNDED' : 'RECEIVED', style: pw.TextStyle(fontSize: 7.5, color: textLight, fontWeight: pw.FontWeight.bold, letterSpacing: 0.8)),
+                                underlineText((isReturn ? total : amountReceived).toStringAsFixed(2)),
                               ],
                             ),
                             pw.SizedBox(height: 6),
@@ -454,7 +470,7 @@ class BoutiquePdfGenerator {
                                   'DUE AMOUNT',
                                   style: pw.TextStyle(
                                     fontSize: 8.5,
-                                    color: pendingBalance > 0 ? maroon : textLight,
+                                    color: (!isReturn && pendingBalance > 0) ? maroon : textLight,
                                     fontWeight: pw.FontWeight.bold,
                                     letterSpacing: 0.8,
                                   ),
@@ -465,11 +481,11 @@ class BoutiquePdfGenerator {
                                     border: pw.Border(bottom: pw.BorderSide(color: goldLine, width: 0.5)),
                                   ),
                                   child: pw.Text(
-                                    pendingBalance.toStringAsFixed(2),
+                                    isReturn ? '0.00' : pendingBalance.toStringAsFixed(2),
                                     style: pw.TextStyle(
                                       fontSize: 8.5,
                                       fontWeight: pw.FontWeight.bold,
-                                      color: pendingBalance > 0 ? maroon : textDark,
+                                      color: (!isReturn && pendingBalance > 0) ? maroon : textDark,
                                     ),
                                   ),
                                 ),

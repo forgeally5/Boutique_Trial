@@ -298,16 +298,24 @@ class _CustomerReturnDialogState extends State<CustomerReturnDialog> {
 
     setState(() => _isSaving = true);
     try {
-      final itemsToReturn = selectedItems.map((i) => {
-        'tagId': i['tagId'],
-        'name': i['name'],
-        'qty': (i['returnQty'] as num).toInt(),
-        'weight': i['weight'],
-        'unit': i['unit'],
-        'pricingType': i['pricingType'],
-        'unitPrice': i['unitPrice'],
-        'lineAmount': (i['returnQty'] as num) * (i['unitPrice'] as num),
-        'condition': i['condition'],
+      final itemsToReturn = selectedItems.map((i) {
+        final unitPrice = (i['unitPrice'] as num).toDouble();
+        final qty = (i['returnQty'] as num).toInt();
+        final lineAmt = qty * unitPrice;
+        return {
+          'tagId': i['tagId'],
+          'name': i['name'],
+          'qty': qty,
+          'weight': i['weight'],
+          'unit': i['unit'],
+          'pricingType': i['pricingType'],
+          'price': unitPrice,
+          'rate': unitPrice,
+          'unitPrice': unitPrice,
+          'amount': lineAmt,
+          'lineAmount': lineAmt,
+          'condition': i['condition'],
+        };
       }).toList();
 
       if (_isEditing) {

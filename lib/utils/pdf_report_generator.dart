@@ -272,9 +272,9 @@ Future<Uint8List> generateUnifiedIssueReportPdf({
 
   const columns = [
     'S.No', 'Date', 'Type', 'Product',
-    'Qty', 'Issue / Reason', 'Refund (Rs.)', 'Status'
+    'Qty', 'Issue / Reason', 'Refund (Rs.)'
   ];
-  const flexes = [1, 2, 2, 4, 1, 3, 2, 2];
+  const flexes = [1, 2, 2, 4, 1, 3, 2];
 
   // Colours for type badges
   const kCustomerBlue = PdfColor.fromInt(0xFF1565C0);
@@ -380,13 +380,6 @@ Future<Uint8List> generateUnifiedIssueReportPdf({
                                   font: boldFont,
                                   fontSize: 7.5,
                                   color: _kBurgundyPdf))),
-                      pw.Expanded(
-                          flex: flexes[7],
-                          child: pw.Text(r['status']?.toString() ?? '—',
-                              style: pw.TextStyle(
-                                  font: regularFont,
-                                  fontSize: 7.5,
-                                  color: _kTextMid))),
                     ],
                   ),
                 );
@@ -431,9 +424,9 @@ Future<Uint8List> generateIssueReportPdf({
 
   final columns = [
     'S.No', 'Return Bill No', 'Orig. Bill', 'Date',
-    'Customer', 'Product', 'Qty', 'Value (Rs.)', 'Reason', 'Status'
+    'Customer', 'Product', 'Qty', 'Value (Rs.)', 'Reason'
   ];
-  final flexes = [1, 2, 2, 2, 3, 3, 1, 2, 2, 2];
+  final flexes = [1, 2, 2, 2, 3, 3, 1, 2, 3];
 
   pdf.addPage(
     pw.MultiPage(
@@ -469,7 +462,6 @@ Future<Uint8List> generateIssueReportPdf({
                   r['qty']?.toString() ?? '0',
                   'Rs. ${_numFmt.format((r['refundAmount'] as num?)?.toDouble() ?? 0)}',
                   r['reason']?.toString() ?? '—',
-                  r['status']?.toString() ?? '—',
                 ], flexes, regularFont, i.isOdd);
               }),
             ],
@@ -793,6 +785,7 @@ Future<Uint8List> generateStockLedgerPdf({
   required String categoryFilter,
   DateTime? dateFrom,
   DateTime? dateTo,
+  String reportTitle = 'STOCK LEDGER STATEMENT',
 }) async {
   final pdf = pw.Document();
   final boldFont = await _boldFont();
@@ -813,7 +806,7 @@ Future<Uint8List> generateStockLedgerPdf({
 
   final subtitle = categoryFilter != 'All'
       ? 'Category: $categoryFilter | Total Records: ${rows.length}'
-      : 'Stock Ledger Statement | All Categories (${rows.length} Records)';
+      : '$reportTitle | All Categories (${rows.length} Records)';
 
   const columns = [
     'Category',
@@ -834,7 +827,7 @@ Future<Uint8List> generateStockLedgerPdf({
       footer: (context) => _buildFooter(regularFont, context),
       build: (context) => [
         _buildPdfHeader(
-          reportTitle: 'STOCK LEDGER STATEMENT',
+          reportTitle: reportTitle,
           subtitle: (dateFrom != null && dateTo != null)
               ? '$subtitle | Period: ${_dateFmt.format(dateFrom)} to ${_dateFmt.format(dateTo)}'
               : subtitle,
@@ -878,11 +871,15 @@ Future<Uint8List> generateStockLedgerPdf({
                 final idx = entry.key;
                 final r = entry.value;
                 final isEven = idx % 2 == 0;
+                final isSummary = r['isSummary'] == true;
                 final rawDate = r['date'];
-                final date = rawDate is DateTime
-                    ? rawDate
-                    : (DateTime.tryParse(rawDate?.toString() ?? '') ?? DateTime.now());
-                final dateStr = _dateFmt.format(date);
+                final dateStr = rawDate == null
+                    ? '-'
+                    : (rawDate is DateTime
+                        ? _dateFmt.format(rawDate)
+                        : (DateTime.tryParse(rawDate.toString()) != null
+                            ? _dateFmt.format(DateTime.parse(rawDate.toString()))
+                            : '-'));
                 final price = (r['price'] as num?)?.toDouble() ?? 0.0;
                 final inward = (r['inwardQty'] as num?)?.toDouble() ?? 0.0;
                 final unit = r['unit']?.toString() ?? 'Nos';
@@ -897,7 +894,9 @@ Future<Uint8List> generateStockLedgerPdf({
                 }
 
                 return pw.Container(
-                  color: isEven ? PdfColors.white : _kRowAlt,
+                  color: isSummary
+                      ? const PdfColor.fromInt(0xFFF0F4F8)
+                      : (isEven ? PdfColors.white : _kRowAlt),
                   padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 5),
                   child: pw.Row(
                     children: [
@@ -905,7 +904,11 @@ Future<Uint8List> generateStockLedgerPdf({
                         flex: flexes[0],
                         child: pw.Text(
                           r['category']?.toString() ?? '',
-                          style: pw.TextStyle(font: regularFont, fontSize: 7.5, color: _kTextDark),
+                          style: pw.TextStyle(
+                            font: isSummary ? boldFont : regularFont,
+                            fontSize: 7.5,
+                            color: isSummary ? _kBurgundyPdf : _kTextDark,
+                          ),
                         ),
                       ),
                       pw.Expanded(
@@ -983,7 +986,6 @@ Future<Uint8List> generateStockLedgerPdf({
                         style: pw.TextStyle(font: boldFont, fontSize: 8, color: _kBurgundyPdf),
                       ),
                     ),
-                    pw.SizedBox(width: 8),
                     pw.Expanded(
                       flex: flexes[4],
                       child: pw.Text(

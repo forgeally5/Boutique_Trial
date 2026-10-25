@@ -443,8 +443,12 @@ class ExcelGenerator {
       final name = it['name']?.toString() ?? it['productName']?.toString() ?? 'Item';
       final tagId = it['tagId']?.toString() ?? '—';
       final qty = (it['qty'] as num?)?.toInt() ?? 1;
-      final rate = (it['price'] as num?)?.toDouble() ?? (it['rate'] as num?)?.toDouble() ?? 0.0;
-      var amt = (it['lineAmount'] as num?)?.toDouble() ?? (it['amount'] as num?)?.toDouble() ?? (rate * qty);
+      var amt = (it['lineAmount'] as num?)?.toDouble() ?? (it['amount'] as num?)?.toDouble() ?? 0.0;
+      final rate = (it['price'] as num?)?.toDouble() ??
+          (it['unitPrice'] as num?)?.toDouble() ??
+          (it['rate'] as num?)?.toDouble() ??
+          (qty > 0 && amt > 0 ? (amt / qty) : 0.0);
+      if (amt <= 0 && rate > 0) amt = rate * qty;
       final reason = it['reason']?.toString() ?? bill['narration']?.toString() ?? 'Return';
 
       totalQty += qty;
@@ -659,7 +663,7 @@ class ExcelGenerator {
     sheet.name = 'Issues & Returns';
 
     // ── Row 1: Title ────────────────────────────────────────────────────────
-    final titleRange = sheet.getRangeByName('A1:I1');
+    final titleRange = sheet.getRangeByName('A1:H1');
     titleRange.merge();
     titleRange.setText('ISSUE & RETURN REGISTER');
     titleRange.cellStyle.bold = true;
@@ -677,7 +681,7 @@ class ExcelGenerator {
     metaPeriod.cellStyle.fontSize = 10;
     metaPeriod.cellStyle.backColor = '#F5ECE4';
 
-    final metaFilter = sheet.getRangeByName('D2:F2');
+    final metaFilter = sheet.getRangeByName('D2:E2');
     metaFilter.merge();
     metaFilter.setText('Filter: $filterType');
     metaFilter.cellStyle.bold = true;
@@ -685,7 +689,7 @@ class ExcelGenerator {
     metaFilter.cellStyle.backColor = '#F5ECE4';
     metaFilter.cellStyle.hAlign = HAlignType.center;
 
-    final metaGen = sheet.getRangeByName('G2:I2');
+    final metaGen = sheet.getRangeByName('F2:H2');
     metaGen.merge();
     metaGen.setText('Generated: ${_dateTimeFmt.format(DateTime.now())}');
     metaGen.cellStyle.bold = true;
@@ -702,7 +706,6 @@ class ExcelGenerator {
       'Customer / Vendor',
       'Qty',
       'Reason / Issue',
-      'Status / Action',
       'Refund (₹)',
     ];
 
@@ -713,7 +716,9 @@ class ExcelGenerator {
       cell.cellStyle.fontSize = 10;
       cell.cellStyle.backColor = '#8C6246';
       cell.cellStyle.fontColor = '#FFFFFF';
-      cell.cellStyle.hAlign = col == 0 || col == 1 || col == 2 || col == 5 ? HAlignType.center : (col == 8 ? HAlignType.right : HAlignType.left);
+      cell.cellStyle.hAlign = col == 0 || col == 1 || col == 2 || col == 5
+          ? HAlignType.center
+          : (col == 7 ? HAlignType.right : HAlignType.left);
       cell.cellStyle.vAlign = VAlignType.center;
     }
 
@@ -757,16 +762,12 @@ class ExcelGenerator {
       c7.cellStyle.hAlign = HAlignType.left;
 
       final c8 = sheet.getRangeByIndex(rowIndex, 8);
-      c8.setText(r['actionTaken']?.toString() ?? (r['status']?.toString() ?? '—'));
-      c8.cellStyle.hAlign = HAlignType.left;
-
-      final c9 = sheet.getRangeByIndex(rowIndex, 9);
-      c9.setNumber(refund);
-      c9.cellStyle.hAlign = HAlignType.right;
-      c9.cellStyle.bold = true;
+      c8.setNumber(refund);
+      c8.cellStyle.hAlign = HAlignType.right;
+      c8.cellStyle.bold = true;
 
       if (i % 2 == 1) {
-        sheet.getRangeByIndex(rowIndex, 1, rowIndex, 9).cellStyle.backColor = '#FAF6F0';
+        sheet.getRangeByIndex(rowIndex, 1, rowIndex, 8).cellStyle.backColor = '#FAF6F0';
       }
       rowIndex++;
     }
@@ -783,12 +784,12 @@ class ExcelGenerator {
     totalQtyCell.cellStyle.bold = true;
     totalQtyCell.cellStyle.hAlign = HAlignType.center;
 
-    final totalRefundCell = sheet.getRangeByIndex(rowIndex, 9);
+    final totalRefundCell = sheet.getRangeByIndex(rowIndex, 8);
     totalRefundCell.setNumber(totalRefund);
     totalRefundCell.cellStyle.bold = true;
     totalRefundCell.cellStyle.hAlign = HAlignType.right;
 
-    sheet.getRangeByIndex(rowIndex, 1, rowIndex, 9).cellStyle.backColor = '#EAD8C7';
+    sheet.getRangeByIndex(rowIndex, 1, rowIndex, 8).cellStyle.backColor = '#EAD8C7';
 
     // ── Compact Explicit Column Widths ──────────────────────────────────────
     sheet.getRangeByIndex(1, 1).columnWidth = 5.0;   // S.No
@@ -797,9 +798,8 @@ class ExcelGenerator {
     sheet.getRangeByIndex(1, 4).columnWidth = 18.0;  // Product / Tag ID
     sheet.getRangeByIndex(1, 5).columnWidth = 15.0;  // Customer / Vendor
     sheet.getRangeByIndex(1, 6).columnWidth = 6.0;   // Qty
-    sheet.getRangeByIndex(1, 7).columnWidth = 15.0;  // Reason
-    sheet.getRangeByIndex(1, 8).columnWidth = 14.0;  // Status / Action
-    sheet.getRangeByIndex(1, 9).columnWidth = 12.0;  // Refund (₹)
+    sheet.getRangeByIndex(1, 7).columnWidth = 18.0;  // Reason
+    sheet.getRangeByIndex(1, 8).columnWidth = 14.0;  // Refund (₹)
 
     final List<int> bytes = workbook.saveAsStream();
     workbook.dispose();
@@ -1806,10 +1806,12 @@ class ExcelGenerator {
     String categoryFilter = 'All',
     DateTime? dateFrom,
     DateTime? dateTo,
+    String sheetName = 'Stock Ledger',
+    String fileName = 'Stock_Ledger',
   }) async {
     final Workbook workbook = Workbook();
     final Worksheet sheet = workbook.worksheets[0];
-    sheet.name = 'Stock Ledger';
+    sheet.name = sheetName;
 
     // ── Row 2: Top Group Headers ─────────────────────────────────────
     // Particulars (over Product Name & Date)
@@ -1873,19 +1875,6 @@ class ExcelGenerator {
     closingTop.cellStyle.hAlign = HAlignType.center;
     closingTop.cellStyle.vAlign = VAlignType.center;
 
-    // Notice box on the top right (matching photo callout)
-    final noteRange = sheet.getRangeByName('K2:M3');
-    noteRange.merge();
-    noteRange.setText('TOTAL INWARD = ALL INWARDS IN THIS PRODUCT NAME');
-    noteRange.cellStyle.bold = true;
-    noteRange.cellStyle.fontSize = 9;
-    noteRange.cellStyle.backColor = '#D9E1F2';
-    noteRange.cellStyle.fontColor = '#1F3864';
-    noteRange.cellStyle.hAlign = HAlignType.center;
-    noteRange.cellStyle.vAlign = VAlignType.center;
-    noteRange.cellStyle.borders.all.lineStyle = LineStyle.thin;
-    noteRange.cellStyle.borders.all.color = '#8EAADB';
-
     // ── Row 3: Sub Headers ───────────────────────────────────────────
     final subHeaders = [
       {'col': 2, 'text': 'CATEGORY', 'name': 'B3'},
@@ -1930,11 +1919,15 @@ class ExcelGenerator {
           ? r['category'].toString().trim()
           : 'Uncategorized';
       final name = r['name']?.toString() ?? '';
+      final isSummary = r['isSummary'] == true;
       final rawDate = r['date'];
-      final date = rawDate is DateTime
-          ? rawDate
-          : (DateTime.tryParse(rawDate?.toString() ?? '') ?? DateTime.now());
-      final dateStr = _fmt.format(date);
+      final dateStr = rawDate == null
+          ? '-'
+          : (rawDate is DateTime
+              ? _fmt.format(rawDate)
+              : (DateTime.tryParse(rawDate.toString()) != null
+                  ? _fmt.format(DateTime.parse(rawDate.toString()))
+                  : '-'));
       final price = (r['price'] as num?)?.toDouble() ?? 0.0;
       final inwardQty = (r['inwardQty'] as num?)?.toDouble() ?? 0.0;
       final unit = r['unit']?.toString() ?? 'Nos';
@@ -1948,9 +1941,9 @@ class ExcelGenerator {
       sumSales += soldQty;
       sumClosing += closingQty;
 
-      // Col B: Category (only shown on the first row of each category group)
+      // Col B: Category (shown on first row of category or on summary row)
       final cellCat = sheet.getRangeByIndex(rowIndex, 2);
-      if (category != lastCategory) {
+      if (isSummary || category != lastCategory) {
         cellCat.setText(category);
         cellCat.cellStyle.bold = true;
         cellCat.cellStyle.fontColor = '#002060';
@@ -1965,7 +1958,7 @@ class ExcelGenerator {
       // Col C: Product Name
       final cellName = sheet.getRangeByIndex(rowIndex, 3);
       cellName.setText(name);
-      cellName.cellStyle.bold = true;
+      cellName.cellStyle.bold = isSummary || cellName.cellStyle.bold;
       cellName.cellStyle.vAlign = VAlignType.center;
       cellName.cellStyle.borders.all.lineStyle = LineStyle.thin;
       cellName.cellStyle.borders.all.color = '#E0E7F1';
@@ -1984,7 +1977,7 @@ class ExcelGenerator {
         cellPrice.setNumber(price);
         cellPrice.numberFormat = '#,##0.00';
       } else {
-        cellPrice.setText('');
+        cellPrice.setText('-');
       }
       cellPrice.cellStyle.hAlign = HAlignType.right;
       cellPrice.cellStyle.vAlign = VAlignType.center;
@@ -2009,7 +2002,7 @@ class ExcelGenerator {
         cellIssue.setNumber(issueQty);
         cellIssue.numberFormat = isWeight ? '0.00' : (issueQty % 1 == 0 ? '0' : '0.00');
       } else {
-        cellIssue.setText('');
+        cellIssue.setText('-');
       }
       cellIssue.cellStyle.hAlign = HAlignType.center;
       cellIssue.cellStyle.vAlign = VAlignType.center;
@@ -2022,7 +2015,7 @@ class ExcelGenerator {
         cellSales.setNumber(soldQty);
         cellSales.numberFormat = isWeight ? '0.00' : (soldQty % 1 == 0 ? '0' : '0.00');
       } else {
-        cellSales.setText('');
+        cellSales.setText('-');
       }
       cellSales.cellStyle.hAlign = HAlignType.center;
       cellSales.cellStyle.vAlign = VAlignType.center;
@@ -2038,6 +2031,12 @@ class ExcelGenerator {
       cellClosing.cellStyle.vAlign = VAlignType.center;
       cellClosing.cellStyle.borders.all.lineStyle = LineStyle.thin;
       cellClosing.cellStyle.borders.all.color = '#E0E7F1';
+
+      if (isSummary) {
+        for (int col = 2; col <= 9; col++) {
+          sheet.getRangeByIndex(rowIndex, col).cellStyle.backColor = '#F2F5F9';
+        }
+      }
 
       rowIndex++;
     }
@@ -2113,10 +2112,6 @@ class ExcelGenerator {
     sheet.getRangeByIndex(1, 7).columnWidth = 12.0;  // G: ISSUE
     sheet.getRangeByIndex(1, 8).columnWidth = 12.0;  // H: Sales
     sheet.getRangeByIndex(1, 9).columnWidth = 14.0;  // I: Closing
-    sheet.getRangeByIndex(1, 10).columnWidth = 4.0;  // J
-    sheet.getRangeByIndex(1, 11).columnWidth = 16.0; // K
-    sheet.getRangeByIndex(1, 12).columnWidth = 16.0; // L
-    sheet.getRangeByIndex(1, 13).columnWidth = 16.0; // M
 
     final List<int> bytes = workbook.saveAsStream();
     workbook.dispose();
@@ -2124,7 +2119,7 @@ class ExcelGenerator {
     final dateStr = _fileDateFmt.format(DateTime.now());
     await downloadFile(
       bytes,
-      'Stock_Ledger_$dateStr.xlsx',
+      '${fileName}_$dateStr.xlsx',
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     );
   }

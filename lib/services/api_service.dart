@@ -360,6 +360,40 @@ class ApiService {
     final returnStatus = map['return_status']?.toString() ?? map['returnStatus']?.toString() ?? 'Processed';
     final originalBillNo = map['original_bill_no']?.toString() ?? map['originalBillNo']?.toString() ?? '';
 
+    // Normalize items: guarantee price, rate, unitPrice, amount, and lineAmount
+    final normItems = <Map<String, dynamic>>[];
+    double itemsTotal = 0.0;
+    if (items is List) {
+      for (final it in items) {
+        if (it is Map) {
+          final itemMap = Map<String, dynamic>.from(it);
+          final q = _toDouble(itemMap['qty'] ?? itemMap['quantity'] ?? 1);
+          final p = _toDouble(itemMap['price'] ?? itemMap['unitPrice'] ?? itemMap['rate']);
+          final w = _toDouble(itemMap['weight']);
+          var a = _toDouble(itemMap['lineAmount'] ?? itemMap['amount']);
+          if (a <= 0 && p > 0) a = w > 0 ? (p * w) : (p * q);
+          final effectivePrice = p > 0 ? p : (q > 0 ? (a / q) : 0.0);
+          itemMap['price'] = effectivePrice;
+          itemMap['rate'] = effectivePrice;
+          itemMap['unitPrice'] = effectivePrice;
+          itemMap['amount'] = a;
+          itemMap['lineAmount'] = a;
+          itemsTotal += a;
+          normItems.add(itemMap);
+        }
+      }
+    }
+
+    if (billType == 'Return' || billType.toLowerCase() == 'customer return') {
+      if (itemsTotal > 0) {
+        subtotal = itemsTotal;
+        totalPayable = itemsTotal;
+        amountReceived = itemsTotal;
+        pendingBalance = 0.0;
+        isFullyPaid = true;
+      }
+    }
+
     return {
       ...map,
       'docId': docId,
@@ -395,8 +429,7 @@ class ApiService {
       'returnStatus': returnStatus,
       'return_status': returnStatus,
       'originalBillNo': originalBillNo,
-      'original_bill_no': originalBillNo,
-      'items': items is List ? items : [],
+      'items': normItems.isNotEmpty ? normItems : (items is List ? items : []),
       'payments': payments is List ? payments : [],
       'paymentHistory': paymentHistory is List ? paymentHistory : [],
       'customCustomerDetails': customCustomerDetails is Map ? customCustomerDetails : {},

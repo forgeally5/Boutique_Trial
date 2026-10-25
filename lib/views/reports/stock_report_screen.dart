@@ -843,22 +843,164 @@ class _StockReportScreenState extends State<StockReportScreen>
   int get _catZeroStockCount =>
       _filteredCategoryRows.where((r) => (r['closingQty'] as int) <= 0).length;
 
+  // ── Helpers to build Stock Ledger format rows based on Expand/Collapse state ─
+  List<Map<String, dynamic>> _buildProductWiseLedgerExportRows() {
+    final Map<String, List<Map<String, dynamic>>> groupedByCategory = {};
+    for (final p in _filtered) {
+      final cat = (p['category']?.toString().trim().isNotEmpty ?? false)
+          ? p['category'].toString().trim()
+          : 'Uncategorized';
+      groupedByCategory.putIfAbsent(cat, () => []).add(p);
+    }
+    final sortedCategories = groupedByCategory.keys.toList()..sort();
+    final List<Map<String, dynamic>> result = [];
+
+    for (final cat in sortedCategories) {
+      final products = groupedByCategory[cat]!;
+      final isExpanded = _expandedProductCategories.contains(cat);
+
+      if (isExpanded) {
+        for (final p in products) {
+          final isWeight = p['pricingType'] == 'Weight-Based';
+          final balance = (p['balance'] as num?)?.toDouble() ??
+              (p['quantity'] as num?)?.toDouble() ??
+              0.0;
+          final totalReceived = (p['totalReceived'] as num?)?.toDouble() ?? 0.0;
+          final issueQty = (p['issueQty'] as num?)?.toDouble() ?? 0.0;
+          final soldQty = (p['soldQty'] as num?)?.toDouble() ?? 0.0;
+          final sp = (p['sellingPrice'] as num?)?.toDouble() ?? 0.0;
+
+          result.add({
+            'tagId': p['tagId']?.toString() ?? '',
+            'category': cat,
+            'name': p['name']?.toString() ?? '',
+            'date': p['addedDate'],
+            'price': sp,
+            'inwardQty': totalReceived,
+            'unit': p['unit']?.toString() ?? (isWeight ? 'Gram' : 'Nos'),
+            'isWeight': isWeight,
+            'issueQty': issueQty,
+            'soldQty': soldQty,
+            'closingQty': balance,
+            'status': p['status'] ?? 'In Stock',
+          });
+        }
+      } else {
+        // Collapsed category summary row
+        double catPurchased = 0.0;
+        double catIssued = 0.0;
+        double catSold = 0.0;
+        double catClosing = 0.0;
+
+        for (final p in products) {
+          catPurchased += (p['totalReceived'] as num?)?.toDouble() ?? 0.0;
+          catIssued += (p['issueQty'] as num?)?.toDouble() ?? 0.0;
+          catSold += (p['soldQty'] as num?)?.toDouble() ?? 0.0;
+          catClosing += ((p['balance'] as num?)?.toDouble() ??
+              (p['quantity'] as num?)?.toDouble() ??
+              0.0);
+        }
+
+        result.add({
+          'category': cat,
+          'name': '${products.length} Items',
+          'date': null,
+          'price': 0.0,
+          'inwardQty': catPurchased,
+          'unit': 'Nos',
+          'isWeight': false,
+          'issueQty': catIssued,
+          'soldQty': catSold,
+          'closingQty': catClosing,
+          'status': 'In Stock',
+          'isSummary': true,
+        });
+      }
+    }
+    return result;
+  }
+
+  List<Map<String, dynamic>> _buildCategoryLedgerExportRows() {
+    final List<Map<String, dynamic>> result = [];
+    for (final catRow in _filteredCategoryRows) {
+      final category = catRow['category']?.toString().trim() ?? 'Uncategorized';
+      final isExpanded = _expandedCategories.contains(category);
+
+      if (isExpanded) {
+        // Expanded: matching ledger rows under this category
+        final matchingLedgerRows = _allLedgerRows.where((lr) =>
+            (lr['category']?.toString().trim().toLowerCase() ?? '') ==
+            category.toLowerCase()).toList();
+
+        if (matchingLedgerRows.isNotEmpty) {
+          result.addAll(matchingLedgerRows);
+        } else {
+          final prods = (catRow['products'] as List?) ?? [];
+          for (final p in prods) {
+            if (p is Map) {
+              result.add({
+                'category': category,
+                'name': p['name']?.toString() ?? '',
+                'date': p['addedDate'],
+                'price': (p['sellingPrice'] as num?)?.toDouble() ?? 0.0,
+                'inwardQty': (p['totalReceived'] as num?)?.toDouble() ?? 0.0,
+                'unit': p['unit']?.toString() ?? 'Nos',
+                'isWeight': p['pricingType'] == 'Weight-Based',
+                'issueQty': (p['issueQty'] as num?)?.toDouble() ?? 0.0,
+                'soldQty': (p['soldQty'] as num?)?.toDouble() ?? 0.0,
+                'closingQty': (p['balance'] as num?)?.toDouble() ?? 0.0,
+                'status': p['status'] ?? 'In Stock',
+              });
+            }
+          }
+        }
+      } else {
+        // Collapsed: single summary row for this category
+        final skuCount = (catRow['skuCount'] as num?)?.toInt() ?? 0;
+        final totalPurchased = (catRow['totalPurchased'] as num?)?.toDouble() ?? 0.0;
+        final totalIssued = (catRow['totalIssued'] as num?)?.toDouble() ?? 0.0;
+        final totalSold = (catRow['totalSold'] as num?)?.toDouble() ?? 0.0;
+        final closingQty = (catRow['closingQty'] as num?)?.toDouble() ?? 0.0;
+
+        result.add({
+          'category': category,
+          'name': '$skuCount Items',
+          'date': null,
+          'price': 0.0,
+          'inwardQty': totalPurchased,
+          'unit': 'Nos',
+          'isWeight': false,
+          'issueQty': totalIssued,
+          'soldQty': totalSold,
+          'closingQty': closingQty,
+          'status': catRow['status'] ?? 'In Stock',
+          'isSummary': true,
+        });
+      }
+    }
+    return result;
+  }
+
   // ── Print / Download handlers (Product-wise) ──────────────────────────────
   Future<void> _handlePrint() async {
-    if (_filtered.isEmpty) {
+    final exportRows = _buildProductWiseLedgerExportRows();
+    if (exportRows.isEmpty) {
       BoutiqueToast.showError(context, 'No data to print.');
       return;
     }
-    final bytes = await generateStockReportPdf(
-      rows: _filtered,
+    final bytes = await generateStockLedgerPdf(
+      rows: exportRows,
       categoryFilter: _categoryFilter,
-      statusFilter: _statusFilter,
+      dateFrom: _dateFrom,
+      dateTo: _dateTo,
+      reportTitle: 'PRODUCT-WISE STOCK REPORT',
     );
     await Printing.layoutPdf(onLayout: (_) => bytes);
   }
 
   Future<void> _handleDownload() async {
-    if (_filtered.isEmpty) {
+    final exportRows = _buildProductWiseLedgerExportRows();
+    if (exportRows.isEmpty) {
       BoutiqueToast.showError(context, 'No data to download.');
       return;
     }
@@ -866,40 +1008,45 @@ class _StockReportScreenState extends State<StockReportScreen>
       context: context,
       title: 'Product-Wise Stock Report',
       onDownloadPdf: () async {
-        final bytes = await generateStockReportPdf(
-          rows: _filtered,
+        final bytes = await generateStockLedgerPdf(
+          rows: exportRows,
           categoryFilter: _categoryFilter,
-          statusFilter: _statusFilter,
+          dateFrom: _dateFrom,
+          dateTo: _dateTo,
+          reportTitle: 'PRODUCT-WISE STOCK REPORT',
         );
         await Printing.sharePdf(
           bytes: bytes,
-          filename: 'stock_report_${DateFormat('dd-MM-yyyy').format(DateTime.now())}.pdf',
+          filename: 'product_wise_stock_report_${DateFormat('dd-MM-yyyy').format(DateTime.now())}.pdf',
         );
       },
       onDownloadExcel: () async {
-        await ExcelGenerator.downloadProductStockReportExcel(
-          rows: _filtered,
+        await ExcelGenerator.downloadStockLedgerExcel(
+          rows: exportRows,
           categoryFilter: _categoryFilter,
-          statusFilter: _statusFilter,
           dateFrom: _dateFrom,
           dateTo: _dateTo,
+          sheetName: 'Product Stock',
+          fileName: 'Product_Wise_Stock_Report',
         );
       },
     );
   }
 
   Future<void> _handleProductExcelDirect() async {
-    if (_filtered.isEmpty) {
+    final exportRows = _buildProductWiseLedgerExportRows();
+    if (exportRows.isEmpty) {
       BoutiqueToast.showError(context, 'No product data to export.');
       return;
     }
     try {
-      await ExcelGenerator.downloadProductStockReportExcel(
-        rows: _filtered,
+      await ExcelGenerator.downloadStockLedgerExcel(
+        rows: exportRows,
         categoryFilter: _categoryFilter,
-        statusFilter: _statusFilter,
         dateFrom: _dateFrom,
         dateTo: _dateTo,
+        sheetName: 'Product Stock',
+        fileName: 'Product_Wise_Stock_Report',
       );
       if (mounted) {
         BoutiqueToast.showSuccess(context, 'Stock Report (.xlsx) downloaded successfully!');
@@ -910,14 +1057,17 @@ class _StockReportScreenState extends State<StockReportScreen>
   }
 
   Future<void> _handleCatExcelDirect() async {
-    if (_filteredCategoryRows.isEmpty) {
+    final exportRows = _buildCategoryLedgerExportRows();
+    if (exportRows.isEmpty) {
       BoutiqueToast.showError(context, 'No category data to export.');
       return;
     }
     try {
-      await ExcelGenerator.downloadCategoryClosingStockExcel(
-        rows: _filteredCategoryRows,
-        statusFilter: _catStatusFilter,
+      await ExcelGenerator.downloadStockLedgerExcel(
+        rows: exportRows,
+        categoryFilter: _catStatusFilter != 'All' ? 'Status: $_catStatusFilter' : 'All',
+        sheetName: 'Closing Stock',
+        fileName: 'Closing_Stock_Category_Wise',
       );
       if (mounted) {
         BoutiqueToast.showSuccess(context, 'Closing Stock Report (.xlsx) downloaded successfully!');
@@ -929,19 +1079,22 @@ class _StockReportScreenState extends State<StockReportScreen>
 
   // ── Print / Download handlers (Category-wise Closing Stock) ───────────────
   Future<void> _handleCatPrint() async {
-    if (_filteredCategoryRows.isEmpty) {
+    final exportRows = _buildCategoryLedgerExportRows();
+    if (exportRows.isEmpty) {
       BoutiqueToast.showError(context, 'No closing stock data to print.');
       return;
     }
-    final bytes = await generateCategoryClosingStockPdf(
-      rows: _filteredCategoryRows,
-      statusFilter: _catStatusFilter,
+    final bytes = await generateStockLedgerPdf(
+      rows: exportRows,
+      categoryFilter: _catStatusFilter != 'All' ? 'Status: $_catStatusFilter' : 'All',
+      reportTitle: 'CLOSING STOCK REPORT (CATEGORY-WISE)',
     );
     await Printing.layoutPdf(onLayout: (_) => bytes);
   }
 
   Future<void> _handleCatDownload() async {
-    if (_filteredCategoryRows.isEmpty) {
+    final exportRows = _buildCategoryLedgerExportRows();
+    if (exportRows.isEmpty) {
       BoutiqueToast.showError(context, 'No closing stock data to download.');
       return;
     }
@@ -949,9 +1102,10 @@ class _StockReportScreenState extends State<StockReportScreen>
       context: context,
       title: 'Closing Stock Report (Category-Wise)',
       onDownloadPdf: () async {
-        final bytes = await generateCategoryClosingStockPdf(
-          rows: _filteredCategoryRows,
-          statusFilter: _catStatusFilter,
+        final bytes = await generateStockLedgerPdf(
+          rows: exportRows,
+          categoryFilter: _catStatusFilter != 'All' ? 'Status: $_catStatusFilter' : 'All',
+          reportTitle: 'CLOSING STOCK REPORT (CATEGORY-WISE)',
         );
         await Printing.sharePdf(
           bytes: bytes,
@@ -960,9 +1114,11 @@ class _StockReportScreenState extends State<StockReportScreen>
         );
       },
       onDownloadExcel: () async {
-        await ExcelGenerator.downloadCategoryClosingStockExcel(
-          rows: _filteredCategoryRows,
-          statusFilter: _catStatusFilter,
+        await ExcelGenerator.downloadStockLedgerExcel(
+          rows: exportRows,
+          categoryFilter: _catStatusFilter != 'All' ? 'Status: $_catStatusFilter' : 'All',
+          sheetName: 'Closing Stock',
+          fileName: 'Closing_Stock_Category_Wise',
         );
       },
     );
