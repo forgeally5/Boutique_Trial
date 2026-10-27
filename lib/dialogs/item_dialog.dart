@@ -130,27 +130,47 @@ class _ItemDialogState extends State<ItemDialog> {
   }
 
   List<String> get _availableCategories {
-    final list = widget.adminState.categories.where((c) => c != 'All Categories').toList();
-    return list.isNotEmpty ? list : _categories;
+    final list = List<String>.from(widget.adminState.categories.where((c) => c != 'All Categories'));
+    final base = list.isNotEmpty ? list : List<String>.from(_categories);
+    if (_category.trim().isNotEmpty && !base.any((c) => c.toLowerCase() == _category.trim().toLowerCase())) {
+      base.insert(0, _category.trim());
+    }
+    return base;
   }
 
   List<String> get _availableMaterials {
-    final list = widget.adminState.materials;
-    return list.isNotEmpty ? list : _materials;
+    final list = List<String>.from(widget.adminState.materials);
+    final base = list.isNotEmpty ? list : List<String>.from(_materials);
+    if (_material.trim().isNotEmpty && !base.any((m) => m.toLowerCase() == _material.trim().toLowerCase())) {
+      base.insert(0, _material.trim());
+    }
+    return base;
   }
 
   List<String> get _availableUnits {
-    final list = widget.adminState.units;
-    return list.isNotEmpty ? list : _units;
+    final list = List<String>.from(widget.adminState.units);
+    final base = list.isNotEmpty ? list : List<String>.from(_units);
+    if (_unit.trim().isNotEmpty && !base.any((u) => u.toLowerCase() == _unit.trim().toLowerCase())) {
+      base.insert(0, _unit.trim());
+    }
+    return base;
   }
 
   List<String> get _availableWeightUnits {
-    final list = widget.adminState.weightUnits;
-    return list.isNotEmpty ? list : ['g', 'kg', 'mg', 'carat'];
+    final list = List<String>.from(widget.adminState.weightUnits);
+    final base = list.isNotEmpty ? list : <String>['g', 'kg', 'mg', 'carat'];
+    if (_weightUnit.trim().isNotEmpty && !base.any((w) => w.toLowerCase() == _weightUnit.trim().toLowerCase())) {
+      base.insert(0, _weightUnit.trim());
+    }
+    return base;
   }
 
   List<String> get _availableVendors {
-    return widget.adminState.vendors;
+    final list = List<String>.from(widget.adminState.vendors);
+    if (_vendor.trim().isNotEmpty && !list.any((v) => v.toLowerCase() == _vendor.trim().toLowerCase())) {
+      list.insert(0, _vendor.trim());
+    }
+    return list;
   }
 
   void _showManageMasterListDialog(String type) {
@@ -237,25 +257,13 @@ class _ItemDialogState extends State<ItemDialog> {
     }
 
     if (p != null) {
-      _category = p.category.isNotEmpty ? p.category : 'Others';
-      _deity = _deities.contains(p.deity) ? p.deity : 'General';
-      _material = _materials.contains(p.material) ? p.material : 'Brass';
-      _status = _statuses.contains(p.status) ? p.status : 'In Stock';
+      _category = p.category.trim();
+      _deity = p.deity.trim().isNotEmpty ? p.deity.trim() : 'General';
+      _material = p.material.trim().isNotEmpty ? p.material.trim() : 'Brass';
+      _status = p.status.trim().isNotEmpty ? p.status.trim() : 'In Stock';
       _vendor = p.vendor;
-      final storedUnit = p.unit.isNotEmpty ? p.unit : 'Piece';
-      final normUnit = _units.firstWhere(
-        (u) => u.toLowerCase() == storedUnit.toLowerCase(),
-        orElse: () => 'Piece',
-      );
-      _unit = normUnit;
-      
-      final storedWeightUnit = p.weightUnit.isNotEmpty ? p.weightUnit : 'g';
-      final normWeightUnit = _availableWeightUnits.firstWhere(
-        (u) => u.toLowerCase() == storedWeightUnit.toLowerCase(),
-        orElse: () => 'g',
-      );
-      _weightUnit = normWeightUnit;
-      
+      _unit = p.unit.trim().isNotEmpty ? p.unit.trim() : 'Piece';
+      _weightUnit = p.weightUnit.trim().isNotEmpty ? p.weightUnit.trim() : 'g';
       _isReserved = p.isReserved;
       _discountType = initialDiscountType;
       _pricingType = p.pricingType.isNotEmpty ? p.pricingType : 'Quantity-Based';
@@ -1686,7 +1694,7 @@ class _CustomDropdownState extends State<_CustomDropdown> {
   }
 
   Widget _buildFocus() {
-    final hasValue = widget.value.isNotEmpty && widget.items.contains(widget.value);
+    final hasValue = widget.value.trim().isNotEmpty;
     final textToShow = hasValue ? widget.value : (widget.hint ?? 'Select ${widget.label.replaceAll('*', '').trim()}');
     final textColor = hasValue ? _brown : const Color(0xFFBCAAA4);
 
@@ -1791,12 +1799,26 @@ class _SearchableDropdownDialogState extends State<_SearchableDropdownDialog> {
     }
   }
 
+  List<String> get _baseItems {
+    final itemsList = List<String>.from(widget.items);
+    if (widget.currentValue.trim().isNotEmpty &&
+        !itemsList.any((it) => it.trim().toLowerCase() == widget.currentValue.trim().toLowerCase())) {
+      itemsList.insert(0, widget.currentValue.trim());
+    }
+    return itemsList;
+  }
+
   @override
   void initState() {
     super.initState();
-    _filtered = List.from(widget.items);
-    if (widget.currentValue.isNotEmpty && _filtered.contains(widget.currentValue)) {
-      _highlightIdx = _filtered.indexOf(widget.currentValue);
+    _filtered = _baseItems;
+    if (widget.currentValue.trim().isNotEmpty) {
+      final idx = _filtered.indexWhere((it) => it.trim().toLowerCase() == widget.currentValue.trim().toLowerCase());
+      if (idx != -1) {
+        _highlightIdx = idx;
+      } else if (_filtered.isNotEmpty) {
+        _highlightIdx = 0;
+      }
     } else if (_filtered.isNotEmpty) {
       _highlightIdx = 0;
     }
@@ -1804,12 +1826,13 @@ class _SearchableDropdownDialogState extends State<_SearchableDropdownDialog> {
 
   void _onSearch(String query) {
     final q = query.trim().toLowerCase();
+    final itemsList = _baseItems;
     setState(() {
       _highlightIdx = -1;
       if (q.isEmpty) {
-        _filtered = List.from(widget.items);
+        _filtered = itemsList;
       } else {
-        _filtered = widget.items
+        _filtered = itemsList
             .where((item) => item.toLowerCase().contains(q))
             .toList();
       }
@@ -2293,39 +2316,21 @@ class _MasterListDialogState extends State<_MasterListDialog> {
     switch (widget.type) {
       case 'Category':
         await widget.adminState.deleteCategory(item);
-        if (widget.currentCategory == item) {
-          widget.onCategoryChanged(widget.availableCategories.isNotEmpty ? widget.availableCategories.first : '');
-        }
         break;
       case 'Material':
         await widget.adminState.deleteMaterial(item);
-        if (widget.currentMaterial == item) {
-          widget.onMaterialChanged(widget.availableMaterials.isNotEmpty ? widget.availableMaterials.first : '');
-        }
         break;
       case 'Item Name':
         await widget.adminState.deleteItemName(item);
-        if (widget.currentItemName == item) {
-          widget.onItemNameChanged(widget.availableItemNames.isNotEmpty ? widget.availableItemNames.first : '');
-        }
         break;
       case 'Weight Unit':
         await widget.adminState.deleteWeightUnit(item);
-        if (widget.currentWeightUnit == item) {
-          widget.onWeightUnitChanged(widget.availableWeightUnits.isNotEmpty ? widget.availableWeightUnits.first : '');
-        }
         break;
       case 'Unit':
         await widget.adminState.deleteUnit(item);
-        if (widget.currentUnit == item) {
-          widget.onUnitChanged(widget.availableUnits.isNotEmpty ? widget.availableUnits.first : '');
-        }
         break;
       case 'Vendor':
         await widget.adminState.deleteVendor(item);
-        if (widget.currentVendor == item) {
-          widget.onVendorChanged(widget.availableVendors.isNotEmpty ? widget.availableVendors.first : '');
-        }
         break;
     }
     if (mounted) setState(() {});

@@ -291,7 +291,8 @@ class _InventoryViewState extends State<InventoryView> {
           p.name.toLowerCase().contains(_searchQuery) ||
           p.tagId.toLowerCase().contains(_searchQuery);
       final matchesCategory =
-          _selectedCategory == 'All Categories' || p.category == _selectedCategory;
+          _selectedCategory == 'All Categories' ||
+          p.category.trim().toLowerCase() == _selectedCategory.trim().toLowerCase();
       final matchesStatus = _selectedStatus == 'All Statuses' ||
           (_selectedStatus == 'Out of Stock'
               ? (p.quantity <= 0 || p.status == 'Out of Stock' || p.status == 'Sold Out')
@@ -742,21 +743,27 @@ class _InventoryViewState extends State<InventoryView> {
                         ),
                       ),
                       const SizedBox(width: 16),
-                      // Category Filter
-                      Expanded(
-                        flex: 2,
-                        child: FocusTraversalOrder(
-                          order: const NumericFocusOrder(5),
-                          child: SearchableDropdownField(
-                            label: 'Category',
-                            value: state.categories.contains(_selectedCategory) ? _selectedCategory : 'All Categories',
-                            items: state.categories,
-                            onChanged: (val) {
-                              if (val != null) setState(() => _selectedCategory = val);
-                            },
+                      Builder(builder: (context) {
+                        final filterCats = <String>{
+                          'All Categories',
+                          ...state.categories.where((c) => c != 'All Categories'),
+                          ...state.products.map((p) => p.category.trim()).where((c) => c.isNotEmpty)
+                        }.toList();
+                        return Expanded(
+                          flex: 2,
+                          child: FocusTraversalOrder(
+                            order: const NumericFocusOrder(5),
+                            child: SearchableDropdownField(
+                              label: 'Category',
+                              value: filterCats.any((c) => c.toLowerCase() == _selectedCategory.toLowerCase()) ? _selectedCategory : 'All Categories',
+                              items: filterCats,
+                              onChanged: (val) {
+                                if (val != null) setState(() => _selectedCategory = val);
+                              },
+                            ),
                           ),
-                        ),
-                      ),
+                        );
+                      }),
                       const SizedBox(width: 16),
                       // Status Filter
                       Expanded(

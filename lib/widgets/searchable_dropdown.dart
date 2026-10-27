@@ -64,7 +64,7 @@ class _SearchableDropdownFieldState extends State<SearchableDropdownField> {
 
   @override
   Widget build(BuildContext context) {
-    final displayValue = widget.items.contains(widget.value)
+    final displayValue = widget.value.trim().isNotEmpty
         ? widget.value
         : (widget.items.isNotEmpty ? widget.items.first : '');
 
@@ -197,21 +197,37 @@ class _SearchableDropdownDialogState extends State<_SearchableDropdownDialog> {
     }
   }
 
+  List<String> get _baseItems {
+    final itemsList = List<String>.from(widget.items);
+    if (widget.currentValue.trim().isNotEmpty &&
+        !itemsList.any((it) => it.trim().toLowerCase() == widget.currentValue.trim().toLowerCase())) {
+      itemsList.insert(0, widget.currentValue.trim());
+    }
+    return itemsList;
+  }
+
   @override
   void initState() {
     super.initState();
-    _filtered = List.from(widget.items);
+    _filtered = _baseItems;
+    if (widget.currentValue.trim().isNotEmpty) {
+      final idx = _filtered.indexWhere((it) => it.trim().toLowerCase() == widget.currentValue.trim().toLowerCase());
+      if (idx != -1) {
+        _highlightIdx = idx;
+      }
+    }
   }
 
   void _onSearch(String query) {
     final q = query.trim().toLowerCase();
+    final itemsList = _baseItems;
     setState(() {
       _highlightIdx = -1;
       if (q.isEmpty) {
-        _filtered = List.from(widget.items);
+        _filtered = itemsList;
       } else {
         _filtered =
-            widget.items.where((item) => item.toLowerCase().contains(q)).toList();
+            itemsList.where((item) => item.toLowerCase().contains(q)).toList();
       }
     });
   }
