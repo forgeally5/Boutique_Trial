@@ -271,9 +271,12 @@ class _ItemDialogState extends State<ItemDialog> {
     } else {
       _category = '';
       _status = 'In Stock'; // default for new products
-      // Default vendor = first vendor account in the list
+      // Default vendor = 'VENDOR ACCOUNT' if present, else first in list
       final vendors = widget.adminState.vendors;
-      _vendor = vendors.isNotEmpty ? vendors.first : '';
+      _vendor = vendors.firstWhere(
+        (v) => v.toUpperCase() == 'VENDOR ACCOUNT',
+        orElse: () => vendors.isNotEmpty ? vendors.first : '',
+      );
       _unit = '';
     }
 
