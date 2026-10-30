@@ -1,4 +1,4 @@
-import 'dart:async';
+﻿import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -681,8 +681,11 @@ class _AdminHomeShellState extends State<AdminHomeShell> {
       },
     );
 
-    if (confirmed == true && mounted) {
-      await context.read<AuthViewModel>().logout();
+    if (confirmed == true) {
+      // Pop all open routes first, then logout to avoid using a stale context
+      TrilokAdminApp.navigatorKey.currentState?.popUntil((route) => route.isFirst);
+      final authVM = TrilokAdminApp.navigatorKey.currentContext?.read<AuthViewModel>();
+      await authVM?.logout();
     }
   }
 
