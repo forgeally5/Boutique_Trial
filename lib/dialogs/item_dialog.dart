@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../models/product.dart';
 import '../state/admin_state.dart';
@@ -270,8 +270,10 @@ class _ItemDialogState extends State<ItemDialog> {
       _imageUrl = p.imageUrl;
     } else {
       _category = '';
-      _status = '';
-      _vendor = '';
+      _status = 'In Stock'; // default for new products
+      // Default vendor = first vendor account in the list
+      final vendors = widget.adminState.vendors;
+      _vendor = vendors.isNotEmpty ? vendors.first : '';
       _unit = '';
     }
 
@@ -696,8 +698,7 @@ class _ItemDialogState extends State<ItemDialog> {
                           hint: 'e.g. IDOL-001',
                           onChanged: (_) => setState(() => _tagIdTouched = true),
                           inputFormatters: [UpperCaseFormatter()],
-                          focusOrder: 20,
-                        ),
+                                        ),
                       ),
                       const SizedBox(width: 16),
                       Expanded(
