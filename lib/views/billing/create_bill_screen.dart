@@ -66,12 +66,39 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
   int _autocompleteHighlightIndex = -1;
   StateSetter? _optionsViewStateSetter;
   final ScrollController _autocompleteScrollCtrl = ScrollController();
-  final FocusNode _firstProductRowFocusNode = FocusNode();
+  final Map<int, FocusNode> _scanFocusNodes = {};
+  final Map<int, FocusNode> _deleteFocusNodes = {};
+
+  FocusNode _getScanFocusNode(int index) {
+    return _scanFocusNodes.putIfAbsent(index, () => FocusNode(debugLabel: 'scan_$index'));
+  }
+
+  FocusNode _getDeleteFocusNode(int index) {
+    return _deleteFocusNodes.putIfAbsent(index, () => FocusNode(debugLabel: 'delete_$index'));
+  }
 
   void _focusFirstProductRow() {
     if (_rows.isNotEmpty) {
-      _firstProductRowFocusNode.requestFocus();
+      _getScanFocusNode(0).requestFocus();
     }
+  }
+
+  bool _handleBillingShortcuts(KeyEvent event) {
+    if (event is! KeyDownEvent) return false;
+    final isAlt = HardwareKeyboard.instance.isAltPressed;
+    final isCtrl = HardwareKeyboard.instance.isControlPressed;
+
+    // Alt + P or Ctrl + P -> Focus first product row
+    if ((isAlt || isCtrl) && event.logicalKey == LogicalKeyboardKey.keyP) {
+      _focusFirstProductRow();
+      return true;
+    }
+    // Alt + S -> Focus product search bar
+    if (isAlt && event.logicalKey == LogicalKeyboardKey.keyS) {
+      _topEntryFieldFocus?.requestFocus();
+      return true;
+    }
+    return false;
   }
 
   // Summary controllers — managed separately so only summary panel rebuilds
@@ -121,6 +148,7 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
     }
     
     _fetchCustomerNames();
+    HardwareKeyboard.instance.addHandler(_handleBillingShortcuts);
     // Listen to AdminState for product list updates ONLY — no full-form rebuild
     widget.state.addListener(_onStateProductsUpdate);
     _gstCtrl.addListener(_onGstChanged);
@@ -462,8 +490,10 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
   void dispose() {
     _customerMobileFocusNode.removeListener(_onMobileFocusChanged);
     widget.state.removeListener(_onStateProductsUpdate);
+    HardwareKeyboard.instance.removeHandler(_handleBillingShortcuts);
     _autocompleteScrollCtrl.dispose();
-    _firstProductRowFocusNode.dispose();
+    for (final node in _scanFocusNodes.values) { node.dispose(); }
+    for (final node in _deleteFocusNodes.values) { node.dispose(); }
     _rowVersion.dispose();
     _billNoCtrl.dispose();
     _customerNameCtrl.dispose();
@@ -1656,7 +1686,7 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
     if (index == 0) {
       _autocompleteScrollCtrl.animateTo(
         0,
-        duration: const Duration(milliseconds: 80),
+        duration: const Duration(milliseconds: 40),
         curve: Curves.easeOut,
       );
       return;
@@ -1664,7 +1694,7 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
     if (_currentAutocompleteOptions.isNotEmpty && index == _currentAutocompleteOptions.length - 1) {
       _autocompleteScrollCtrl.animateTo(
         _autocompleteScrollCtrl.position.maxScrollExtent,
-        duration: const Duration(milliseconds: 80),
+        duration: const Duration(milliseconds: 40),
         curve: Curves.easeOut,
       );
       return;
@@ -1679,14 +1709,14 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
     if (targetTop < currentOffset) {
       _autocompleteScrollCtrl.animateTo(
         targetTop,
-        duration: const Duration(milliseconds: 80),
+        duration: const Duration(milliseconds: 40),
         curve: Curves.easeOut,
       );
     } else if (targetBottom > currentOffset + viewportHeight) {
       final double newOffset = (targetBottom - viewportHeight).clamp(0.0, _autocompleteScrollCtrl.position.maxScrollExtent);
       _autocompleteScrollCtrl.animateTo(
         newOffset,
-        duration: const Duration(milliseconds: 80),
+        duration: const Duration(milliseconds: 40),
         curve: Curves.easeOut,
       );
     }
@@ -1950,7 +1980,14 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
               _BillRowWidget(
                 key: ObjectKey(_rows[i]),
                 index: i,
-                firstControlFocusNode: i == 0 ? _firstProductRowFocusNode : null,
+                scanFocusNode: _getScanFocusNode(i),
+                deleteFocusNode: _getDeleteFocusNode(i),
+                onTabFromDelete: (i + 1 < _rows.length)
+                    ? () => _getScanFocusNode(i + 1).requestFocus()
+                    : null,
+                onShiftTabFromScan: (i > 0)
+                    ? () => _getDeleteFocusNode(i - 1).requestFocus()
+                    : () => _topEntryFieldFocus?.requestFocus(),
                 onRequestFocusSearch: () => _topEntryFieldFocus?.requestFocus(),
                 row: _rows[i],
                 products: _cachedProducts,
@@ -1962,7 +1999,11 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
                 },
                 onDelete: () {
                   _rowVersion.value++;
-                  setState(() => _rows.removeAt(i));
+                  setState(() {
+                    _rows.removeAt(i);
+                    _scanFocusNodes.remove(i);
+                    _deleteFocusNodes.remove(i);
+                  });
                 },
               ),
         ],
@@ -2126,6 +2167,8 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
 class _RowFocusableItem extends StatefulWidget {
   final FocusNode? focusNode;
   final VoidCallback onTap;
+  final VoidCallback? onTabPressed;
+  final VoidCallback? onShiftTabPressed;
   final Widget child;
   final String? tooltip;
   final BorderRadius? borderRadius;
@@ -2135,6 +2178,8 @@ class _RowFocusableItem extends StatefulWidget {
     super.key,
     this.focusNode,
     required this.onTap,
+    this.onTabPressed,
+    this.onShiftTabPressed,
     required this.child,
     this.tooltip,
     this.borderRadius,
@@ -2193,42 +2238,44 @@ class _RowFocusableItemState extends State<_RowFocusableItem> {
       focusNode: _node,
       onFocusChange: (f) => setState(() => _isFocused = f),
       onKeyEvent: (node, event) {
-        if (event is KeyDownEvent &&
-            (event.logicalKey == LogicalKeyboardKey.enter ||
-             event.logicalKey == LogicalKeyboardKey.numpadEnter ||
-             event.logicalKey == LogicalKeyboardKey.space)) {
-          widget.onTap();
-          return KeyEventResult.handled;
+        if (event is KeyDownEvent) {
+          final isShift = HardwareKeyboard.instance.isShiftPressed;
+          if (event.logicalKey == LogicalKeyboardKey.tab) {
+            if (isShift && widget.onShiftTabPressed != null) {
+              widget.onShiftTabPressed!();
+              return KeyEventResult.handled;
+            } else if (!isShift && widget.onTabPressed != null) {
+              widget.onTabPressed!();
+              return KeyEventResult.handled;
+            }
+          }
+          if (event.logicalKey == LogicalKeyboardKey.enter ||
+              event.logicalKey == LogicalKeyboardKey.numpadEnter ||
+              event.logicalKey == LogicalKeyboardKey.space) {
+            widget.onTap();
+            return KeyEventResult.handled;
+          }
         }
         return KeyEventResult.ignored;
       },
       child: Tooltip(
         message: widget.tooltip ?? '',
         child: InkWell(
+          canRequestFocus: false,
           onTap: widget.onTap,
           borderRadius: br,
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 150),
+          child: Container(
             decoration: BoxDecoration(
               borderRadius: br,
               color: _isFocused
                   ? (widget.isDestructive
-                      ? BoutiqueColors.destructive.withValues(alpha: 0.12)
-                      : BoutiqueColors.accent.withValues(alpha: 0.12))
+                      ? BoutiqueColors.destructive.withValues(alpha: 0.14)
+                      : BoutiqueColors.accent.withValues(alpha: 0.14))
                   : Colors.transparent,
               border: Border.all(
                 color: _isFocused ? focusColor : Colors.transparent,
                 width: 2.0,
               ),
-              boxShadow: _isFocused
-                  ? [
-                      BoxShadow(
-                        color: focusColor.withValues(alpha: 0.4),
-                        blurRadius: 6,
-                        spreadRadius: 1,
-                      )
-                    ]
-                  : null,
             ),
             child: widget.child,
           ),
@@ -2240,7 +2287,10 @@ class _RowFocusableItemState extends State<_RowFocusableItem> {
 
 class _BillRowWidget extends StatefulWidget {
   final int index;
-  final FocusNode? firstControlFocusNode;
+  final FocusNode scanFocusNode;
+  final FocusNode deleteFocusNode;
+  final VoidCallback? onTabFromDelete;
+  final VoidCallback? onShiftTabFromScan;
   final VoidCallback? onRequestFocusSearch;
   final BillRow row;
   final List<Product> products;
@@ -2251,8 +2301,11 @@ class _BillRowWidget extends StatefulWidget {
 
   const _BillRowWidget({
     super.key,
-    this.index = 0,
-    this.firstControlFocusNode,
+    required this.index,
+    required this.scanFocusNode,
+    required this.deleteFocusNode,
+    this.onTabFromDelete,
+    this.onShiftTabFromScan,
     this.onRequestFocusSearch,
     required this.row,
     required this.products,
@@ -2322,245 +2375,245 @@ class _BillRowWidgetState extends State<_BillRowWidget> {
         }
         return KeyEventResult.ignored;
       },
-      child: FocusTraversalGroup(
-        policy: WidgetOrderTraversalPolicy(),
-        child: Container(
-          margin: const EdgeInsets.only(bottom: 12),
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: BoutiqueColors.bgSubtle,
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: BoutiqueColors.border),
-          ),
-          child: Row(
-            children: [
-              // Product display — read-only when selected, or autocomplete if null
-              Expanded(
-                flex: 4,
-                child: row.product != null
-                    ? Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: BoutiqueColors.border),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: BoutiqueColors.bgSubtle,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: BoutiqueColors.border),
+        ),
+        child: Row(
+          children: [
+            // Product display — read-only when selected, or autocomplete if null
+            Expanded(
+              flex: 4,
+              child: row.product != null
+                  ? Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: BoutiqueColors.border),
+                      ),
+                      child: Text(
+                        '${row.product!.tagId} - ${row.product!.name}',
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                          color: BoutiqueColors.textPrimary,
                         ),
-                        child: Text(
-                          '${row.product!.tagId} - ${row.product!.name}',
-                          style: const TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.bold,
-                            color: BoutiqueColors.textPrimary,
-                          ),
-                        ),
-                      )
-                    : _ProductAutocomplete(
-                        products: widget.products,
-                        selected: row.product,
-                        getAvailableStock: (p) => widget.getAvailableStock(p, row),
-                        getAvailableWeight: (p) => widget.getAvailableWeight(p, row),
-                        onSelected: (p) {
-                          final isW = p.pricingType == 'Weight-Based';
-                          final available = widget.getAvailableStock(p, row);
-                          final availWeight = widget.getAvailableWeight(p, row);
-                          if (available <= 0 || (isW && availWeight <= 0)) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('Item is out of stock (already selected in other rows).'), backgroundColor: Colors.red),
-                            );
-                            return;
+                      ),
+                    )
+                  : _ProductAutocomplete(
+                      products: widget.products,
+                      selected: row.product,
+                      getAvailableStock: (p) => widget.getAvailableStock(p, row),
+                      getAvailableWeight: (p) => widget.getAvailableWeight(p, row),
+                      onSelected: (p) {
+                        final isW = p.pricingType == 'Weight-Based';
+                        final available = widget.getAvailableStock(p, row);
+                        final availWeight = widget.getAvailableWeight(p, row);
+                        if (available <= 0 || (isW && availWeight <= 0)) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Item is out of stock (already selected in other rows).'), backgroundColor: Colors.red),
+                          );
+                          return;
+                        }
+                        setState(() {
+                          row.product = p;
+                          if (row.qty > available) row.qty = available.toDouble();
+                          if (p.pricingType == 'Weight-Based') {
+                            row.price = p.ratePerGram > 0 ? p.ratePerGram : 0.0;
+                          } else {
+                            row.price = p.finalPrice > 0 ? p.finalPrice : p.mrp;
                           }
-                          setState(() {
-                            row.product = p;
-                            if (row.qty > available) row.qty = available.toDouble();
-                            if (p.pricingType == 'Weight-Based') {
-                              row.price = p.ratePerGram > 0 ? p.ratePerGram : 0.0;
-                            } else {
-                              row.price = p.finalPrice > 0 ? p.finalPrice : p.mrp;
-                            }
-                            row.discountValue = p.discountValue;
-                            row.discountType = p.discountType;
-                          });
-                          widget.onChanged();
-                        },
-                      ),
-              ),
-              const SizedBox(width: 8),
-
-              // 1. Scan QR Icon
-              _RowFocusableItem(
-                focusNode: widget.firstControlFocusNode,
-                tooltip: 'Scan QR (Enter)',
-                onTap: _scanQr,
-                child: const Padding(
-                  padding: EdgeInsets.all(6.0),
-                  child: Icon(Icons.qr_code_scanner_rounded, color: BoutiqueColors.accent, size: 22),
-                ),
-              ),
-              const SizedBox(width: 12),
-
-              // Qty stepper — 2. Minus, 3. Qty, 4. Plus
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: BoutiqueColors.border),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // 2. Minus Button
-                    _RowFocusableItem(
-                      tooltip: 'Decrease Qty (-)',
-                      onTap: () {
-                        if (row.qty > 1) {
-                          setState(() => row.qty -= 1);
-                          widget.onChanged();
-                        }
+                          row.discountValue = p.discountValue;
+                          row.discountType = p.discountType;
+                        });
+                        widget.onChanged();
                       },
-                      child: Padding(
-                        padding: const EdgeInsets.all(6.0),
-                        child: Icon(
-                          Icons.remove,
-                          size: 15,
-                          color: row.qty > 1 ? BoutiqueColors.textSecondary : Colors.grey.shade400,
-                        ),
-                      ),
                     ),
+            ),
+            const SizedBox(width: 8),
 
-                    // 3. Qty Text Button (Enter to edit)
-                    _RowFocusableItem(
-                      tooltip: 'Edit Quantity (Enter)',
-                      onTap: _editQuantityDialog,
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 6.0),
-                        child: Text(
-                          'Qty: ${row.qty == row.qty.toInt() ? row.qty.toInt() : row.qty.toStringAsFixed(2)} ${row.unitLabel}',
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 13,
-                            decoration: TextDecoration.underline,
-                            decorationStyle: TextDecorationStyle.dashed,
-                          ),
-                        ),
-                      ),
-                    ),
-
-                    // 4. Plus Button
-                    _RowFocusableItem(
-                      tooltip: 'Increase Qty (+)',
-                      onTap: () {
-                        if (row.product != null && row.qty < availableStock) {
-                          setState(() => row.qty += 1);
-                          widget.onChanged();
-                        }
-                      },
-                      child: Padding(
-                        padding: const EdgeInsets.all(6.0),
-                        child: Icon(
-                          Icons.add,
-                          size: 15,
-                          color: (row.product != null && row.qty < availableStock)
-                              ? BoutiqueColors.accent
-                              : Colors.grey.shade400,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+            // 1. Scan QR Icon
+            _RowFocusableItem(
+              focusNode: widget.scanFocusNode,
+              tooltip: 'Scan QR (Enter)',
+              onTap: _scanQr,
+              onShiftTabPressed: widget.onShiftTabFromScan,
+              child: const Padding(
+                padding: EdgeInsets.all(6.0),
+                child: Icon(Icons.qr_code_scanner_rounded, color: BoutiqueColors.accent, size: 22),
               ),
+            ),
+            const SizedBox(width: 12),
 
-              // 5. Weight-Based (Enter carat / weight)
-              if (row.product?.pricingType == 'Weight-Based') ...[
-                const SizedBox(width: 8),
-                _RowFocusableItem(
-                  tooltip: 'Enter Carat / Weight (Enter)',
-                  onTap: _editWeightDialog,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF5E6E8),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: BoutiqueColors.accentLightBorder),
-                    ),
-                    child: Text(
-                      '${row.weight > 0 ? row.weight.toStringAsFixed(2) : 'Enter'} ${row.product?.weightUnit ?? 'g'}',
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 13,
-                        color: BoutiqueColors.accent,
-                        decoration: TextDecoration.underline,
-                        decorationStyle: TextDecorationStyle.dashed,
+            // Qty stepper — 2. Minus, 3. Qty, 4. Plus
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: BoutiqueColors.border),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // 2. Minus Button
+                  _RowFocusableItem(
+                    tooltip: 'Decrease Qty (-)',
+                    onTap: () {
+                      if (row.qty > 1) {
+                        setState(() => row.qty -= 1);
+                        widget.onChanged();
+                      }
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.all(6.0),
+                      child: Icon(
+                        Icons.remove,
+                        size: 15,
+                        color: row.qty > 1 ? BoutiqueColors.textSecondary : Colors.grey.shade400,
                       ),
                     ),
                   ),
-                ),
-              ],
-              const SizedBox(width: 12),
 
-              // 6. Price & Edit Pen
-              SizedBox(
-                width: 110,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Text(
-                      '₹${row.lineAmount.toStringAsFixed(2)}',
-                      style: const TextStyle(
-                        fontFamily: 'serif',
-                        fontSize: 15,
-                        fontWeight: FontWeight.bold,
-                        color: BoutiqueColors.textPrimary,
-                      ),
-                    ),
-                    _RowFocusableItem(
-                      tooltip: 'Edit Price for this Bill (Enter)',
-                      onTap: _editPriceDialog,
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              row.product?.pricingType == 'Weight-Based'
-                                  ? '@ ₹${row.price}/${row.product?.weightUnit ?? 'g'}'
-                                  : '@ ₹${row.price}',
-                              style: const TextStyle(
-                                fontSize: 12,
-                                color: BoutiqueColors.accent,
-                                fontWeight: FontWeight.bold,
-                                decoration: TextDecoration.underline,
-                                decorationStyle: TextDecorationStyle.dashed,
-                              ),
-                            ),
-                            const SizedBox(width: 4),
-                            const Icon(Icons.edit_rounded, size: 13, color: BoutiqueColors.accent),
-                          ],
+                  // 3. Qty Text Button (Enter to edit)
+                  _RowFocusableItem(
+                    tooltip: 'Edit Quantity (Enter)',
+                    onTap: _editQuantityDialog,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 6.0),
+                      child: Text(
+                        'Qty: ${row.qty == row.qty.toInt() ? row.qty.toInt() : row.qty.toStringAsFixed(2)} ${row.unitLabel}',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                          decoration: TextDecoration.underline,
+                          decorationStyle: TextDecorationStyle.dashed,
                         ),
                       ),
                     ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
+                  ),
 
-              // 7. Delete Button
+                  // 4. Plus Button
+                  _RowFocusableItem(
+                    tooltip: 'Increase Qty (+)',
+                    onTap: () {
+                      if (row.product != null && row.qty < availableStock) {
+                        setState(() => row.qty += 1);
+                        widget.onChanged();
+                      }
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.all(6.0),
+                      child: Icon(
+                        Icons.add,
+                        size: 15,
+                        color: (row.product != null && row.qty < availableStock)
+                            ? BoutiqueColors.accent
+                            : Colors.grey.shade400,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            // 5. Weight-Based (Enter carat / weight)
+            if (row.product?.pricingType == 'Weight-Based') ...[
+              const SizedBox(width: 8),
               _RowFocusableItem(
-                isDestructive: true,
-                tooltip: 'Remove from Bill (Enter)',
-                onTap: () => widget.onDelete?.call(),
-                child: const Padding(
-                  padding: EdgeInsets.all(6.0),
-                  child: Icon(
-                    Icons.delete_outline_rounded,
-                    color: BoutiqueColors.destructive,
-                    size: 20,
+                tooltip: 'Enter Carat / Weight (Enter)',
+                onTap: _editWeightDialog,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF5E6E8),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: BoutiqueColors.accentLightBorder),
+                  ),
+                  child: Text(
+                    '${row.weight > 0 ? row.weight.toStringAsFixed(2) : 'Enter'} ${row.product?.weightUnit ?? 'g'}',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                      color: BoutiqueColors.accent,
+                      decoration: TextDecoration.underline,
+                      decorationStyle: TextDecorationStyle.dashed,
+                    ),
                   ),
                 ),
               ),
             ],
-          ),
+            const SizedBox(width: 12),
+
+            // 6. Price & Edit Pen
+            SizedBox(
+              width: 110,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    '₹${row.lineAmount.toStringAsFixed(2)}',
+                    style: const TextStyle(
+                      fontFamily: 'serif',
+                      fontSize: 15,
+                      fontWeight: FontWeight.bold,
+                      color: BoutiqueColors.textPrimary,
+                    ),
+                  ),
+                  _RowFocusableItem(
+                    tooltip: 'Edit Price for this Bill (Enter)',
+                    onTap: _editPriceDialog,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            row.product?.pricingType == 'Weight-Based'
+                                ? '@ ₹${row.price}/${row.product?.weightUnit ?? 'g'}'
+                                : '@ ₹${row.price}',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: BoutiqueColors.accent,
+                              fontWeight: FontWeight.bold,
+                              decoration: TextDecoration.underline,
+                              decorationStyle: TextDecorationStyle.dashed,
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          const Icon(Icons.edit_rounded, size: 13, color: BoutiqueColors.accent),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+
+            // 7. Delete Button
+            _RowFocusableItem(
+              focusNode: widget.deleteFocusNode,
+              isDestructive: true,
+              tooltip: 'Remove from Bill (Enter)',
+              onTap: () => widget.onDelete?.call(),
+              onTabPressed: widget.onTabFromDelete,
+              child: const Padding(
+                padding: EdgeInsets.all(6.0),
+                child: Icon(
+                  Icons.delete_outline_rounded,
+                  color: BoutiqueColors.destructive,
+                  size: 20,
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -3681,9 +3734,9 @@ class _CustomerAutocompleteFieldState extends State<_CustomerAutocompleteField> 
     final offset = _highlightIndex * itemHeight;
     final viewportDimension = _scrollController.position.viewportDimension;
     if (offset < _scrollController.offset) {
-      _scrollController.animateTo(offset, duration: const Duration(milliseconds: 80), curve: Curves.easeOut);
+      _scrollController.animateTo(offset, duration: const Duration(milliseconds: 40), curve: Curves.easeOut);
     } else if (offset + itemHeight > _scrollController.offset + viewportDimension) {
-      _scrollController.animateTo(offset + itemHeight - viewportDimension, duration: const Duration(milliseconds: 80), curve: Curves.easeOut);
+      _scrollController.animateTo(offset + itemHeight - viewportDimension, duration: const Duration(milliseconds: 40), curve: Curves.easeOut);
     }
   }
 
