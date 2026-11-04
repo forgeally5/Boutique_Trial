@@ -1339,7 +1339,7 @@ class _SidebarNavItemState extends State<_SidebarNavItem> {
                             widget.label,
                             style: TextStyle(
                               fontSize: 14,
-                              fontWeight: widget.isSelected || _isFocused ? FontWeight.bold : FontWeight.w500,
+                              fontWeight: FontWeight.bold,
                               color: showHighlight ? primaryColor : (widget.isDestructive ? BoutiqueColors.destructive : BoutiqueColors.textPrimary),
                             ),
                             overflow: TextOverflow.ellipsis,
@@ -1351,12 +1351,12 @@ class _SidebarNavItemState extends State<_SidebarNavItem> {
                             '(${widget.shortcut})',
                             style: TextStyle(
                               fontSize: 11,
-                              fontWeight: FontWeight.w500,
+                              fontWeight: FontWeight.bold,
                               color: showHighlight
-                                  ? primaryColor.withValues(alpha: 0.8)
+                                  ? primaryColor.withValues(alpha: 0.9)
                                   : (widget.isDestructive
-                                      ? BoutiqueColors.destructive.withValues(alpha: 0.7)
-                                      : BoutiqueColors.textSecondary.withValues(alpha: 0.7)),
+                                      ? BoutiqueColors.destructive.withValues(alpha: 0.85)
+                                      : BoutiqueColors.textPrimary.withValues(alpha: 0.65)),
                             ),
                           ),
                         ],

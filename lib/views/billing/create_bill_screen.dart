@@ -66,6 +66,13 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
   int _autocompleteHighlightIndex = -1;
   StateSetter? _optionsViewStateSetter;
   final ScrollController _autocompleteScrollCtrl = ScrollController();
+  final FocusNode _firstProductRowFocusNode = FocusNode();
+
+  void _focusFirstProductRow() {
+    if (_rows.isNotEmpty) {
+      _firstProductRowFocusNode.requestFocus();
+    }
+  }
 
   // Summary controllers — managed separately so only summary panel rebuilds
   final _extraDiscountCtrl = TextEditingController(text: '');
@@ -456,6 +463,7 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
     _customerMobileFocusNode.removeListener(_onMobileFocusChanged);
     widget.state.removeListener(_onStateProductsUpdate);
     _autocompleteScrollCtrl.dispose();
+    _firstProductRowFocusNode.dispose();
     _rowVersion.dispose();
     _billNoCtrl.dispose();
     _customerNameCtrl.dispose();
@@ -1100,7 +1108,12 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Shortcuts(
+    return CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.keyP, alt: true): _focusFirstProductRow,
+        const SingleActivator(LogicalKeyboardKey.keyS, alt: true): () => _topEntryFieldFocus?.requestFocus(),
+      },
+      child: Shortcuts(
       shortcuts: <ShortcutActivator, Intent>{
         const SingleActivator(LogicalKeyboardKey.escape): const _CancelEditIntent(),
       },
@@ -1214,6 +1227,7 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
     ),
         ),
       ),
+    ),
     );
   }
 
@@ -1639,19 +1653,39 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
 
   void _scrollAutocompleteToIndex(int index) {
     if (!_autocompleteScrollCtrl.hasClients || index < 0) return;
-    const double itemHeight = 58.0;
-    const double viewportHeight = 250.0;
-    final double targetOffset = index * itemHeight;
-    final double currentOffset = _autocompleteScrollCtrl.offset;
-    if (targetOffset < currentOffset) {
+    if (index == 0) {
       _autocompleteScrollCtrl.animateTo(
-        targetOffset,
+        0,
         duration: const Duration(milliseconds: 80),
         curve: Curves.easeOut,
       );
-    } else if (targetOffset + itemHeight > currentOffset + viewportHeight) {
+      return;
+    }
+    if (_currentAutocompleteOptions.isNotEmpty && index == _currentAutocompleteOptions.length - 1) {
       _autocompleteScrollCtrl.animateTo(
-        targetOffset + itemHeight - viewportHeight,
+        _autocompleteScrollCtrl.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 80),
+        curve: Curves.easeOut,
+      );
+      return;
+    }
+    const double itemHeight = 68.0;
+    const double bottomClearance = 16.0;
+    final double viewportHeight = _autocompleteScrollCtrl.position.viewportDimension;
+    final double targetTop = index * itemHeight;
+    final double targetBottom = targetTop + itemHeight + bottomClearance;
+    final double currentOffset = _autocompleteScrollCtrl.offset;
+
+    if (targetTop < currentOffset) {
+      _autocompleteScrollCtrl.animateTo(
+        targetTop,
+        duration: const Duration(milliseconds: 80),
+        curve: Curves.easeOut,
+      );
+    } else if (targetBottom > currentOffset + viewportHeight) {
+      final double newOffset = (targetBottom - viewportHeight).clamp(0.0, _autocompleteScrollCtrl.position.maxScrollExtent);
+      _autocompleteScrollCtrl.animateTo(
+        newOffset,
         duration: const Duration(milliseconds: 80),
         curve: Curves.easeOut,
       );
@@ -1696,7 +1730,7 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
                   elevation: 4,
                   borderRadius: BorderRadius.circular(8),
                   child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxHeight: 250, maxWidth: 420),
+                    constraints: const BoxConstraints(maxHeight: 290, maxWidth: 420),
                     child: ListView.builder(
                       padding: EdgeInsets.zero,
                       shrinkWrap: true,
@@ -1755,6 +1789,9 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
                   _optionsViewStateSetter?.call(() {});
                   _scrollAutocompleteToIndex(_autocompleteHighlightIndex);
                   return KeyEventResult.handled;
+                } else if (_rows.isNotEmpty && textCtrl.text.trim().isEmpty) {
+                  _focusFirstProductRow();
+                  return KeyEventResult.handled;
                 }
               } else if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
                 if (_currentAutocompleteOptions.isNotEmpty) {
@@ -1801,6 +1838,7 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
                 borderSide: const BorderSide(color: BoutiqueColors.accent, width: 2),
               ),
               suffixIcon: IconButton(
+                focusNode: FocusNode(skipTraversal: true),
                 icon: const Icon(Icons.qr_code_scanner, color: BoutiqueColors.accent),
                 tooltip: 'Scan Camera',
                 onPressed: () async {
@@ -1911,6 +1949,9 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
             for (int i = 0; i < _rows.length; i++)
               _BillRowWidget(
                 key: ObjectKey(_rows[i]),
+                index: i,
+                firstControlFocusNode: i == 0 ? _firstProductRowFocusNode : null,
+                onRequestFocusSearch: () => _topEntryFieldFocus?.requestFocus(),
                 row: _rows[i],
                 products: _cachedProducts,
                 getAvailableStock: _getAvailableStock,
@@ -2082,7 +2123,125 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
 // Isolated StatefulWidget: qty stepper and product selection manage their own
 // state internally; parent only notified via onChanged when values actually change.
 
+class _RowFocusableItem extends StatefulWidget {
+  final FocusNode? focusNode;
+  final VoidCallback onTap;
+  final Widget child;
+  final String? tooltip;
+  final BorderRadius? borderRadius;
+  final bool isDestructive;
+
+  const _RowFocusableItem({
+    super.key,
+    this.focusNode,
+    required this.onTap,
+    required this.child,
+    this.tooltip,
+    this.borderRadius,
+    this.isDestructive = false,
+  });
+
+  @override
+  State<_RowFocusableItem> createState() => _RowFocusableItemState();
+}
+
+class _RowFocusableItemState extends State<_RowFocusableItem> {
+  bool _isFocused = false;
+  late FocusNode _node;
+  bool _ownsNode = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.focusNode != null) {
+      _node = widget.focusNode!;
+    } else {
+      _node = FocusNode();
+      _ownsNode = true;
+    }
+  }
+
+  @override
+  void didUpdateWidget(_RowFocusableItem oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.focusNode != oldWidget.focusNode) {
+      if (_ownsNode) _node.dispose();
+      if (widget.focusNode != null) {
+        _node = widget.focusNode!;
+        _ownsNode = false;
+      } else {
+        _node = FocusNode();
+        _ownsNode = true;
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    if (_ownsNode) {
+      _node.dispose();
+    }
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final br = widget.borderRadius ?? BorderRadius.circular(8);
+    final focusColor = widget.isDestructive ? BoutiqueColors.destructive : BoutiqueColors.accent;
+
+    return Focus(
+      focusNode: _node,
+      onFocusChange: (f) => setState(() => _isFocused = f),
+      onKeyEvent: (node, event) {
+        if (event is KeyDownEvent &&
+            (event.logicalKey == LogicalKeyboardKey.enter ||
+             event.logicalKey == LogicalKeyboardKey.numpadEnter ||
+             event.logicalKey == LogicalKeyboardKey.space)) {
+          widget.onTap();
+          return KeyEventResult.handled;
+        }
+        return KeyEventResult.ignored;
+      },
+      child: Tooltip(
+        message: widget.tooltip ?? '',
+        child: InkWell(
+          onTap: widget.onTap,
+          borderRadius: br,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 150),
+            decoration: BoxDecoration(
+              borderRadius: br,
+              color: _isFocused
+                  ? (widget.isDestructive
+                      ? BoutiqueColors.destructive.withValues(alpha: 0.12)
+                      : BoutiqueColors.accent.withValues(alpha: 0.12))
+                  : Colors.transparent,
+              border: Border.all(
+                color: _isFocused ? focusColor : Colors.transparent,
+                width: 2.0,
+              ),
+              boxShadow: _isFocused
+                  ? [
+                      BoxShadow(
+                        color: focusColor.withValues(alpha: 0.4),
+                        blurRadius: 6,
+                        spreadRadius: 1,
+                      )
+                    ]
+                  : null,
+            ),
+            child: widget.child,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _BillRowWidget extends StatefulWidget {
+  final int index;
+  final FocusNode? firstControlFocusNode;
+  final VoidCallback? onRequestFocusSearch;
   final BillRow row;
   final List<Product> products;
   final int Function(Product p, [BillRow? currentRow]) getAvailableStock;
@@ -2092,6 +2251,9 @@ class _BillRowWidget extends StatefulWidget {
 
   const _BillRowWidget({
     super.key,
+    this.index = 0,
+    this.firstControlFocusNode,
+    this.onRequestFocusSearch,
     required this.row,
     required this.products,
     required this.getAvailableStock,
@@ -2105,215 +2267,306 @@ class _BillRowWidget extends StatefulWidget {
 }
 
 class _BillRowWidgetState extends State<_BillRowWidget> {
+  Future<void> _scanQr() async {
+    final scannedTagId = await showDialog<String>(
+      context: context,
+      builder: (ctx) => const ScannerDialog(),
+    );
+    if (scannedTagId != null && scannedTagId.isNotEmpty) {
+      final matched = widget.products.where((p) => p.tagId.toLowerCase() == scannedTagId.toLowerCase()).toList();
+      if (matched.isNotEmpty) {
+        final p = matched.first;
+        final available = widget.getAvailableStock(p, widget.row);
+        if (available <= 0) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Scanned item is out of stock.'), backgroundColor: Colors.red),
+            );
+          }
+          return;
+        }
+        setState(() {
+          widget.row.product = p;
+          if (widget.row.qty > available) widget.row.qty = available.toDouble();
+          if (p.pricingType == 'Weight-Based') {
+            widget.row.price = p.ratePerGram > 0 ? p.ratePerGram : 0.0;
+          } else {
+            widget.row.price = p.finalPrice > 0 ? p.finalPrice : p.mrp;
+          }
+          widget.row.discountValue = p.discountValue;
+          widget.row.discountType = p.discountType;
+        });
+        widget.onChanged();
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('No product found with tag ID: $scannedTagId'), backgroundColor: Colors.red),
+          );
+        }
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final row = widget.row;
     final availableStock = row.product != null ? widget.getAvailableStock(row.product!, row) : 0;
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: BoutiqueColors.bgSubtle,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: BoutiqueColors.border),
-      ),
-      child: Row(
-        children: [
-          // Product display — read-only when selected, or autocomplete if null
-          Expanded(
-            flex: 4,
-            child: row.product != null
-                ? Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+    return Focus(
+      onKeyEvent: (node, event) {
+        if (event is KeyDownEvent) {
+          if (event.logicalKey == LogicalKeyboardKey.escape ||
+              (HardwareKeyboard.instance.isAltPressed && event.logicalKey == LogicalKeyboardKey.keyS)) {
+            widget.onRequestFocusSearch?.call();
+            return KeyEventResult.handled;
+          }
+        }
+        return KeyEventResult.ignored;
+      },
+      child: FocusTraversalGroup(
+        policy: WidgetOrderTraversalPolicy(),
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 12),
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: BoutiqueColors.bgSubtle,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: BoutiqueColors.border),
+          ),
+          child: Row(
+            children: [
+              // Product display — read-only when selected, or autocomplete if null
+              Expanded(
+                flex: 4,
+                child: row.product != null
+                    ? Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: BoutiqueColors.border),
+                        ),
+                        child: Text(
+                          '${row.product!.tagId} - ${row.product!.name}',
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                            color: BoutiqueColors.textPrimary,
+                          ),
+                        ),
+                      )
+                    : _ProductAutocomplete(
+                        products: widget.products,
+                        selected: row.product,
+                        getAvailableStock: (p) => widget.getAvailableStock(p, row),
+                        getAvailableWeight: (p) => widget.getAvailableWeight(p, row),
+                        onSelected: (p) {
+                          final isW = p.pricingType == 'Weight-Based';
+                          final available = widget.getAvailableStock(p, row);
+                          final availWeight = widget.getAvailableWeight(p, row);
+                          if (available <= 0 || (isW && availWeight <= 0)) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Item is out of stock (already selected in other rows).'), backgroundColor: Colors.red),
+                            );
+                            return;
+                          }
+                          setState(() {
+                            row.product = p;
+                            if (row.qty > available) row.qty = available.toDouble();
+                            if (p.pricingType == 'Weight-Based') {
+                              row.price = p.ratePerGram > 0 ? p.ratePerGram : 0.0;
+                            } else {
+                              row.price = p.finalPrice > 0 ? p.finalPrice : p.mrp;
+                            }
+                            row.discountValue = p.discountValue;
+                            row.discountType = p.discountType;
+                          });
+                          widget.onChanged();
+                        },
+                      ),
+              ),
+              const SizedBox(width: 8),
+
+              // 1. Scan QR Icon
+              _RowFocusableItem(
+                focusNode: widget.firstControlFocusNode,
+                tooltip: 'Scan QR (Enter)',
+                onTap: _scanQr,
+                child: const Padding(
+                  padding: EdgeInsets.all(6.0),
+                  child: Icon(Icons.qr_code_scanner_rounded, color: BoutiqueColors.accent, size: 22),
+                ),
+              ),
+              const SizedBox(width: 12),
+
+              // Qty stepper — 2. Minus, 3. Qty, 4. Plus
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: BoutiqueColors.border),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // 2. Minus Button
+                    _RowFocusableItem(
+                      tooltip: 'Decrease Qty (-)',
+                      onTap: () {
+                        if (row.qty > 1) {
+                          setState(() => row.qty -= 1);
+                          widget.onChanged();
+                        }
+                      },
+                      child: Padding(
+                        padding: const EdgeInsets.all(6.0),
+                        child: Icon(
+                          Icons.remove,
+                          size: 15,
+                          color: row.qty > 1 ? BoutiqueColors.textSecondary : Colors.grey.shade400,
+                        ),
+                      ),
+                    ),
+
+                    // 3. Qty Text Button (Enter to edit)
+                    _RowFocusableItem(
+                      tooltip: 'Edit Quantity (Enter)',
+                      onTap: _editQuantityDialog,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 6.0),
+                        child: Text(
+                          'Qty: ${row.qty == row.qty.toInt() ? row.qty.toInt() : row.qty.toStringAsFixed(2)} ${row.unitLabel}',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                            decoration: TextDecoration.underline,
+                            decorationStyle: TextDecorationStyle.dashed,
+                          ),
+                        ),
+                      ),
+                    ),
+
+                    // 4. Plus Button
+                    _RowFocusableItem(
+                      tooltip: 'Increase Qty (+)',
+                      onTap: () {
+                        if (row.product != null && row.qty < availableStock) {
+                          setState(() => row.qty += 1);
+                          widget.onChanged();
+                        }
+                      },
+                      child: Padding(
+                        padding: const EdgeInsets.all(6.0),
+                        child: Icon(
+                          Icons.add,
+                          size: 15,
+                          color: (row.product != null && row.qty < availableStock)
+                              ? BoutiqueColors.accent
+                              : Colors.grey.shade400,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              // 5. Weight-Based (Enter carat / weight)
+              if (row.product?.pricingType == 'Weight-Based') ...[
+                const SizedBox(width: 8),
+                _RowFocusableItem(
+                  tooltip: 'Enter Carat / Weight (Enter)',
+                  onTap: _editWeightDialog,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                     decoration: BoxDecoration(
-                      color: Colors.white,
+                      color: const Color(0xFFF5E6E8),
                       borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: BoutiqueColors.border),
+                      border: Border.all(color: BoutiqueColors.accentLightBorder),
                     ),
                     child: Text(
-                      '${row.product!.tagId} - ${row.product!.name}',
+                      '${row.weight > 0 ? row.weight.toStringAsFixed(2) : 'Enter'} ${row.product?.weightUnit ?? 'g'}',
                       style: const TextStyle(
+                        fontWeight: FontWeight.bold,
                         fontSize: 13,
+                        color: BoutiqueColors.accent,
+                        decoration: TextDecoration.underline,
+                        decorationStyle: TextDecorationStyle.dashed,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+              const SizedBox(width: 12),
+
+              // 6. Price & Edit Pen
+              SizedBox(
+                width: 110,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      '₹${row.lineAmount.toStringAsFixed(2)}',
+                      style: const TextStyle(
+                        fontFamily: 'serif',
+                        fontSize: 15,
                         fontWeight: FontWeight.bold,
                         color: BoutiqueColors.textPrimary,
                       ),
                     ),
-                  )
-                : _ProductAutocomplete(
-                    products: widget.products,
-                    selected: row.product,
-                    getAvailableStock: (p) => widget.getAvailableStock(p, row),
-                    getAvailableWeight: (p) => widget.getAvailableWeight(p, row),
-                    onSelected: (p) {
-                      final isW = p.pricingType == 'Weight-Based';
-                      final available = widget.getAvailableStock(p, row);
-                      final availWeight = widget.getAvailableWeight(p, row);
-                      if (available <= 0 || (isW && availWeight <= 0)) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Item is out of stock (already selected in other rows).'), backgroundColor: Colors.red),
-                        );
-                        return;
-                      }
-                      setState(() {
-                        row.product = p;
-                        if (row.qty > available) row.qty = available.toDouble();
-                        if (p.pricingType == 'Weight-Based') {
-                          row.price = p.ratePerGram > 0 ? p.ratePerGram : 0.0;
-                        } else {
-                          row.price = p.finalPrice > 0 ? p.finalPrice : p.mrp;
-                        }
-                        row.discountValue = p.discountValue;
-                        row.discountType = p.discountType;
-                      });
-                      widget.onChanged();
-                    },
-                  ),
-          ),
-          const SizedBox(width: 8),
-          IconButton(
-            tooltip: 'Scan QR',
-            icon: const Icon(Icons.qr_code_scanner_rounded, color: BoutiqueColors.accent),
-            onPressed: () async {
-              final scannedTagId = await showDialog<String>(
-                context: context,
-                builder: (ctx) => const ScannerDialog(),
-              );
-              if (scannedTagId != null && scannedTagId.isNotEmpty) {
-                final matched = widget.products.where((p) => p.tagId.toLowerCase() == scannedTagId.toLowerCase()).toList();
-                if (matched.isNotEmpty) {
-                  final p = matched.first;
-                  final available = widget.getAvailableStock(p, row);
-                  if (available <= 0) {
-                    if (mounted) {
-                      // ignore: use_build_context_synchronously
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Scanned item is out of stock.'), backgroundColor: Colors.red),
-                      );
-                    }
-                    return;
-                  }
-                  setState(() {
-                    row.product = p;
-                    if (row.qty > available) row.qty = available.toDouble();
-                    if (p.pricingType == 'Weight-Based') {
-                      row.price = p.ratePerGram > 0 ? p.ratePerGram : 0.0;
-                    } else {
-                      row.price = p.finalPrice > 0 ? p.finalPrice : p.mrp;
-                    }
-                    row.discountValue = p.discountValue;
-                    row.discountType = p.discountType;
-                  });
-                  widget.onChanged();
-                } else {
-                  if (mounted) {
-                    // ignore: use_build_context_synchronously
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('No product found with tag ID: $scannedTagId'), backgroundColor: Colors.red),
-                    );
-                  }
-                }
-              }
-            },
-          ),
-          const SizedBox(width: 12),
-
-          // Qty stepper — only rebuilds this widget, not parent
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: BoutiqueColors.border),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.remove, size: 14, color: BoutiqueColors.textSecondary),
-                  onPressed: row.qty > 1
-                      ? () {
-                          setState(() => row.qty -= 1);
-                          widget.onChanged();
-                        }
-                      : null,
-                ),
-                InkWell(
-                  onTap: () => _editQuantityDialog(),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 4.0),
-                    child: Text('Qty: ${row.qty == row.qty.toInt() ? row.qty.toInt() : row.qty.toStringAsFixed(2)} ${row.unitLabel}',
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, decoration: TextDecoration.underline, decorationStyle: TextDecorationStyle.dashed)),
-                  ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.add, size: 14, color: BoutiqueColors.accent),
-                  onPressed: (row.product != null && row.qty < availableStock)
-                      ? () {
-                          setState(() => row.qty += 1);
-                          widget.onChanged();
-                        }
-                      : null,
-                ),
-              ],
-            ),
-          ),
-          if (row.product?.pricingType == 'Weight-Based') ...[
-            const SizedBox(width: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF5E6E8),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: BoutiqueColors.accentLightBorder),
-              ),
-              child: InkWell(
-                onTap: () => _editWeightDialog(),
-                child: Text(
-                  '${row.weight > 0 ? row.weight.toStringAsFixed(2) : 'Enter'} ${row.product?.weightUnit ?? 'g'}',
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: BoutiqueColors.accent, decoration: TextDecoration.underline, decorationStyle: TextDecorationStyle.dashed),
-                ),
-              ),
-            ),
-          ],
-          const SizedBox(width: 12),
-
-          // Price & Total
-          SizedBox(
-            width: 110,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Text('₹${row.lineAmount.toStringAsFixed(2)}',
-                    style: const TextStyle(fontFamily: 'serif', fontSize: 15, fontWeight: FontWeight.bold, color: BoutiqueColors.textPrimary)),
-                InkWell(
-                  onTap: () => _editPriceDialog(),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 4.0),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(row.product?.pricingType == 'Weight-Based' ? '@ ₹${row.price}/${row.product?.weightUnit ?? 'g'}' : '@ ₹${row.price}',
-                            style: const TextStyle(fontSize: 12, color: BoutiqueColors.accent, fontWeight: FontWeight.bold, decoration: TextDecoration.underline, decorationStyle: TextDecorationStyle.dashed)),
-                        const SizedBox(width: 4),
-                        const Icon(Icons.edit_rounded, size: 12, color: BoutiqueColors.accent),
-                      ],
+                    _RowFocusableItem(
+                      tooltip: 'Edit Price for this Bill (Enter)',
+                      onTap: _editPriceDialog,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              row.product?.pricingType == 'Weight-Based'
+                                  ? '@ ₹${row.price}/${row.product?.weightUnit ?? 'g'}'
+                                  : '@ ₹${row.price}',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: BoutiqueColors.accent,
+                                fontWeight: FontWeight.bold,
+                                decoration: TextDecoration.underline,
+                                decorationStyle: TextDecorationStyle.dashed,
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            const Icon(Icons.edit_rounded, size: 13, color: BoutiqueColors.accent),
+                          ],
+                        ),
+                      ),
                     ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+
+              // 7. Delete Button
+              _RowFocusableItem(
+                isDestructive: true,
+                tooltip: 'Remove from Bill (Enter)',
+                onTap: () => widget.onDelete?.call(),
+                child: const Padding(
+                  padding: EdgeInsets.all(6.0),
+                  child: Icon(
+                    Icons.delete_outline_rounded,
+                    color: BoutiqueColors.destructive,
+                    size: 20,
                   ),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
-          const SizedBox(width: 8),
-
-          IconButton(
-            icon: const Icon(Icons.delete_outline_rounded, color: BoutiqueColors.destructive, size: 20),
-            onPressed: widget.onDelete,
-          ),
-        ],
+        ),
       ),
     );
   }
+
+  
 
   Future<void> _editQuantityDialog() async {
     final ctrl = TextEditingController(text: widget.row.qty == widget.row.qty.toInt() ? widget.row.qty.toInt().toString() : widget.row.qty.toString());
@@ -2470,7 +2723,7 @@ class _ProductAutocomplete extends StatelessWidget {
             elevation: 4,
             borderRadius: BorderRadius.circular(8),
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxHeight: 250, maxWidth: 420),
+              constraints: const BoxConstraints(maxHeight: 290, maxWidth: 420),
               child: ListView.builder(
                 padding: EdgeInsets.zero,
                 shrinkWrap: true,
