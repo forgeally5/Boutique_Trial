@@ -1,4 +1,4 @@
-﻿import 'dart:convert';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
@@ -66,8 +66,14 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
   int _autocompleteHighlightIndex = -1;
   StateSetter? _optionsViewStateSetter;
   final ScrollController _autocompleteScrollCtrl = ScrollController();
+  final Map<int, FocusNode> _cardFocusNodes = {};
   final Map<int, FocusNode> _scanFocusNodes = {};
   final Map<int, FocusNode> _deleteFocusNodes = {};
+  int _lastFocusedBoxIndex = -1;
+
+  FocusNode _getCardFocusNode(int index) {
+    return _cardFocusNodes.putIfAbsent(index, () => FocusNode(debugLabel: 'card_$index'));
+  }
 
   FocusNode _getScanFocusNode(int index) {
     return _scanFocusNodes.putIfAbsent(index, () => FocusNode(debugLabel: 'scan_$index'));
@@ -77,10 +83,22 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
     return _deleteFocusNodes.putIfAbsent(index, () => FocusNode(debugLabel: 'delete_$index'));
   }
 
-  void _focusFirstProductRow() {
-    if (_rows.isNotEmpty) {
-      _getScanFocusNode(0).requestFocus();
+  void _cycleProductBox() {
+    if (_rows.isEmpty) return;
+    int current = -1;
+    for (int i = 0; i < _rows.length; i++) {
+      if (_getCardFocusNode(i).hasFocus ||
+          _getScanFocusNode(i).hasFocus ||
+          _getDeleteFocusNode(i).hasFocus) {
+        current = i;
+        break;
+      }
     }
+    int nextIndex = (current == -1)
+        ? (_lastFocusedBoxIndex + 1) % _rows.length
+        : (current + 1) % _rows.length;
+    _lastFocusedBoxIndex = nextIndex;
+    _getCardFocusNode(nextIndex).requestFocus();
   }
 
   bool _handleBillingShortcuts(KeyEvent event) {
@@ -88,9 +106,9 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
     final isAlt = HardwareKeyboard.instance.isAltPressed;
     final isCtrl = HardwareKeyboard.instance.isControlPressed;
 
-    // Alt + P or Ctrl + P -> Focus first product row
+    // Alt + P or Ctrl + P -> Cycle through product boxes
     if ((isAlt || isCtrl) && event.logicalKey == LogicalKeyboardKey.keyP) {
-      _focusFirstProductRow();
+      _cycleProductBox();
       return true;
     }
     // Alt + S -> Focus product search bar
@@ -492,6 +510,7 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
     widget.state.removeListener(_onStateProductsUpdate);
     HardwareKeyboard.instance.removeHandler(_handleBillingShortcuts);
     _autocompleteScrollCtrl.dispose();
+    for (final node in _cardFocusNodes.values) { node.dispose(); }
     for (final node in _scanFocusNodes.values) { node.dispose(); }
     for (final node in _deleteFocusNodes.values) { node.dispose(); }
     _rowVersion.dispose();
@@ -1820,7 +1839,7 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
                   _scrollAutocompleteToIndex(_autocompleteHighlightIndex);
                   return KeyEventResult.handled;
                 } else if (_rows.isNotEmpty && textCtrl.text.trim().isEmpty) {
-                  _focusFirstProductRow();
+                  _getCardFocusNode(0).requestFocus();
                   return KeyEventResult.handled;
                 }
               } else if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
@@ -2287,8 +2306,11 @@ class _RowFocusableItemState extends State<_RowFocusableItem> {
 
 class _BillRowWidget extends StatefulWidget {
   final int index;
+  final FocusNode cardFocusNode;
   final FocusNode scanFocusNode;
   final FocusNode deleteFocusNode;
+  final VoidCallback? onNextBox;
+  final VoidCallback? onPrevBox;
   final VoidCallback? onTabFromDelete;
   final VoidCallback? onShiftTabFromScan;
   final VoidCallback? onRequestFocusSearch;
@@ -2302,8 +2324,11 @@ class _BillRowWidget extends StatefulWidget {
   const _BillRowWidget({
     super.key,
     required this.index,
+    required this.cardFocusNode,
     required this.scanFocusNode,
     required this.deleteFocusNode,
+    this.onNextBox,
+    this.onPrevBox,
     this.onTabFromDelete,
     this.onShiftTabFromScan,
     this.onRequestFocusSearch,
@@ -2320,6 +2345,23 @@ class _BillRowWidget extends StatefulWidget {
 }
 
 class _BillRowWidgetState extends State<_BillRowWidget> {
+  bool _isCardFocused = false;
+  late final FocusNode _minusFocusNode = FocusNode(debugLabel: 'row_${widget.index}_minus');
+  late final FocusNode _qtyFocusNode = FocusNode(debugLabel: 'row_${widget.index}_qty');
+  late final FocusNode _plusFocusNode = FocusNode(debugLabel: 'row_${widget.index}_plus');
+  late final FocusNode _weightFocusNode = FocusNode(debugLabel: 'row_${widget.index}_weight');
+  late final FocusNode _priceFocusNode = FocusNode(debugLabel: 'row_${widget.index}_price');
+
+  @override
+  void dispose() {
+    _minusFocusNode.dispose();
+    _qtyFocusNode.dispose();
+    _plusFocusNode.dispose();
+    _weightFocusNode.dispose();
+    _priceFocusNode.dispose();
+    super.dispose();
+  }
+
   Future<void> _scanQr() async {
     final scannedTagId = await showDialog<String>(
       context: context,
@@ -2364,11 +2406,56 @@ class _BillRowWidgetState extends State<_BillRowWidget> {
   Widget build(BuildContext context) {
     final row = widget.row;
     final availableStock = row.product != null ? widget.getAvailableStock(row.product!, row) : 0;
+    final isWeightBased = row.product?.pricingType == 'Weight-Based';
+
     return Focus(
+      focusNode: widget.cardFocusNode,
+      onFocusChange: (f) {
+        if (mounted) setState(() => _isCardFocused = f);
+      },
       onKeyEvent: (node, event) {
         if (event is KeyDownEvent) {
-          if (event.logicalKey == LogicalKeyboardKey.escape ||
-              (HardwareKeyboard.instance.isAltPressed && event.logicalKey == LogicalKeyboardKey.keyS)) {
+          if (HardwareKeyboard.instance.isAltPressed && event.logicalKey == LogicalKeyboardKey.keyS) {
+            widget.onRequestFocusSearch?.call();
+            return KeyEventResult.handled;
+          }
+          // Enter / Space: enter into this box's scan button
+          if (event.logicalKey == LogicalKeyboardKey.enter ||
+              event.logicalKey == LogicalKeyboardKey.numpadEnter ||
+              event.logicalKey == LogicalKeyboardKey.space) {
+            widget.scanFocusNode.requestFocus();
+            return KeyEventResult.handled;
+          }
+          // Tab on card enters into scan button
+          if (event.logicalKey == LogicalKeyboardKey.tab) {
+            if (HardwareKeyboard.instance.isShiftPressed) {
+              if (widget.onPrevBox != null) {
+                widget.onPrevBox!();
+              } else {
+                widget.onRequestFocusSearch?.call();
+              }
+              return KeyEventResult.handled;
+            } else {
+              widget.scanFocusNode.requestFocus();
+              return KeyEventResult.handled;
+            }
+          }
+          // ArrowDown / ArrowUp moves between boxes
+          if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
+            if (widget.onNextBox != null) {
+              widget.onNextBox!();
+              return KeyEventResult.handled;
+            }
+          }
+          if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
+            if (widget.onPrevBox != null) {
+              widget.onPrevBox!();
+            } else {
+              widget.onRequestFocusSearch?.call();
+            }
+            return KeyEventResult.handled;
+          }
+          if (event.logicalKey == LogicalKeyboardKey.escape) {
             widget.onRequestFocusSearch?.call();
             return KeyEventResult.handled;
           }
@@ -2379,13 +2466,27 @@ class _BillRowWidgetState extends State<_BillRowWidget> {
         margin: const EdgeInsets.only(bottom: 12),
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: BoutiqueColors.bgSubtle,
+          color: _isCardFocused
+              ? BoutiqueColors.accentSoft.withValues(alpha: 0.35)
+              : BoutiqueColors.bgSubtle,
           borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: BoutiqueColors.border),
+          border: Border.all(
+            color: _isCardFocused ? BoutiqueColors.accent : BoutiqueColors.border,
+            width: _isCardFocused ? 2.5 : 1.0,
+          ),
+          boxShadow: _isCardFocused
+              ? [
+                  BoxShadow(
+                    color: BoutiqueColors.accent.withValues(alpha: 0.18),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ]
+              : null,
         ),
         child: Row(
           children: [
-            // Product display — read-only when selected, or autocomplete if null
+            // Product display â€” read-only when selected, or autocomplete if null
             Expanded(
               flex: 4,
               child: row.product != null
@@ -2443,7 +2544,9 @@ class _BillRowWidgetState extends State<_BillRowWidget> {
               focusNode: widget.scanFocusNode,
               tooltip: 'Scan QR (Enter)',
               onTap: _scanQr,
-              onShiftTabPressed: widget.onShiftTabFromScan,
+              onTabPressed: () => _minusFocusNode.requestFocus(),
+              onShiftTabPressed: () => widget.cardFocusNode.requestFocus(),
+              onEscapePressed: () => widget.cardFocusNode.requestFocus(),
               child: const Padding(
                 padding: EdgeInsets.all(6.0),
                 child: Icon(Icons.qr_code_scanner_rounded, color: BoutiqueColors.accent, size: 22),
@@ -2451,7 +2554,7 @@ class _BillRowWidgetState extends State<_BillRowWidget> {
             ),
             const SizedBox(width: 12),
 
-            // Qty stepper — 2. Minus, 3. Qty, 4. Plus
+            // Qty stepper â€” 2. Minus, 3. Qty, 4. Plus
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
               decoration: BoxDecoration(
@@ -2464,6 +2567,7 @@ class _BillRowWidgetState extends State<_BillRowWidget> {
                 children: [
                   // 2. Minus Button
                   _RowFocusableItem(
+                    focusNode: _minusFocusNode,
                     tooltip: 'Decrease Qty (-)',
                     onTap: () {
                       if (row.qty > 1) {
@@ -2471,6 +2575,9 @@ class _BillRowWidgetState extends State<_BillRowWidget> {
                         widget.onChanged();
                       }
                     },
+                    onTabPressed: () => _qtyFocusNode.requestFocus(),
+                    onShiftTabPressed: () => widget.scanFocusNode.requestFocus(),
+                    onEscapePressed: () => widget.cardFocusNode.requestFocus(),
                     child: Padding(
                       padding: const EdgeInsets.all(6.0),
                       child: Icon(
@@ -2483,8 +2590,12 @@ class _BillRowWidgetState extends State<_BillRowWidget> {
 
                   // 3. Qty Text Button (Enter to edit)
                   _RowFocusableItem(
+                    focusNode: _qtyFocusNode,
                     tooltip: 'Edit Quantity (Enter)',
                     onTap: _editQuantityDialog,
+                    onTabPressed: () => _plusFocusNode.requestFocus(),
+                    onShiftTabPressed: () => _minusFocusNode.requestFocus(),
+                    onEscapePressed: () => widget.cardFocusNode.requestFocus(),
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 6.0),
                       child: Text(
@@ -2501,6 +2612,7 @@ class _BillRowWidgetState extends State<_BillRowWidget> {
 
                   // 4. Plus Button
                   _RowFocusableItem(
+                    focusNode: _plusFocusNode,
                     tooltip: 'Increase Qty (+)',
                     onTap: () {
                       if (row.product != null && row.qty < availableStock) {
@@ -2508,6 +2620,9 @@ class _BillRowWidgetState extends State<_BillRowWidget> {
                         widget.onChanged();
                       }
                     },
+                    onTabPressed: () => isWeightBased ? _weightFocusNode.requestFocus() : _priceFocusNode.requestFocus(),
+                    onShiftTabPressed: () => _qtyFocusNode.requestFocus(),
+                    onEscapePressed: () => widget.cardFocusNode.requestFocus(),
                     child: Padding(
                       padding: const EdgeInsets.all(6.0),
                       child: Icon(
@@ -2524,11 +2639,15 @@ class _BillRowWidgetState extends State<_BillRowWidget> {
             ),
 
             // 5. Weight-Based (Enter carat / weight)
-            if (row.product?.pricingType == 'Weight-Based') ...[
+            if (isWeightBased) ...[
               const SizedBox(width: 8),
               _RowFocusableItem(
+                focusNode: _weightFocusNode,
                 tooltip: 'Enter Carat / Weight (Enter)',
                 onTap: _editWeightDialog,
+                onTabPressed: () => _priceFocusNode.requestFocus(),
+                onShiftTabPressed: () => _plusFocusNode.requestFocus(),
+                onEscapePressed: () => widget.cardFocusNode.requestFocus(),
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                   decoration: BoxDecoration(
@@ -2558,7 +2677,7 @@ class _BillRowWidgetState extends State<_BillRowWidget> {
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   Text(
-                    '₹${row.lineAmount.toStringAsFixed(2)}',
+                    'â‚¹${row.lineAmount.toStringAsFixed(2)}',
                     style: const TextStyle(
                       fontFamily: 'serif',
                       fontSize: 15,
@@ -2567,8 +2686,12 @@ class _BillRowWidgetState extends State<_BillRowWidget> {
                     ),
                   ),
                   _RowFocusableItem(
+                    focusNode: _priceFocusNode,
                     tooltip: 'Edit Price for this Bill (Enter)',
                     onTap: _editPriceDialog,
+                    onTabPressed: () => widget.deleteFocusNode.requestFocus(),
+                    onShiftTabPressed: () => isWeightBased ? _weightFocusNode.requestFocus() : _plusFocusNode.requestFocus(),
+                    onEscapePressed: () => widget.cardFocusNode.requestFocus(),
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
                       child: Row(
@@ -2576,8 +2699,8 @@ class _BillRowWidgetState extends State<_BillRowWidget> {
                         children: [
                           Text(
                             row.product?.pricingType == 'Weight-Based'
-                                ? '@ ₹${row.price}/${row.product?.weightUnit ?? 'g'}'
-                                : '@ ₹${row.price}',
+                                ? '@ â‚¹${row.price}/${row.product?.weightUnit ?? 'g'}'
+                                : '@ â‚¹${row.price}',
                             style: const TextStyle(
                               fontSize: 12,
                               color: BoutiqueColors.accent,
@@ -2603,7 +2726,13 @@ class _BillRowWidgetState extends State<_BillRowWidget> {
               isDestructive: true,
               tooltip: 'Remove from Bill (Enter)',
               onTap: () => widget.onDelete?.call(),
-              onTabPressed: widget.onTabFromDelete,
+              onTabPressed: () {
+                if (widget.onTabFromDelete != null) {
+                  widget.onTabFromDelete!();
+                }
+              },
+              onShiftTabPressed: () => _priceFocusNode.requestFocus(),
+              onEscapePressed: () => widget.cardFocusNode.requestFocus(),
               child: const Padding(
                 padding: EdgeInsets.all(6.0),
                 child: Icon(
@@ -2618,8 +2747,8 @@ class _BillRowWidgetState extends State<_BillRowWidget> {
       ),
     );
   }
+}
 
-  
 
   Future<void> _editQuantityDialog() async {
     final ctrl = TextEditingController(text: widget.row.qty == widget.row.qty.toInt() ? widget.row.qty.toInt().toString() : widget.row.qty.toString());
