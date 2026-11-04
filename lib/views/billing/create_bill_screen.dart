@@ -1,4 +1,4 @@
-import 'dart:convert';
+﻿import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
@@ -65,6 +65,7 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
   List<Product> _currentAutocompleteOptions = [];
   int _autocompleteHighlightIndex = -1;
   StateSetter? _optionsViewStateSetter;
+  final ScrollController _autocompleteScrollCtrl = ScrollController();
 
   // Summary controllers — managed separately so only summary panel rebuilds
   final _extraDiscountCtrl = TextEditingController(text: '');
@@ -454,6 +455,7 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
   void dispose() {
     _customerMobileFocusNode.removeListener(_onMobileFocusChanged);
     widget.state.removeListener(_onStateProductsUpdate);
+    _autocompleteScrollCtrl.dispose();
     _rowVersion.dispose();
     _billNoCtrl.dispose();
     _customerNameCtrl.dispose();
@@ -1635,6 +1637,27 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
     );
   }
 
+  void _scrollAutocompleteToIndex(int index) {
+    if (!_autocompleteScrollCtrl.hasClients || index < 0) return;
+    const double itemHeight = 58.0;
+    const double viewportHeight = 250.0;
+    final double targetOffset = index * itemHeight;
+    final double currentOffset = _autocompleteScrollCtrl.offset;
+    if (targetOffset < currentOffset) {
+      _autocompleteScrollCtrl.animateTo(
+        targetOffset,
+        duration: const Duration(milliseconds: 80),
+        curve: Curves.easeOut,
+      );
+    } else if (targetOffset + itemHeight > currentOffset + viewportHeight) {
+      _autocompleteScrollCtrl.animateTo(
+        targetOffset + itemHeight - viewportHeight,
+        duration: const Duration(milliseconds: 80),
+        curve: Curves.easeOut,
+      );
+    }
+  }
+
   Widget _buildTopQuickScanRow() {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 0),
@@ -1658,6 +1681,9 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
           }).take(25).toList();
           _currentAutocompleteOptions = options;
           _autocompleteHighlightIndex = options.isNotEmpty ? 0 : -1;
+          if (_autocompleteScrollCtrl.hasClients) {
+            _autocompleteScrollCtrl.jumpTo(0);
+          }
           return options;
         },
         optionsViewBuilder: (context, onSelected, options) {
@@ -1674,6 +1700,7 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
                     child: ListView.builder(
                       padding: EdgeInsets.zero,
                       shrinkWrap: true,
+                      controller: _autocompleteScrollCtrl,
                       itemCount: options.length,
                       itemBuilder: (context, index) {
                         final p = options.elementAt(index);
@@ -1726,12 +1753,14 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
                 if (_currentAutocompleteOptions.isNotEmpty) {
                   _autocompleteHighlightIndex = (_autocompleteHighlightIndex + 1) % _currentAutocompleteOptions.length;
                   _optionsViewStateSetter?.call(() {});
+                  _scrollAutocompleteToIndex(_autocompleteHighlightIndex);
                   return KeyEventResult.handled;
                 }
               } else if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
                 if (_currentAutocompleteOptions.isNotEmpty) {
                   _autocompleteHighlightIndex = (_autocompleteHighlightIndex - 1 + _currentAutocompleteOptions.length) % _currentAutocompleteOptions.length;
                   _optionsViewStateSetter?.call(() {});
+                  _scrollAutocompleteToIndex(_autocompleteHighlightIndex);
                   return KeyEventResult.handled;
                 }
               } else if (event.logicalKey == LogicalKeyboardKey.enter) {
