@@ -51,45 +51,31 @@ class QrPdfGenerator {
           return pw.Container(
             width: 2.5 * PdfPageFormat.inch,
             height: 1.5 * PdfPageFormat.inch,
-            padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+            padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 6),
             child: pw.Row(
               crossAxisAlignment: pw.CrossAxisAlignment.center,
               children: [
-                // ── LEFT COLUMN: Boutique Name above QR, QR Code, Tag ID below QR ──
+                // ── LEFT COLUMN: QR Code + Tag ID below QR ──
                 pw.Container(
                   width: 76,
                   child: pw.Column(
-                    mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                    mainAxisAlignment: pw.MainAxisAlignment.center,
                     crossAxisAlignment: pw.CrossAxisAlignment.center,
                     children: [
-                      // QR ku mela Boutique Name
-                      pw.Text(
-                        'RituMita Boutique',
-                        style: pw.TextStyle(
-                          fontSize: 8,
-                          fontWeight: pw.FontWeight.bold,
-                          color: PdfColors.black,
-                          letterSpacing: 0.2,
-                        ),
-                        textAlign: pw.TextAlign.center,
-                        maxLines: 1,
-                      ),
-                      pw.SizedBox(height: 1),
-
                       // QR Code
                       pw.BarcodeWidget(
                         data: product.tagId,
                         barcode: pw.Barcode.qrCode(),
-                        width: 58,
-                        height: 58,
+                        width: 66,
+                        height: 66,
                       ),
-                      pw.SizedBox(height: 1),
+                      pw.SizedBox(height: 3),
 
                       // QR ku keela Tag ID Number
                       pw.Text(
                         product.tagId,
                         style: pw.TextStyle(
-                          fontSize: 8.5,
+                          fontSize: 9,
                           fontWeight: pw.FontWeight.bold,
                           color: PdfColors.black,
                         ),
@@ -100,9 +86,9 @@ class QrPdfGenerator {
                   ),
                 ),
 
-                pw.SizedBox(width: 8),
+                pw.SizedBox(width: 10),
 
-                // ── RIGHT COLUMN: QR ku side la Product Name, adhuku keela Price ──
+                // ── RIGHT COLUMN: Product Name & Price directly underneath ──
                 pw.Expanded(
                   child: pw.Column(
                     crossAxisAlignment: pw.CrossAxisAlignment.start,
@@ -112,7 +98,7 @@ class QrPdfGenerator {
                       pw.Text(
                         product.name.trim().toUpperCase(),
                         style: pw.TextStyle(
-                          fontSize: 10.5,
+                          fontSize: 11,
                           fontWeight: pw.FontWeight.bold,
                           color: PdfColors.black,
                           lineSpacing: 1.1,
@@ -121,13 +107,13 @@ class QrPdfGenerator {
                         overflow: pw.TextOverflow.clip,
                       ),
 
-                      // Only weight if weight-based product (No category)
+                      // Only weight if weight-based product
                       if (weightStr.isNotEmpty) ...[
                         pw.SizedBox(height: 2),
                         pw.Text(
                           weightStr,
                           style: pw.TextStyle(
-                            fontSize: 8,
+                            fontSize: 8.5,
                             fontWeight: pw.FontWeight.bold,
                             color: PdfColors.grey800,
                           ),
@@ -137,12 +123,12 @@ class QrPdfGenerator {
 
                       pw.SizedBox(height: 6),
 
-                      // Adhuku keela Price
+                      // Price below Product Name
                       if (priceStr.isNotEmpty)
                         pw.Text(
                           '$currencySymbol$priceStr',
                           style: pw.TextStyle(
-                            fontSize: 17,
+                            fontSize: 18,
                             fontWeight: pw.FontWeight.bold,
                             color: PdfColors.black,
                           ),
@@ -186,7 +172,7 @@ class QrPdfGenerator {
     return price.toStringAsFixed(2);
   }
 
-  /// Only extracts weight for weight-based products (Category is excluded)
+  /// Only extracts weight for weight-based products
   static String _getWeightString(Product product) {
     if (product.pricingType == 'Weight-Based') {
       final weight = product.netWeight > 0 ? product.netWeight : product.grossWeight;
