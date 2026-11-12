@@ -51,12 +51,7 @@ class QrPdfGenerator {
           return pw.Container(
             width: 2.5 * PdfPageFormat.inch,
             height: 1.5 * PdfPageFormat.inch,
-            padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-            decoration: pw.BoxDecoration(
-              color: PdfColors.white,
-              borderRadius: const pw.BorderRadius.all(pw.Radius.circular(6)),
-              border: pw.Border.all(color: PdfColors.grey400, width: 0.8),
-            ),
+            padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 4),
             child: pw.Row(
               crossAxisAlignment: pw.CrossAxisAlignment.center,
               children: [
@@ -85,8 +80,8 @@ class QrPdfGenerator {
                       pw.BarcodeWidget(
                         data: product.tagId,
                         barcode: pw.Barcode.qrCode(),
-                        width: 62,
-                        height: 62,
+                        width: 58,
+                        height: 58,
                       ),
                       pw.SizedBox(height: 1),
 
@@ -147,7 +142,7 @@ class QrPdfGenerator {
                         pw.Text(
                           '$currencySymbol$priceStr',
                           style: pw.TextStyle(
-                            fontSize: 18,
+                            fontSize: 17,
                             fontWeight: pw.FontWeight.bold,
                             color: PdfColors.black,
                           ),
