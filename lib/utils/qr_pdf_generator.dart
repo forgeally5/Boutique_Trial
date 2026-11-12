@@ -5,16 +5,24 @@ import 'package:printing/printing.dart';
 import '../models/product.dart';
 
 class QrPdfGenerator {
+  // 2.5 inch x 1.5 inch barcode sticker label format (63.5 mm x 38.1 mm)
+  static const PdfPageFormat labelPageFormat = PdfPageFormat(
+    2.5 * PdfPageFormat.inch, // 180 pt
+    1.5 * PdfPageFormat.inch, // 108 pt
+    marginAll: 0,
+  );
+
   /// Generates and prints a 2.5" x 1.5" QR barcode label for a single product.
   static Future<void> printProductQr(Product product) async {
     final doc = await generateProductQrPdf(product);
     await Printing.layoutPdf(
       onLayout: (PdfPageFormat format) async => doc.save(),
       name: 'QR_${product.tagId}',
+      format: labelPageFormat,
     );
   }
 
-  /// Generates a PDF Document with 2.5" x 1.5" barcode label(s).
+  /// Generates a PDF Document with 2.5" x 1.5" barcode label.
   static Future<pw.Document> generateProductQrPdf(Product product) async {
     final pdf = pw.Document();
 
@@ -30,127 +38,142 @@ class QrPdfGenerator {
 
     final currencySymbol = (fontRegular != null) ? '₹' : 'Rs. ';
 
-    // 2.5 inch x 1.5 inch barcode sticker label
-    const pageFormat = PdfPageFormat(
-      2.5 * PdfPageFormat.inch, // 63.5 mm (180 pt)
-      1.5 * PdfPageFormat.inch, // 38.1 mm (108 pt)
-      marginAll: 2.5 * PdfPageFormat.mm,
-    );
-
     final priceStr = _formatPrice(product);
     final detailStr = _getDetailString(product);
 
     pdf.addPage(
       pw.Page(
-        pageFormat: pageFormat,
+        pageFormat: labelPageFormat,
         theme: fontRegular != null && fontBold != null
             ? pw.ThemeData.withFont(base: fontRegular, bold: fontBold)
             : pw.ThemeData.base(),
         build: (pw.Context context) {
-          return pw.Column(
-            crossAxisAlignment: pw.CrossAxisAlignment.center,
-            children: [
-              // Store Header
-              pw.Text(
-                'RituMita Boutique',
-                style: pw.TextStyle(
-                  fontSize: 8.5,
-                  fontWeight: pw.FontWeight.bold,
-                  letterSpacing: 0.5,
-                ),
-                maxLines: 1,
-              ),
-              pw.SizedBox(height: 2),
-
-              // Main Row: Left (QR + Tag ID), Right (Name, Weight/Details, Price)
-              pw.Expanded(
-                child: pw.Row(
-                  crossAxisAlignment: pw.CrossAxisAlignment.center,
-                  children: [
-                    // Left Column: QR Code + Tag ID underneath
-                    pw.Column(
-                      mainAxisAlignment: pw.MainAxisAlignment.center,
-                      crossAxisAlignment: pw.CrossAxisAlignment.center,
-                      children: [
-                        pw.BarcodeWidget(
-                          data: product.tagId,
-                          barcode: pw.Barcode.qrCode(),
-                          width: 54,
-                          height: 54,
-                        ),
-                        pw.SizedBox(height: 2),
-                        pw.Container(
-                          width: 58,
-                          child: pw.Text(
-                            product.tagId,
-                            style: pw.TextStyle(
-                              fontSize: 7.5,
-                              fontWeight: pw.FontWeight.bold,
-                            ),
-                            textAlign: pw.TextAlign.center,
-                            maxLines: 1,
-                          ),
-                        ),
-                      ],
+          return pw.Container(
+            width: 2.5 * PdfPageFormat.inch,
+            height: 1.5 * PdfPageFormat.inch,
+            padding: const pw.EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+            decoration: pw.BoxDecoration(
+              color: PdfColors.white,
+              borderRadius: const pw.BorderRadius.all(pw.Radius.circular(6)),
+              border: pw.Border.all(color: PdfColors.grey400, width: 0.8),
+            ),
+            child: pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+              children: [
+                // Store Name - Centered across top
+                pw.Container(
+                  alignment: pw.Alignment.center,
+                  padding: const pw.EdgeInsets.only(bottom: 2),
+                  child: pw.Text(
+                    'RituMita Boutique',
+                    style: pw.TextStyle(
+                      fontSize: 9.5,
+                      fontWeight: pw.FontWeight.bold,
+                      color: PdfColors.black,
+                      letterSpacing: 0.3,
                     ),
+                    textAlign: pw.TextAlign.center,
+                    maxLines: 1,
+                  ),
+                ),
 
-                    pw.SizedBox(width: 8),
-
-                    // Right Column: Product Name, Details, Price
-                    pw.Expanded(
-                      child: pw.Column(
-                        crossAxisAlignment: pw.CrossAxisAlignment.start,
-                        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                        children: [
-                          // Top section: Name + Weight/Details
-                          pw.Column(
-                            crossAxisAlignment: pw.CrossAxisAlignment.start,
-                            children: [
-                              pw.Text(
-                                product.name.trim().toUpperCase(),
-                                style: pw.TextStyle(
-                                  fontSize: 8,
-                                  fontWeight: pw.FontWeight.bold,
-                                  lineSpacing: 1.1,
+                // Main Row: Left (QR Code + Tag ID), Right (Name, Details, Price)
+                pw.Expanded(
+                  child: pw.Row(
+                    crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+                    children: [
+                      // Left Column: QR Code + Tag ID underneath
+                      pw.Container(
+                        width: 70,
+                        child: pw.Column(
+                          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                          crossAxisAlignment: pw.CrossAxisAlignment.center,
+                          children: [
+                            pw.Expanded(
+                              child: pw.Center(
+                                child: pw.BarcodeWidget(
+                                  data: product.tagId,
+                                  barcode: pw.Barcode.qrCode(),
+                                  width: 60,
+                                  height: 60,
                                 ),
-                                maxLines: 2,
-                                overflow: pw.TextOverflow.clip,
                               ),
-                              if (detailStr.isNotEmpty) ...[
-                                pw.SizedBox(height: 2),
+                            ),
+                            pw.SizedBox(height: 1),
+                            pw.Text(
+                              product.tagId,
+                              style: pw.TextStyle(
+                                fontSize: 8.5,
+                                fontWeight: pw.FontWeight.bold,
+                                color: PdfColors.black,
+                              ),
+                              textAlign: pw.TextAlign.center,
+                              maxLines: 1,
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      pw.SizedBox(width: 8),
+
+                      // Right Column: Product Name, Details, Price
+                      pw.Expanded(
+                        child: pw.Column(
+                          crossAxisAlignment: pw.CrossAxisAlignment.start,
+                          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                          children: [
+                            // Top Section: Product Name & Category/Weight
+                            pw.Column(
+                              crossAxisAlignment: pw.CrossAxisAlignment.start,
+                              children: [
                                 pw.Text(
-                                  detailStr,
+                                  product.name.trim().toUpperCase(),
                                   style: pw.TextStyle(
-                                    fontSize: 7,
+                                    fontSize: 9,
                                     fontWeight: pw.FontWeight.bold,
-                                    color: PdfColors.grey800,
+                                    color: PdfColors.black,
+                                    lineSpacing: 1.1,
+                                  ),
+                                  maxLines: 2,
+                                  overflow: pw.TextOverflow.clip,
+                                ),
+                                if (detailStr.isNotEmpty) ...[
+                                  pw.SizedBox(height: 2),
+                                  pw.Text(
+                                    detailStr,
+                                    style: pw.TextStyle(
+                                      fontSize: 7.5,
+                                      fontWeight: pw.FontWeight.bold,
+                                      color: PdfColors.grey800,
+                                    ),
+                                    maxLines: 1,
+                                  ),
+                                ],
+                              ],
+                            ),
+
+                            // Bottom Section: Prominent Price (bottom-right aligned with Tag ID)
+                            if (priceStr.isNotEmpty)
+                              pw.Padding(
+                                padding: const pw.EdgeInsets.only(bottom: 1),
+                                child: pw.Text(
+                                  '$currencySymbol$priceStr',
+                                  style: pw.TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: pw.FontWeight.bold,
+                                    color: PdfColors.black,
                                   ),
                                   maxLines: 1,
                                 ),
-                              ],
-                            ],
-                          ),
-
-                          // Bottom section: Price
-                          if (priceStr.isNotEmpty)
-                            pw.Padding(
-                              padding: const pw.EdgeInsets.only(bottom: 2),
-                              child: pw.Text(
-                                '$currencySymbol$priceStr',
-                                style: pw.TextStyle(
-                                  fontSize: 13.5,
-                                  fontWeight: pw.FontWeight.bold,
-                                ),
-                                maxLines: 1,
                               ),
-                            ),
-                        ],
+                          ],
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           );
         },
       ),

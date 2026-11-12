@@ -1159,7 +1159,7 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
   Widget build(BuildContext context) {
     return CallbackShortcuts(
       bindings: {
-        const SingleActivator(LogicalKeyboardKey.keyP, alt: true): _focusFirstProductRow,
+        const SingleActivator(LogicalKeyboardKey.keyP, alt: true): _cycleProductBox,
         const SingleActivator(LogicalKeyboardKey.keyS, alt: true): () => _topEntryFieldFocus?.requestFocus(),
       },
       child: Shortcuts(
@@ -1999,16 +1999,21 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
               _BillRowWidget(
                 key: ObjectKey(_rows[i]),
                 index: i,
+                row: _rows[i],
+                cardFocusNode: _getCardFocusNode(i),
                 scanFocusNode: _getScanFocusNode(i),
                 deleteFocusNode: _getDeleteFocusNode(i),
+                onNextBox: (i + 1 < _rows.length)
+                    ? () => _getCardFocusNode(i + 1).requestFocus()
+                    : null,
+                onPrevBox: (i > 0)
+                    ? () => _getCardFocusNode(i - 1).requestFocus()
+                    : () => _topEntryFieldFocus?.requestFocus(),
                 onTabFromDelete: (i + 1 < _rows.length)
                     ? () => _getScanFocusNode(i + 1).requestFocus()
-                    : null,
-                onShiftTabFromScan: (i > 0)
-                    ? () => _getDeleteFocusNode(i - 1).requestFocus()
                     : () => _topEntryFieldFocus?.requestFocus(),
+                onShiftTabFromScan: () => _getCardFocusNode(i).requestFocus(),
                 onRequestFocusSearch: () => _topEntryFieldFocus?.requestFocus(),
-                row: _rows[i],
                 products: _cachedProducts,
                 getAvailableStock: _getAvailableStock,
                 getAvailableWeight: _getAvailableWeight,
@@ -2020,9 +2025,16 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
                   _rowVersion.value++;
                   setState(() {
                     _rows.removeAt(i);
-                    _scanFocusNodes.remove(i);
-                    _deleteFocusNodes.remove(i);
+                    _cardFocusNodes.remove(i)?.dispose();
+                    _scanFocusNodes.remove(i)?.dispose();
+                    _deleteFocusNodes.remove(i)?.dispose();
                   });
+                  if (_rows.isNotEmpty) {
+                    final nextIdx = i.clamp(0, _rows.length - 1);
+                    _getCardFocusNode(nextIdx).requestFocus();
+                  } else {
+                    _topEntryFieldFocus?.requestFocus();
+                  }
                 },
               ),
         ],
@@ -2188,6 +2200,7 @@ class _RowFocusableItem extends StatefulWidget {
   final VoidCallback onTap;
   final VoidCallback? onTabPressed;
   final VoidCallback? onShiftTabPressed;
+  final VoidCallback? onEscapePressed;
   final Widget child;
   final String? tooltip;
   final BorderRadius? borderRadius;
@@ -2199,6 +2212,7 @@ class _RowFocusableItem extends StatefulWidget {
     required this.onTap,
     this.onTabPressed,
     this.onShiftTabPressed,
+    this.onEscapePressed,
     required this.child,
     this.tooltip,
     this.borderRadius,
@@ -2259,6 +2273,10 @@ class _RowFocusableItemState extends State<_RowFocusableItem> {
       onKeyEvent: (node, event) {
         if (event is KeyDownEvent) {
           final isShift = HardwareKeyboard.instance.isShiftPressed;
+          if (event.logicalKey == LogicalKeyboardKey.escape && widget.onEscapePressed != null) {
+            widget.onEscapePressed!();
+            return KeyEventResult.handled;
+          }
           if (event.logicalKey == LogicalKeyboardKey.tab) {
             if (isShift && widget.onShiftTabPressed != null) {
               widget.onShiftTabPressed!();
@@ -2747,8 +2765,6 @@ class _BillRowWidgetState extends State<_BillRowWidget> {
       ),
     );
   }
-}
-
 
   Future<void> _editQuantityDialog() async {
     final ctrl = TextEditingController(text: widget.row.qty == widget.row.qty.toInt() ? widget.row.qty.toInt().toString() : widget.row.qty.toString());
