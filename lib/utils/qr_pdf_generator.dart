@@ -39,7 +39,7 @@ class QrPdfGenerator {
     final currencySymbol = (fontRegular != null) ? '₹' : 'Rs. ';
 
     final priceStr = _formatPrice(product);
-    final detailStr = _getDetailString(product);
+    final weightStr = _getWeightString(product);
 
     pdf.addPage(
       pw.Page(
@@ -51,124 +51,108 @@ class QrPdfGenerator {
           return pw.Container(
             width: 2.5 * PdfPageFormat.inch,
             height: 1.5 * PdfPageFormat.inch,
-            padding: const pw.EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+            padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 5),
             decoration: pw.BoxDecoration(
               color: PdfColors.white,
               borderRadius: const pw.BorderRadius.all(pw.Radius.circular(6)),
               border: pw.Border.all(color: PdfColors.grey400, width: 0.8),
             ),
-            child: pw.Column(
-              crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+            child: pw.Row(
+              crossAxisAlignment: pw.CrossAxisAlignment.center,
               children: [
-                // Store Name - Centered across top
+                // ── LEFT COLUMN: Boutique Name above QR, QR Code, Tag ID below QR ──
                 pw.Container(
-                  alignment: pw.Alignment.center,
-                  padding: const pw.EdgeInsets.only(bottom: 2),
-                  child: pw.Text(
-                    'RituMita Boutique',
-                    style: pw.TextStyle(
-                      fontSize: 9.5,
-                      fontWeight: pw.FontWeight.bold,
-                      color: PdfColors.black,
-                      letterSpacing: 0.3,
-                    ),
-                    textAlign: pw.TextAlign.center,
-                    maxLines: 1,
+                  width: 76,
+                  child: pw.Column(
+                    mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                    crossAxisAlignment: pw.CrossAxisAlignment.center,
+                    children: [
+                      // QR ku mela Boutique Name
+                      pw.Text(
+                        'RituMita Boutique',
+                        style: pw.TextStyle(
+                          fontSize: 8,
+                          fontWeight: pw.FontWeight.bold,
+                          color: PdfColors.black,
+                          letterSpacing: 0.2,
+                        ),
+                        textAlign: pw.TextAlign.center,
+                        maxLines: 1,
+                      ),
+                      pw.SizedBox(height: 1),
+
+                      // QR Code
+                      pw.BarcodeWidget(
+                        data: product.tagId,
+                        barcode: pw.Barcode.qrCode(),
+                        width: 62,
+                        height: 62,
+                      ),
+                      pw.SizedBox(height: 1),
+
+                      // QR ku keela Tag ID Number
+                      pw.Text(
+                        product.tagId,
+                        style: pw.TextStyle(
+                          fontSize: 8.5,
+                          fontWeight: pw.FontWeight.bold,
+                          color: PdfColors.black,
+                        ),
+                        textAlign: pw.TextAlign.center,
+                        maxLines: 1,
+                      ),
+                    ],
                   ),
                 ),
 
-                // Main Row: Left (QR Code + Tag ID), Right (Name, Details, Price)
+                pw.SizedBox(width: 8),
+
+                // ── RIGHT COLUMN: QR ku side la Product Name, adhuku keela Price ──
                 pw.Expanded(
-                  child: pw.Row(
-                    crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+                  child: pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    mainAxisAlignment: pw.MainAxisAlignment.center,
                     children: [
-                      // Left Column: QR Code + Tag ID underneath
-                      pw.Container(
-                        width: 70,
-                        child: pw.Column(
-                          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                          crossAxisAlignment: pw.CrossAxisAlignment.center,
-                          children: [
-                            pw.Expanded(
-                              child: pw.Center(
-                                child: pw.BarcodeWidget(
-                                  data: product.tagId,
-                                  barcode: pw.Barcode.qrCode(),
-                                  width: 60,
-                                  height: 60,
-                                ),
-                              ),
-                            ),
-                            pw.SizedBox(height: 1),
-                            pw.Text(
-                              product.tagId,
-                              style: pw.TextStyle(
-                                fontSize: 8.5,
-                                fontWeight: pw.FontWeight.bold,
-                                color: PdfColors.black,
-                              ),
-                              textAlign: pw.TextAlign.center,
-                              maxLines: 1,
-                            ),
-                          ],
+                      // Product Name
+                      pw.Text(
+                        product.name.trim().toUpperCase(),
+                        style: pw.TextStyle(
+                          fontSize: 10.5,
+                          fontWeight: pw.FontWeight.bold,
+                          color: PdfColors.black,
+                          lineSpacing: 1.1,
                         ),
+                        maxLines: 2,
+                        overflow: pw.TextOverflow.clip,
                       ),
 
-                      pw.SizedBox(width: 8),
-
-                      // Right Column: Product Name, Details, Price
-                      pw.Expanded(
-                        child: pw.Column(
-                          crossAxisAlignment: pw.CrossAxisAlignment.start,
-                          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                          children: [
-                            // Top Section: Product Name & Category/Weight
-                            pw.Column(
-                              crossAxisAlignment: pw.CrossAxisAlignment.start,
-                              children: [
-                                pw.Text(
-                                  product.name.trim().toUpperCase(),
-                                  style: pw.TextStyle(
-                                    fontSize: 9,
-                                    fontWeight: pw.FontWeight.bold,
-                                    color: PdfColors.black,
-                                    lineSpacing: 1.1,
-                                  ),
-                                  maxLines: 2,
-                                  overflow: pw.TextOverflow.clip,
-                                ),
-                                if (detailStr.isNotEmpty) ...[
-                                  pw.SizedBox(height: 2),
-                                  pw.Text(
-                                    detailStr,
-                                    style: pw.TextStyle(
-                                      fontSize: 7.5,
-                                      fontWeight: pw.FontWeight.bold,
-                                      color: PdfColors.grey800,
-                                    ),
-                                    maxLines: 1,
-                                  ),
-                                ],
-                              ],
-                            ),
-
-                            // Bottom Section: Prominent Price (bottom-right aligned with Tag ID)
-                            if (priceStr.isNotEmpty)
-                              pw.Padding(
-                                padding: const pw.EdgeInsets.only(bottom: 1),
-                                child: pw.Text(
-                                  '$currencySymbol$priceStr',
-                                  style: pw.TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: pw.FontWeight.bold,
-                                    color: PdfColors.black,
-                                  ),
-                                  maxLines: 1,
-                                ),
-                              ),
-                          ],
+                      // Only weight if weight-based product (No category)
+                      if (weightStr.isNotEmpty) ...[
+                        pw.SizedBox(height: 2),
+                        pw.Text(
+                          weightStr,
+                          style: pw.TextStyle(
+                            fontSize: 8,
+                            fontWeight: pw.FontWeight.bold,
+                            color: PdfColors.grey800,
+                          ),
+                          maxLines: 1,
                         ),
-                      ),
+                      ],
+
+                      pw.SizedBox(height: 6),
+
+                      // Adhuku keela Price
+                      if (priceStr.isNotEmpty)
+                        pw.Text(
+                          '$currencySymbol$priceStr',
+                          style: pw.TextStyle(
+                            fontSize: 18,
+                            fontWeight: pw.FontWeight.bold,
+                            color: PdfColors.black,
+                          ),
+                          maxLines: 1,
+                        ),
                     ],
                   ),
                 ),
@@ -207,19 +191,15 @@ class QrPdfGenerator {
     return price.toStringAsFixed(2);
   }
 
-  /// Extracts additional info like weight, size, or category
-  static String _getDetailString(Product product) {
-    final weight = product.netWeight > 0 ? product.netWeight : product.grossWeight;
-    if (weight > 0) {
-      final unit = product.weightUnit.isNotEmpty ? product.weightUnit.toUpperCase() : 'G';
-      final weightStr = weight == weight.roundToDouble() ? weight.toInt().toString() : weight.toStringAsFixed(2);
-      return '$weightStr$unit';
-    }
-    if (product.size.trim().isNotEmpty) {
-      return product.size.trim().toUpperCase();
-    }
-    if (product.category.trim().isNotEmpty && product.category.trim().toLowerCase() != 'others') {
-      return product.category.trim().toUpperCase();
+  /// Only extracts weight for weight-based products (Category is excluded)
+  static String _getWeightString(Product product) {
+    if (product.pricingType == 'Weight-Based') {
+      final weight = product.netWeight > 0 ? product.netWeight : product.grossWeight;
+      if (weight > 0) {
+        final unit = product.weightUnit.isNotEmpty ? product.weightUnit.toUpperCase() : 'G';
+        final weightStr = weight == weight.roundToDouble() ? weight.toInt().toString() : weight.toStringAsFixed(2);
+        return '$weightStr$unit';
+      }
     }
     return '';
   }
