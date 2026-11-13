@@ -101,10 +101,20 @@ class QrPdfGenerator {
           return tag;
         }
 
+        // OverflowBox gives the tag its REAL size (25 x 15 mm) instead of the
+        // portrait page's constraints (15 mm wide). Without it the tag gets
+        // squeezed to 15 mm width and the name/price column is cut off.
         return pw.Center(
           child: pw.Transform.rotateBox(
             angle: rotationQuarterTurns * math.pi / 2,
-            child: tag,
+            child: pw.OverflowBox(
+              minWidth: _tagWidth,
+              maxWidth: _tagWidth,
+              minHeight: _tagHeight,
+              maxHeight: _tagHeight,
+              alignment: pw.Alignment.center,
+              child: tag,
+            ),
           ),
         );
       },
