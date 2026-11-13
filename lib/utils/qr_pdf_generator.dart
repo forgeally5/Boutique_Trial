@@ -5,15 +5,15 @@ import 'package:printing/printing.dart';
 import '../models/product.dart';
 
 class QrPdfGenerator {
-  // 2.5 inch (63.5 mm) Left to Right  x  1.5 inch (38.1 mm) Top to Bottom
-  // Matches Photo 2 (Horizontal Tag: Store Header at top, QR on left, Name/Weight/Price on right)
+  // 2.5 cm (25 mm) Left to Right  x  1.5 cm (15 mm) Top to Bottom
+  // Matches Photo 2 (Horizontal Micro-Tag: Store Header at top, QR on left, Name/Weight/Price on right)
   static const PdfPageFormat labelPageFormat = PdfPageFormat(
-    2.5 * PdfPageFormat.inch, // 180 pt (63.5 mm) - Left to right width
-    1.5 * PdfPageFormat.inch, // 108 pt (38.1 mm) - Top to bottom height
+    2.5 * PdfPageFormat.cm, // 70.87 pt (25.0 mm) - Left to right width
+    1.5 * PdfPageFormat.cm, // 42.52 pt (15.0 mm) - Top to bottom height
     marginAll: 0,
   );
 
-  /// Generates and prints a horizontal 2.5" x 1.5" QR barcode label for a single product.
+  /// Generates and prints a horizontal 2.5 cm x 1.5 cm QR barcode label for a single product.
   static Future<void> printProductQr(
     Product product, {
     String storeName = 'VilakkuKadai',
@@ -27,7 +27,7 @@ class QrPdfGenerator {
     );
   }
 
-  /// Generates a PDF Document with the horizontal barcode label matching Photo 2.
+  /// Generates a PDF Document with the horizontal barcode label matching Photo 2 (2.5 cm x 1.5 cm).
   static Future<pw.Document> generateProductQrPdf(
     Product product, {
     String storeName = 'VilakkuKadai',
@@ -58,24 +58,26 @@ class QrPdfGenerator {
             : pw.ThemeData.base(),
         build: (pw.Context context) {
           return pw.Container(
-            width: 2.5 * PdfPageFormat.inch,
-            height: 1.5 * PdfPageFormat.inch,
-            padding: const pw.EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+            width: 2.5 * PdfPageFormat.cm,
+            height: 1.5 * PdfPageFormat.cm,
+            padding: const pw.EdgeInsets.symmetric(horizontal: 1.5, vertical: 1.0),
             child: pw.Column(
               crossAxisAlignment: pw.CrossAxisAlignment.start,
               children: [
                 // ── 1. STORE HEADER (Matching Photo 2: "VilakkuKadai") ──
-                pw.Padding(
-                  padding: const pw.EdgeInsets.only(left: 2, bottom: 2),
-                  child: pw.Text(
-                    storeName,
-                    style: pw.TextStyle(
-                      fontSize: 8.5,
-                      fontWeight: pw.FontWeight.bold,
-                      color: PdfColors.black,
+                if (storeName.isNotEmpty)
+                  pw.Padding(
+                    padding: const pw.EdgeInsets.only(left: 1.0, bottom: 0.5),
+                    child: pw.Text(
+                      storeName,
+                      style: pw.TextStyle(
+                        fontSize: 4.8,
+                        fontWeight: pw.FontWeight.bold,
+                        color: PdfColors.black,
+                      ),
+                      maxLines: 1,
                     ),
                   ),
-                ),
 
                 // ── 2. MAIN HORIZONTAL CONTENT ROW (Matching Photo 2) ──
                 pw.Expanded(
@@ -83,31 +85,34 @@ class QrPdfGenerator {
                     crossAxisAlignment: pw.CrossAxisAlignment.start,
                     children: [
                       // ── LEFT COLUMN: QR Code + Tag ID underneath ──
-                      pw.Column(
-                        crossAxisAlignment: pw.CrossAxisAlignment.center,
-                        mainAxisSize: pw.MainAxisSize.min,
-                        children: [
-                          pw.BarcodeWidget(
-                            data: product.tagId,
-                            barcode: pw.Barcode.qrCode(),
-                            width: 54,
-                            height: 54,
-                          ),
-                          pw.SizedBox(height: 2),
-                          pw.Text(
-                            product.tagId,
-                            style: pw.TextStyle(
-                              fontSize: 8.5,
-                              fontWeight: pw.FontWeight.bold,
-                              color: PdfColors.black,
+                      pw.Container(
+                        width: 28.0,
+                        child: pw.Column(
+                          crossAxisAlignment: pw.CrossAxisAlignment.center,
+                          mainAxisAlignment: pw.MainAxisAlignment.start,
+                          children: [
+                            pw.BarcodeWidget(
+                              data: product.tagId,
+                              barcode: pw.Barcode.qrCode(),
+                              width: 24.5,
+                              height: 24.5,
                             ),
-                            textAlign: pw.TextAlign.center,
-                            maxLines: 1,
-                          ),
-                        ],
+                            pw.SizedBox(height: 0.8),
+                            pw.Text(
+                              product.tagId,
+                              style: pw.TextStyle(
+                                fontSize: 4.5,
+                                fontWeight: pw.FontWeight.bold,
+                                color: PdfColors.black,
+                              ),
+                              textAlign: pw.TextAlign.center,
+                              maxLines: 1,
+                            ),
+                          ],
+                        ),
                       ),
 
-                      pw.SizedBox(width: 8),
+                      pw.SizedBox(width: 2.0),
 
                       // ── RIGHT COLUMN: Product Name, Weight & Price (Bottom Right) ──
                       pw.Expanded(
@@ -122,20 +127,20 @@ class QrPdfGenerator {
                                 pw.Text(
                                   product.name.trim().toUpperCase(),
                                   style: pw.TextStyle(
-                                    fontSize: 10.0,
+                                    fontSize: 5.2,
                                     fontWeight: pw.FontWeight.bold,
                                     color: PdfColors.black,
-                                    lineSpacing: 1.1,
+                                    lineSpacing: 0.95,
                                   ),
                                   maxLines: 2,
                                   overflow: pw.TextOverflow.clip,
                                 ),
                                 if (weightStr.isNotEmpty) ...[
-                                  pw.SizedBox(height: 2),
+                                  pw.SizedBox(height: 0.8),
                                   pw.Text(
                                     weightStr,
                                     style: pw.TextStyle(
-                                      fontSize: 8.5,
+                                      fontSize: 4.5,
                                       fontWeight: pw.FontWeight.bold,
                                       color: PdfColors.black,
                                     ),
@@ -152,7 +157,7 @@ class QrPdfGenerator {
                                 child: pw.Text(
                                   '$currencySymbol$priceStr',
                                   style: pw.TextStyle(
-                                    fontSize: 17.0,
+                                    fontSize: 8.5,
                                     fontWeight: pw.FontWeight.bold,
                                     color: PdfColors.black,
                                   ),
