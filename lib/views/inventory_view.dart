@@ -10,6 +10,7 @@ import '../utils/boutique_theme.dart';
 import '../utils/excel_generator.dart';
 import '../utils/qr_pdf_generator.dart';
 import '../dialogs/bulk_upload_dialog.dart';
+import '../dialogs/bulk_tag_print_dialog.dart';
 import '../widgets/searchable_dropdown.dart';
 
 enum ProductAction {
@@ -42,6 +43,7 @@ class InventoryViewState extends State<InventoryView> {
   String _selectedStatus = 'All Statuses';
   bool _isGridView = false;
   Product? _selectedDrawerProduct;
+  final Set<String> _selectedProductIds = {};
   final TextEditingController _searchCtrl = TextEditingController();
   DateTimeRange? _selectedDateRange;
   int _selectedProductIndex = 0;
@@ -874,6 +876,67 @@ class InventoryViewState extends State<InventoryView> {
 
                 const SizedBox(height: 12),
 
+                // ── Bulk Action Bar ──
+                if (_selectedProductIds.isNotEmpty) ...[
+                  Container(
+                    margin: const EdgeInsets.symmetric(horizontal: 32, vertical: 4),
+                    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: BoutiqueColors.accentSoft,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: BoutiqueColors.accentLightBorder),
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: BoutiqueColors.accent,
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          child: Text(
+                            '${_selectedProductIds.length} selected',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 14),
+                        ElevatedButton.icon(
+                          onPressed: () {
+                            final selectedProds = state.products
+                                .where((p) => _selectedProductIds.contains(p.tagId))
+                                .toList();
+                            if (selectedProds.isEmpty) return;
+                            showDialog(
+                              context: context,
+                              builder: (ctx) => BulkTagPrintDialog(selectedProducts: selectedProds),
+                            );
+                          },
+                          icon: const Icon(Icons.print_rounded, size: 16),
+                          label: const Text('Print Tags', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: BoutiqueColors.accent,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            elevation: 0,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        TextButton.icon(
+                          onPressed: () => setState(() => _selectedProductIds.clear()),
+                          icon: const Icon(Icons.close_rounded, size: 16, color: BoutiqueColors.textSecondary),
+                          label: const Text('Clear selection', style: TextStyle(color: BoutiqueColors.textSecondary, fontSize: 12)),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                ],
+
                 // Main Content View (Table or Grid)
                 Expanded(
                   child: FocusTraversalOrder(
@@ -918,43 +981,98 @@ class InventoryViewState extends State<InventoryView> {
                         child: Container(
                           margin: const EdgeInsets.symmetric(horizontal: 32, vertical: 8),
                           decoration: BoutiqueDecoration.card(),
-                          child: filteredList.isEmpty
-                              ? const Center(
-                                  child: Column(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(Icons.inventory_outlined, size: 48, color: BoutiqueColors.textMuted),
-                                      SizedBox(height: 12),
-                                      Text('No matching items found in catalog.', style: TextStyle(color: BoutiqueColors.textSecondary, fontSize: 14)),
-                                    ],
-                                  ),
-                                )
-                              : (_isGridView
-                                  ? GridView.builder(
-                                      controller: _listScrollCtrl,
-                                      padding: const EdgeInsets.all(20),
-                                      gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                                        maxCrossAxisExtent: 260,
-                                        childAspectRatio: 0.85,
-                                        crossAxisSpacing: 16,
-                                        mainAxisSpacing: 16,
+                          child: Column(
+                            children: [
+                              // ── Select All Header ──
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+                                decoration: const BoxDecoration(
+                                  color: BoutiqueColors.bgSubtle,
+                                  borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+                                  border: Border(bottom: BorderSide(color: BoutiqueColors.borderLight)),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Checkbox(
+                                      value: filteredList.isNotEmpty && filteredList.every((p) => _selectedProductIds.contains(p.tagId))
+                                          ? true
+                                          : (filteredList.any((p) => _selectedProductIds.contains(p.tagId)) ? null : false),
+                                      tristate: true,
+                                      activeColor: BoutiqueColors.accent,
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                                      onChanged: (val) {
+                                        setState(() {
+                                          if (val == true) {
+                                            _selectedProductIds.addAll(filteredList.map((p) => p.tagId));
+                                          } else {
+                                            for (final p in filteredList) {
+                                              _selectedProductIds.remove(p.tagId);
+                                            }
+                                          }
+                                        });
+                                      },
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      'Select All (${filteredList.length} items)',
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold,
+                                        color: BoutiqueColors.textSecondary,
                                       ),
-                                      itemCount: filteredList.length,
-                                      itemBuilder: (context, index) {
-                                        final p = filteredList[index];
-                                        return _buildGridCard(p, index, filteredList);
-                                      },
-                                    )
-                                  : ListView.separated(
-                                      controller: _listScrollCtrl,
-                                      padding: const EdgeInsets.symmetric(vertical: 8),
-                                      itemCount: filteredList.length,
-                                      separatorBuilder: (_, _) => const Divider(height: 1, color: BoutiqueColors.borderLight),
-                                      itemBuilder: (context, index) {
-                                        final p = filteredList[index];
-                                        return _buildTableRow(p, index, filteredList);
-                                      },
-                                    )),
+                                    ),
+                                    const Spacer(),
+                                    Text(
+                                      'Total: ${filteredList.length} products',
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        color: BoutiqueColors.textSecondary,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Expanded(
+                                child: filteredList.isEmpty
+                                    ? const Center(
+                                        child: Column(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(Icons.inventory_outlined, size: 48, color: BoutiqueColors.textMuted),
+                                            SizedBox(height: 12),
+                                            Text('No matching items found in catalog.', style: TextStyle(color: BoutiqueColors.textSecondary, fontSize: 14)),
+                                          ],
+                                        ),
+                                      )
+                                    : (_isGridView
+                                        ? GridView.builder(
+                                            controller: _listScrollCtrl,
+                                            padding: const EdgeInsets.all(20),
+                                            gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                                              maxCrossAxisExtent: 260,
+                                              childAspectRatio: 0.85,
+                                              crossAxisSpacing: 16,
+                                              mainAxisSpacing: 16,
+                                            ),
+                                            itemCount: filteredList.length,
+                                            itemBuilder: (context, index) {
+                                              final p = filteredList[index];
+                                              return _buildGridCard(p, index, filteredList);
+                                            },
+                                          )
+                                        : ListView.separated(
+                                            controller: _listScrollCtrl,
+                                            padding: const EdgeInsets.symmetric(vertical: 8),
+                                            itemCount: filteredList.length,
+                                            separatorBuilder: (_, _) => const Divider(height: 1, color: BoutiqueColors.borderLight),
+                                            itemBuilder: (context, index) {
+                                              final p = filteredList[index];
+                                              return _buildTableRow(p, index, filteredList);
+                                            },
+                                          )),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ),
@@ -1266,24 +1384,44 @@ class InventoryViewState extends State<InventoryView> {
                 },
                 hoverColor: BoutiqueColors.accentSoft.withValues(alpha: 0.4),
                 contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 6),
-                leading: ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: Container(
-                    width: 42,
-                    height: 42,
-                    color: isSelected ? BoutiqueColors.bgCard : BoutiqueColors.accentSoft,
-                    child: p.imageUrl.isNotEmpty 
-                        ? Image.network(
-                            p.imageUrl,
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, _, _) => const Center(
-                              child: Icon(Icons.inventory_2_outlined, color: BoutiqueColors.accent, size: 22),
-                            ),
-                          )
-                        : const Center(
-                            child: Icon(Icons.inventory_2_outlined, color: BoutiqueColors.accent, size: 22),
-                          ),
-                  ),
+                leading: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Checkbox(
+                      value: _selectedProductIds.contains(p.tagId),
+                      activeColor: BoutiqueColors.accent,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                      onChanged: (val) {
+                        setState(() {
+                          if (val == true) {
+                            _selectedProductIds.add(p.tagId);
+                          } else {
+                            _selectedProductIds.remove(p.tagId);
+                          }
+                        });
+                      },
+                    ),
+                    const SizedBox(width: 4),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: Container(
+                        width: 42,
+                        height: 42,
+                        color: isSelected ? BoutiqueColors.bgCard : BoutiqueColors.accentSoft,
+                        child: p.imageUrl.isNotEmpty 
+                            ? Image.network(
+                                p.imageUrl,
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, _, _) => const Center(
+                                  child: Icon(Icons.inventory_2_outlined, color: BoutiqueColors.accent, size: 22),
+                                ),
+                              )
+                            : const Center(
+                                child: Icon(Icons.inventory_2_outlined, color: BoutiqueColors.accent, size: 22),
+                              ),
+                      ),
+                    ),
+                  ],
                 ),
                 title: Row(
                   children: [
@@ -1446,20 +1584,39 @@ class InventoryViewState extends State<InventoryView> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: isSelected ? BoutiqueColors.accent : BoutiqueColors.accentSoft,
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Text(
-                      p.tagId,
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.bold,
-                        color: isSelected ? Colors.white : BoutiqueColors.accent,
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Checkbox(
+                        value: _selectedProductIds.contains(p.tagId),
+                        activeColor: BoutiqueColors.accent,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                        onChanged: (val) {
+                          setState(() {
+                            if (val == true) {
+                              _selectedProductIds.add(p.tagId);
+                            } else {
+                              _selectedProductIds.remove(p.tagId);
+                            }
+                          });
+                        },
                       ),
-                    ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: isSelected ? BoutiqueColors.accent : BoutiqueColors.accentSoft,
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          p.tagId,
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: isSelected ? Colors.white : BoutiqueColors.accent,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                   if (isOutOfStock)
                     Container(
