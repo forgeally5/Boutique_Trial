@@ -26,10 +26,14 @@ class InventoryView extends StatefulWidget {
   const InventoryView({super.key, required this.state, this.globalSearchCtrl});
 
   @override
-  State<InventoryView> createState() => _InventoryViewState();
+  State<InventoryView> createState() => InventoryViewState();
 }
 
-class _InventoryViewState extends State<InventoryView> {
+class InventoryViewState extends State<InventoryView> {
+  void focusSearch() {
+    _searchFocusNode.requestFocus();
+    _searchCtrl.selection = TextSelection(baseOffset: 0, extentOffset: _searchCtrl.text.length);
+  }
   AdminState get state => widget.state;
   PermissionsModel get perms => context.read<AuthViewModel>().appUser?.permissions ?? PermissionsModel.adminPreset();
 
@@ -403,7 +407,12 @@ class _InventoryViewState extends State<InventoryView> {
     final authUser = context.watch<AuthViewModel>().appUser;
     final perms = authUser?.permissions ?? PermissionsModel.adminPreset();
 
-    return ListenableBuilder(
+    return CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.keyS, control: true): focusSearch,
+        const SingleActivator(LogicalKeyboardKey.keyS, meta: true): focusSearch,
+      },
+      child: ListenableBuilder(
       listenable: state,
       builder: (context, _) {
         final List<Product> allProducts = state.products;
@@ -704,7 +713,7 @@ class _InventoryViewState extends State<InventoryView> {
                             textInputAction: TextInputAction.search,
                             style: const TextStyle(fontSize: 13),
                             decoration: BoutiqueInputDecoration.field(
-                              hintText: 'Search product name or tag ID...',
+                              hintText: 'Search product name or tag ID... (Ctrl+S)',
                               prefixIcon: const Icon(Icons.search_rounded, size: 18, color: BoutiqueColors.textSecondary),
                               suffixIcon: _searchCtrl.text.isNotEmpty
                                   ? IconButton(
@@ -992,6 +1001,7 @@ class _InventoryViewState extends State<InventoryView> {
         ),
         );
       },
+    ),
     );
   }
 

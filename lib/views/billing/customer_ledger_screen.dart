@@ -19,10 +19,14 @@ class CustomerLedgerScreen extends StatefulWidget {
   });
 
   @override
-  State<CustomerLedgerScreen> createState() => _CustomerLedgerScreenState();
+  State<CustomerLedgerScreen> createState() => CustomerLedgerScreenState();
 }
 
-class _CustomerLedgerScreenState extends State<CustomerLedgerScreen> {
+class CustomerLedgerScreenState extends State<CustomerLedgerScreen> {
+  void focusSearch() {
+    _searchFocusNode.requestFocus();
+    _searchCtrl.selection = TextSelection(baseOffset: 0, extentOffset: _searchCtrl.text.length);
+  }
   bool _isLoading = true;
   List<Map<String, dynamic>> _allBills = [];
   List<Map<String, dynamic>> _allPendingBills = [];
@@ -288,7 +292,12 @@ class _CustomerLedgerScreenState extends State<CustomerLedgerScreen> {
 
     final keys = _filteredCustomerKeys;
 
-    return FocusTraversalGroup(
+    return CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.keyS, control: true): focusSearch,
+        const SingleActivator(LogicalKeyboardKey.keyS, meta: true): focusSearch,
+      },
+      child: FocusTraversalGroup(
       policy: OrderedTraversalPolicy(),
       child: Row(
         children: [
@@ -373,7 +382,7 @@ class _CustomerLedgerScreenState extends State<CustomerLedgerScreen> {
                           autofocus: false,
                           textInputAction: TextInputAction.none,
                           decoration: BoutiqueInputDecoration.field(
-                            hintText: 'Search customer, mobile or bill #...',
+                            hintText: 'Search customer, mobile or bill #... (Ctrl+S)',
                             prefixIcon: const Icon(
                               Icons.search,
                               size: 20,
@@ -547,6 +556,7 @@ class _CustomerLedgerScreenState extends State<CustomerLedgerScreen> {
         ),
       ],
     ),
+  ),
   );
   }
 

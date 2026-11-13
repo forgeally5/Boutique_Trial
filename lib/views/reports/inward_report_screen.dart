@@ -20,6 +20,10 @@ class InwardReportScreen extends StatefulWidget {
 }
 
 class InwardReportScreenState extends State<InwardReportScreen> {
+  void focusSearch() {
+    _searchFocusNode.requestFocus();
+    _searchCtrl.selection = TextSelection(baseOffset: 0, extentOffset: _searchCtrl.text.length);
+  }
   final _currencyFmt = NumberFormat('#,##,##0.00', 'en_IN');
   final _fileDateFmt = DateFormat('dd-MM-yyyy');
   final _searchCtrl = TextEditingController();
@@ -1007,7 +1011,7 @@ class InwardReportScreenState extends State<InwardReportScreen> {
                         focusNode: _searchFocusNode,
                         controller: _searchCtrl,
                         decoration: InputDecoration(
-                          hintText: 'Search by item name, tag, category...',
+                          hintText: 'Search by item name, tag, category... (Ctrl+S)',
                           hintStyle: const TextStyle(fontSize: 12, color: BoutiqueColors.textSecondary),
                           prefixIcon: const Icon(Icons.search, size: 18, color: BoutiqueColors.textSecondary),
                           suffixIcon: _searchQuery.isNotEmpty

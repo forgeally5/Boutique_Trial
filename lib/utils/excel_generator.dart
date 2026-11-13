@@ -1800,7 +1800,7 @@ class ExcelGenerator {
   }
 
   /// Generate & download Stock Ledger Excel matching user's custom template
-  /// Layout matches photo: Category, Product Name, Date, Price, Total Inward, Issue, Sales, Closing
+  /// Layout includes separate columns for Qty and Weight across Inward, Issue, Sold, and Closing.
   static Future<void> downloadStockLedgerExcel({
     required List<Map<String, dynamic>> rows,
     String categoryFilter = 'All',
@@ -1835,9 +1835,10 @@ class ExcelGenerator {
     priceTop.cellStyle.hAlign = HAlignType.center;
     priceTop.cellStyle.vAlign = VAlignType.center;
 
-    // Inward Units header
-    final inwardTop = sheet.getRangeByName('F2');
-    inwardTop.setText('Inward Units');
+    // Inward Units header (over QTY & WEIGHT)
+    final inwardTop = sheet.getRangeByName('F2:G2');
+    inwardTop.merge();
+    inwardTop.setText('PURCHASED / INWARD');
     inwardTop.cellStyle.bold = true;
     inwardTop.cellStyle.fontSize = 10;
     inwardTop.cellStyle.backColor = '#8EAADB';
@@ -1845,8 +1846,9 @@ class ExcelGenerator {
     inwardTop.cellStyle.hAlign = HAlignType.center;
     inwardTop.cellStyle.vAlign = VAlignType.center;
 
-    // ISSUE header
-    final issueTop = sheet.getRangeByName('G2');
+    // ISSUE header (over QTY & WEIGHT)
+    final issueTop = sheet.getRangeByName('H2:I2');
+    issueTop.merge();
     issueTop.setText('ISSUE');
     issueTop.cellStyle.bold = true;
     issueTop.cellStyle.fontSize = 10;
@@ -1855,9 +1857,10 @@ class ExcelGenerator {
     issueTop.cellStyle.hAlign = HAlignType.center;
     issueTop.cellStyle.vAlign = VAlignType.center;
 
-    // Sales header
-    final salesTop = sheet.getRangeByName('H2');
-    salesTop.setText('Sales');
+    // Sales header (over QTY & WEIGHT)
+    final salesTop = sheet.getRangeByName('J2:K2');
+    salesTop.merge();
+    salesTop.setText('SALES');
     salesTop.cellStyle.bold = true;
     salesTop.cellStyle.fontSize = 10;
     salesTop.cellStyle.backColor = '#8EAADB';
@@ -1865,9 +1868,10 @@ class ExcelGenerator {
     salesTop.cellStyle.hAlign = HAlignType.center;
     salesTop.cellStyle.vAlign = VAlignType.center;
 
-    // Closing header
-    final closingTop = sheet.getRangeByName('I2');
-    closingTop.setText('Closing');
+    // Closing header (over QTY & WEIGHT)
+    final closingTop = sheet.getRangeByName('L2:M2');
+    closingTop.merge();
+    closingTop.setText('CLOSING STOCK');
     closingTop.cellStyle.bold = true;
     closingTop.cellStyle.fontSize = 10;
     closingTop.cellStyle.backColor = '#8EAADB';
@@ -1875,16 +1879,42 @@ class ExcelGenerator {
     closingTop.cellStyle.hAlign = HAlignType.center;
     closingTop.cellStyle.vAlign = VAlignType.center;
 
+    // Unit top header
+    final unitTop = sheet.getRangeByName('N2');
+    unitTop.setText('UNIT');
+    unitTop.cellStyle.bold = true;
+    unitTop.cellStyle.fontSize = 10;
+    unitTop.cellStyle.backColor = '#8EAADB';
+    unitTop.cellStyle.fontColor = '#002060';
+    unitTop.cellStyle.hAlign = HAlignType.center;
+    unitTop.cellStyle.vAlign = VAlignType.center;
+
+    // Closing Value top header
+    final valTop = sheet.getRangeByName('O2');
+    valTop.setText('STOCK VALUE');
+    valTop.cellStyle.bold = true;
+    valTop.cellStyle.fontSize = 10;
+    valTop.cellStyle.backColor = '#8EAADB';
+    valTop.cellStyle.fontColor = '#002060';
+    valTop.cellStyle.hAlign = HAlignType.center;
+    valTop.cellStyle.vAlign = VAlignType.center;
+
     // ── Row 3: Sub Headers ───────────────────────────────────────────
     final subHeaders = [
       {'col': 2, 'text': 'CATEGORY', 'name': 'B3'},
       {'col': 3, 'text': 'PRODUCT NAME', 'name': 'C3'},
       {'col': 4, 'text': 'DATE', 'name': 'D3'},
-      {'col': 5, 'text': 'PRICE', 'name': 'E3'},
-      {'col': 6, 'text': 'TOTAL INWARD', 'name': 'F3'},
-      {'col': 7, 'text': 'ISSUE', 'name': 'G3'},
-      {'col': 8, 'text': 'Sales', 'name': 'H3'},
-      {'col': 9, 'text': 'Closing', 'name': 'I3'},
+      {'col': 5, 'text': 'PRICE (₹)', 'name': 'E3'},
+      {'col': 6, 'text': 'PURCHASED QTY', 'name': 'F3'},
+      {'col': 7, 'text': 'PURCHASED WT', 'name': 'G3'},
+      {'col': 8, 'text': 'ISSUE QTY', 'name': 'H3'},
+      {'col': 9, 'text': 'ISSUE WT', 'name': 'I3'},
+      {'col': 10, 'text': 'SOLD QTY', 'name': 'J3'},
+      {'col': 11, 'text': 'SOLD WT', 'name': 'K3'},
+      {'col': 12, 'text': 'CLOSING QTY', 'name': 'L3'},
+      {'col': 13, 'text': 'CLOSING WT', 'name': 'M3'},
+      {'col': 14, 'text': 'UNIT', 'name': 'N3'},
+      {'col': 15, 'text': 'VALUE (₹)', 'name': 'O3'},
     ];
 
     for (final sh in subHeaders) {
@@ -1901,18 +1931,31 @@ class ExcelGenerator {
     }
 
     // Set borders on Row 2 headers
-    for (int col = 3; col <= 9; col++) {
+    for (int col = 3; col <= 15; col++) {
       sheet.getRangeByIndex(2, col).cellStyle.borders.all.lineStyle = LineStyle.thin;
       sheet.getRangeByIndex(2, col).cellStyle.borders.all.color = '#8EAADB';
+    }
+
+    // Helper to format weight strings
+    String formatWeightStr(double wt, String wUnit) {
+      if (wt <= 0) return '-';
+      final formatted = wt % 1 == 0 ? wt.toInt().toString() : wt.toStringAsFixed(2);
+      final unit = wUnit.trim();
+      return unit.isNotEmpty ? '$formatted $unit' : formatted;
     }
 
     // ── Data Rows ───────────────────────────────────────────────────
     int rowIndex = 4;
     String lastCategory = '';
-    double sumInward = 0.0;
-    double sumIssue = 0.0;
-    double sumSales = 0.0;
-    double sumClosing = 0.0;
+    double sumInwardQty = 0.0;
+    double sumInwardWeight = 0.0;
+    double sumIssueQty = 0.0;
+    double sumIssueWeight = 0.0;
+    double sumSalesQty = 0.0;
+    double sumSalesWeight = 0.0;
+    double sumClosingQty = 0.0;
+    double sumClosingWeight = 0.0;
+    double sumValue = 0.0;
 
     for (final r in rows) {
       final category = (r['category']?.toString().trim().isNotEmpty ?? false)
@@ -1930,18 +1973,29 @@ class ExcelGenerator {
                   : '-'));
       final price = (r['price'] as num?)?.toDouble() ?? 0.0;
       final inwardQty = (r['inwardQty'] as num?)?.toDouble() ?? 0.0;
+      final inwardWeight = (r['inwardWeight'] as num?)?.toDouble() ?? 0.0;
       final unit = r['unit']?.toString() ?? 'Nos';
+      final weightUnit = r['weightUnit']?.toString() ?? '';
       final isWeight = r['isWeight'] == true;
       final issueQty = (r['issueQty'] as num?)?.toDouble() ?? 0.0;
+      final issueWeight = (r['issueWeight'] as num?)?.toDouble() ?? 0.0;
       final soldQty = (r['soldQty'] as num?)?.toDouble() ?? 0.0;
+      final soldWeight = (r['soldWeight'] as num?)?.toDouble() ?? 0.0;
       final closingQty = (r['closingQty'] as num?)?.toDouble() ?? 0.0;
+      final closingWeight = (r['closingWeight'] as num?)?.toDouble() ?? 0.0;
+      final rowVal = (r['value'] as num?)?.toDouble() ?? (closingQty * price);
 
-      sumInward += inwardQty;
-      sumIssue += issueQty;
-      sumSales += soldQty;
-      sumClosing += closingQty;
+      sumInwardQty += inwardQty;
+      sumInwardWeight += inwardWeight;
+      sumIssueQty += issueQty;
+      sumIssueWeight += issueWeight;
+      sumSalesQty += soldQty;
+      sumSalesWeight += soldWeight;
+      sumClosingQty += closingQty;
+      sumClosingWeight += closingWeight;
+      sumValue += rowVal;
 
-      // Col B: Category (shown on first row of category or on summary row)
+      // Col B (2): Category
       final cellCat = sheet.getRangeByIndex(rowIndex, 2);
       if (isSummary || category != lastCategory) {
         cellCat.setText(category);
@@ -1955,7 +2009,7 @@ class ExcelGenerator {
       cellCat.cellStyle.borders.all.lineStyle = LineStyle.thin;
       cellCat.cellStyle.borders.all.color = '#E0E7F1';
 
-      // Col C: Product Name
+      // Col C (3): Product Name
       final cellName = sheet.getRangeByIndex(rowIndex, 3);
       cellName.setText(name);
       cellName.cellStyle.bold = isSummary || cellName.cellStyle.bold;
@@ -1963,7 +2017,7 @@ class ExcelGenerator {
       cellName.cellStyle.borders.all.lineStyle = LineStyle.thin;
       cellName.cellStyle.borders.all.color = '#E0E7F1';
 
-      // Col D: Date
+      // Col D (4): Date
       final cellDate = sheet.getRangeByIndex(rowIndex, 4);
       cellDate.setText(dateStr);
       cellDate.cellStyle.hAlign = HAlignType.center;
@@ -1971,7 +2025,7 @@ class ExcelGenerator {
       cellDate.cellStyle.borders.all.lineStyle = LineStyle.thin;
       cellDate.cellStyle.borders.all.color = '#E0E7F1';
 
-      // Col E: Price
+      // Col E (5): Price
       final cellPrice = sheet.getRangeByIndex(rowIndex, 5);
       if (price > 0) {
         cellPrice.setNumber(price);
@@ -1984,56 +2038,112 @@ class ExcelGenerator {
       cellPrice.cellStyle.borders.all.lineStyle = LineStyle.thin;
       cellPrice.cellStyle.borders.all.color = '#E0E7F1';
 
-      // Col F: Total Inward (e.g. 3 Nos, 196.00 Gram)
-      final cellInward = sheet.getRangeByIndex(rowIndex, 6);
-      final displayUnit = unit.isNotEmpty ? unit : (isWeight ? 'Gram' : 'Nos');
-      final inwardFormatted = isWeight
-          ? inwardQty.toStringAsFixed(2)
-          : (inwardQty % 1 == 0 ? inwardQty.toInt().toString() : inwardQty.toStringAsFixed(2));
-      cellInward.setText('$inwardFormatted $displayUnit');
-      cellInward.cellStyle.hAlign = HAlignType.right;
-      cellInward.cellStyle.vAlign = VAlignType.center;
-      cellInward.cellStyle.borders.all.lineStyle = LineStyle.thin;
-      cellInward.cellStyle.borders.all.color = '#E0E7F1';
+      // Col F (6): Purchased Qty
+      final cellInwardQ = sheet.getRangeByIndex(rowIndex, 6);
+      if (inwardQty > 0) {
+        cellInwardQ.setNumber(inwardQty);
+        cellInwardQ.numberFormat = inwardQty % 1 == 0 ? '#,##0' : '#,##0.00';
+      } else {
+        cellInwardQ.setText('-');
+      }
+      cellInwardQ.cellStyle.hAlign = HAlignType.center;
+      cellInwardQ.cellStyle.vAlign = VAlignType.center;
+      cellInwardQ.cellStyle.borders.all.lineStyle = LineStyle.thin;
+      cellInwardQ.cellStyle.borders.all.color = '#E0E7F1';
 
-      // Col G: Issue
-      final cellIssue = sheet.getRangeByIndex(rowIndex, 7);
+      // Col G (7): Purchased Weight (e.g. 450 Carat)
+      final cellInwardW = sheet.getRangeByIndex(rowIndex, 7);
+      cellInwardW.setText(formatWeightStr(inwardWeight, weightUnit));
+      cellInwardW.cellStyle.hAlign = HAlignType.center;
+      cellInwardW.cellStyle.vAlign = VAlignType.center;
+      cellInwardW.cellStyle.borders.all.lineStyle = LineStyle.thin;
+      cellInwardW.cellStyle.borders.all.color = '#E0E7F1';
+
+      // Col H (8): Issue Qty
+      final cellIssueQ = sheet.getRangeByIndex(rowIndex, 8);
       if (issueQty > 0) {
-        cellIssue.setNumber(issueQty);
-        cellIssue.numberFormat = isWeight ? '0.00' : (issueQty % 1 == 0 ? '0' : '0.00');
+        cellIssueQ.setNumber(issueQty);
+        cellIssueQ.numberFormat = issueQty % 1 == 0 ? '#,##0' : '#,##0.00';
       } else {
-        cellIssue.setText('-');
+        cellIssueQ.setText('-');
       }
-      cellIssue.cellStyle.hAlign = HAlignType.center;
-      cellIssue.cellStyle.vAlign = VAlignType.center;
-      cellIssue.cellStyle.borders.all.lineStyle = LineStyle.thin;
-      cellIssue.cellStyle.borders.all.color = '#E0E7F1';
+      cellIssueQ.cellStyle.hAlign = HAlignType.center;
+      cellIssueQ.cellStyle.vAlign = VAlignType.center;
+      cellIssueQ.cellStyle.borders.all.lineStyle = LineStyle.thin;
+      cellIssueQ.cellStyle.borders.all.color = '#E0E7F1';
 
-      // Col H: Sales
-      final cellSales = sheet.getRangeByIndex(rowIndex, 8);
+      // Col I (9): Issue Weight
+      final cellIssueW = sheet.getRangeByIndex(rowIndex, 9);
+      cellIssueW.setText(formatWeightStr(issueWeight, weightUnit));
+      cellIssueW.cellStyle.hAlign = HAlignType.center;
+      cellIssueW.cellStyle.vAlign = VAlignType.center;
+      cellIssueW.cellStyle.borders.all.lineStyle = LineStyle.thin;
+      cellIssueW.cellStyle.borders.all.color = '#E0E7F1';
+
+      // Col J (10): Sold Qty
+      final cellSoldQ = sheet.getRangeByIndex(rowIndex, 10);
       if (soldQty > 0) {
-        cellSales.setNumber(soldQty);
-        cellSales.numberFormat = isWeight ? '0.00' : (soldQty % 1 == 0 ? '0' : '0.00');
+        cellSoldQ.setNumber(soldQty);
+        cellSoldQ.numberFormat = soldQty % 1 == 0 ? '#,##0' : '#,##0.00';
       } else {
-        cellSales.setText('-');
+        cellSoldQ.setText('-');
       }
-      cellSales.cellStyle.hAlign = HAlignType.center;
-      cellSales.cellStyle.vAlign = VAlignType.center;
-      cellSales.cellStyle.borders.all.lineStyle = LineStyle.thin;
-      cellSales.cellStyle.borders.all.color = '#E0E7F1';
+      cellSoldQ.cellStyle.hAlign = HAlignType.center;
+      cellSoldQ.cellStyle.vAlign = VAlignType.center;
+      cellSoldQ.cellStyle.borders.all.lineStyle = LineStyle.thin;
+      cellSoldQ.cellStyle.borders.all.color = '#E0E7F1';
 
-      // Col I: Closing
-      final cellClosing = sheet.getRangeByIndex(rowIndex, 9);
-      cellClosing.setNumber(closingQty);
-      cellClosing.numberFormat = isWeight ? '0.00' : (closingQty % 1 == 0 ? '0' : '0.00');
-      cellClosing.cellStyle.bold = true;
-      cellClosing.cellStyle.hAlign = HAlignType.center;
-      cellClosing.cellStyle.vAlign = VAlignType.center;
-      cellClosing.cellStyle.borders.all.lineStyle = LineStyle.thin;
-      cellClosing.cellStyle.borders.all.color = '#E0E7F1';
+      // Col K (11): Sold Weight (e.g. 100 Carat)
+      final cellSoldW = sheet.getRangeByIndex(rowIndex, 11);
+      cellSoldW.setText(formatWeightStr(soldWeight, weightUnit));
+      cellSoldW.cellStyle.hAlign = HAlignType.center;
+      cellSoldW.cellStyle.vAlign = VAlignType.center;
+      cellSoldW.cellStyle.borders.all.lineStyle = LineStyle.thin;
+      cellSoldW.cellStyle.borders.all.color = '#E0E7F1';
+
+      // Col L (12): Closing Qty
+      final cellClosingQ = sheet.getRangeByIndex(rowIndex, 12);
+      cellClosingQ.setNumber(closingQty);
+      cellClosingQ.numberFormat = closingQty % 1 == 0 ? '#,##0' : '#,##0.00';
+      cellClosingQ.cellStyle.bold = true;
+      cellClosingQ.cellStyle.hAlign = HAlignType.center;
+      cellClosingQ.cellStyle.vAlign = VAlignType.center;
+      cellClosingQ.cellStyle.borders.all.lineStyle = LineStyle.thin;
+      cellClosingQ.cellStyle.borders.all.color = '#E0E7F1';
+
+      // Col M (13): Closing Weight
+      final cellClosingW = sheet.getRangeByIndex(rowIndex, 13);
+      cellClosingW.setText(formatWeightStr(closingWeight, weightUnit));
+      cellClosingW.cellStyle.bold = true;
+      cellClosingW.cellStyle.hAlign = HAlignType.center;
+      cellClosingW.cellStyle.vAlign = VAlignType.center;
+      cellClosingW.cellStyle.borders.all.lineStyle = LineStyle.thin;
+      cellClosingW.cellStyle.borders.all.color = '#E0E7F1';
+
+      // Col N (14): Unit
+      final cellUnit = sheet.getRangeByIndex(rowIndex, 14);
+      cellUnit.setText(unit.isNotEmpty ? unit : (isWeight ? (weightUnit.isNotEmpty ? weightUnit : 'Gram') : 'Nos'));
+      cellUnit.cellStyle.hAlign = HAlignType.center;
+      cellUnit.cellStyle.vAlign = VAlignType.center;
+      cellUnit.cellStyle.borders.all.lineStyle = LineStyle.thin;
+      cellUnit.cellStyle.borders.all.color = '#E0E7F1';
+
+      // Col O (15): Stock Value
+      final cellVal = sheet.getRangeByIndex(rowIndex, 15);
+      if (rowVal > 0) {
+        cellVal.setNumber(rowVal);
+        cellVal.numberFormat = '#,##0.00';
+      } else {
+        cellVal.setText('-');
+      }
+      cellVal.cellStyle.bold = true;
+      cellVal.cellStyle.hAlign = HAlignType.right;
+      cellVal.cellStyle.vAlign = VAlignType.center;
+      cellVal.cellStyle.borders.all.lineStyle = LineStyle.thin;
+      cellVal.cellStyle.borders.all.color = '#E0E7F1';
 
       if (isSummary) {
-        for (int col = 2; col <= 9; col++) {
+        for (int col = 2; col <= 15; col++) {
           sheet.getRangeByIndex(rowIndex, col).cellStyle.backColor = '#F2F5F9';
         }
       }
@@ -2044,7 +2154,7 @@ class ExcelGenerator {
     // ── Summary Grand Total Row ───────────────────────────────────────
     final totalLabel = sheet.getRangeByIndex(rowIndex, 2, rowIndex, 5);
     totalLabel.merge();
-    totalLabel.setText('TOTAL');
+    totalLabel.setText('GRAND TOTAL');
     totalLabel.cellStyle.bold = true;
     totalLabel.cellStyle.fontSize = 10;
     totalLabel.cellStyle.backColor = '#D9E1F2';
@@ -2052,51 +2162,106 @@ class ExcelGenerator {
     totalLabel.cellStyle.hAlign = HAlignType.right;
     totalLabel.cellStyle.vAlign = VAlignType.center;
 
-    final cellTotInward = sheet.getRangeByIndex(rowIndex, 6);
-    cellTotInward.setNumber(sumInward);
-    cellTotInward.numberFormat = sumInward % 1 == 0 ? '#,##0' : '#,##0.00';
-    cellTotInward.cellStyle.bold = true;
-    cellTotInward.cellStyle.backColor = '#D9E1F2';
-    cellTotInward.cellStyle.fontColor = '#002060';
-    cellTotInward.cellStyle.hAlign = HAlignType.right;
-    cellTotInward.cellStyle.vAlign = VAlignType.center;
+    // Purchased Qty Total
+    final cellTotInwardQ = sheet.getRangeByIndex(rowIndex, 6);
+    cellTotInwardQ.setNumber(sumInwardQty);
+    cellTotInwardQ.numberFormat = sumInwardQty % 1 == 0 ? '#,##0' : '#,##0.00';
+    cellTotInwardQ.cellStyle.bold = true;
+    cellTotInwardQ.cellStyle.backColor = '#D9E1F2';
+    cellTotInwardQ.cellStyle.fontColor = '#002060';
+    cellTotInwardQ.cellStyle.hAlign = HAlignType.center;
+    cellTotInwardQ.cellStyle.vAlign = VAlignType.center;
 
-    final cellTotIssue = sheet.getRangeByIndex(rowIndex, 7);
-    if (sumIssue > 0) {
-      cellTotIssue.setNumber(sumIssue);
-      cellTotIssue.numberFormat = sumIssue % 1 == 0 ? '#,##0' : '#,##0.00';
+    // Purchased Wt Total
+    final cellTotInwardW = sheet.getRangeByIndex(rowIndex, 7);
+    cellTotInwardW.setText(sumInwardWeight > 0 ? (sumInwardWeight % 1 == 0 ? sumInwardWeight.toInt().toString() : sumInwardWeight.toStringAsFixed(2)) : '-');
+    cellTotInwardW.cellStyle.bold = true;
+    cellTotInwardW.cellStyle.backColor = '#D9E1F2';
+    cellTotInwardW.cellStyle.fontColor = '#002060';
+    cellTotInwardW.cellStyle.hAlign = HAlignType.center;
+    cellTotInwardW.cellStyle.vAlign = VAlignType.center;
+
+    // Issue Qty Total
+    final cellTotIssueQ = sheet.getRangeByIndex(rowIndex, 8);
+    if (sumIssueQty > 0) {
+      cellTotIssueQ.setNumber(sumIssueQty);
+      cellTotIssueQ.numberFormat = sumIssueQty % 1 == 0 ? '#,##0' : '#,##0.00';
     } else {
-      cellTotIssue.setText('-');
+      cellTotIssueQ.setText('-');
     }
-    cellTotIssue.cellStyle.bold = true;
-    cellTotIssue.cellStyle.backColor = '#D9E1F2';
-    cellTotIssue.cellStyle.fontColor = '#002060';
-    cellTotIssue.cellStyle.hAlign = HAlignType.center;
-    cellTotIssue.cellStyle.vAlign = VAlignType.center;
+    cellTotIssueQ.cellStyle.bold = true;
+    cellTotIssueQ.cellStyle.backColor = '#D9E1F2';
+    cellTotIssueQ.cellStyle.fontColor = '#002060';
+    cellTotIssueQ.cellStyle.hAlign = HAlignType.center;
+    cellTotIssueQ.cellStyle.vAlign = VAlignType.center;
 
-    final cellTotSales = sheet.getRangeByIndex(rowIndex, 8);
-    if (sumSales > 0) {
-      cellTotSales.setNumber(sumSales);
-      cellTotSales.numberFormat = sumSales % 1 == 0 ? '#,##0' : '#,##0.00';
+    // Issue Wt Total
+    final cellTotIssueW = sheet.getRangeByIndex(rowIndex, 9);
+    cellTotIssueW.setText(sumIssueWeight > 0 ? (sumIssueWeight % 1 == 0 ? sumIssueWeight.toInt().toString() : sumIssueWeight.toStringAsFixed(2)) : '-');
+    cellTotIssueW.cellStyle.bold = true;
+    cellTotIssueW.cellStyle.backColor = '#D9E1F2';
+    cellTotIssueW.cellStyle.fontColor = '#002060';
+    cellTotIssueW.cellStyle.hAlign = HAlignType.center;
+    cellTotIssueW.cellStyle.vAlign = VAlignType.center;
+
+    // Sold Qty Total
+    final cellTotSalesQ = sheet.getRangeByIndex(rowIndex, 10);
+    if (sumSalesQty > 0) {
+      cellTotSalesQ.setNumber(sumSalesQty);
+      cellTotSalesQ.numberFormat = sumSalesQty % 1 == 0 ? '#,##0' : '#,##0.00';
     } else {
-      cellTotSales.setText('-');
+      cellTotSalesQ.setText('-');
     }
-    cellTotSales.cellStyle.bold = true;
-    cellTotSales.cellStyle.backColor = '#D9E1F2';
-    cellTotSales.cellStyle.fontColor = '#002060';
-    cellTotSales.cellStyle.hAlign = HAlignType.center;
-    cellTotSales.cellStyle.vAlign = VAlignType.center;
+    cellTotSalesQ.cellStyle.bold = true;
+    cellTotSalesQ.cellStyle.backColor = '#D9E1F2';
+    cellTotSalesQ.cellStyle.fontColor = '#002060';
+    cellTotSalesQ.cellStyle.hAlign = HAlignType.center;
+    cellTotSalesQ.cellStyle.vAlign = VAlignType.center;
 
-    final cellTotClosing = sheet.getRangeByIndex(rowIndex, 9);
-    cellTotClosing.setNumber(sumClosing);
-    cellTotClosing.numberFormat = sumClosing % 1 == 0 ? '#,##0' : '#,##0.00';
-    cellTotClosing.cellStyle.bold = true;
-    cellTotClosing.cellStyle.backColor = '#D9E1F2';
-    cellTotClosing.cellStyle.fontColor = '#002060';
-    cellTotClosing.cellStyle.hAlign = HAlignType.center;
-    cellTotClosing.cellStyle.vAlign = VAlignType.center;
+    // Sold Wt Total
+    final cellTotSalesW = sheet.getRangeByIndex(rowIndex, 11);
+    cellTotSalesW.setText(sumSalesWeight > 0 ? (sumSalesWeight % 1 == 0 ? sumSalesWeight.toInt().toString() : sumSalesWeight.toStringAsFixed(2)) : '-');
+    cellTotSalesW.cellStyle.bold = true;
+    cellTotSalesW.cellStyle.backColor = '#D9E1F2';
+    cellTotSalesW.cellStyle.fontColor = '#002060';
+    cellTotSalesW.cellStyle.hAlign = HAlignType.center;
+    cellTotSalesW.cellStyle.vAlign = VAlignType.center;
 
-    for (int col = 2; col <= 9; col++) {
+    // Closing Qty Total
+    final cellTotClosingQ = sheet.getRangeByIndex(rowIndex, 12);
+    cellTotClosingQ.setNumber(sumClosingQty);
+    cellTotClosingQ.numberFormat = sumClosingQty % 1 == 0 ? '#,##0' : '#,##0.00';
+    cellTotClosingQ.cellStyle.bold = true;
+    cellTotClosingQ.cellStyle.backColor = '#D9E1F2';
+    cellTotClosingQ.cellStyle.fontColor = '#002060';
+    cellTotClosingQ.cellStyle.hAlign = HAlignType.center;
+    cellTotClosingQ.cellStyle.vAlign = VAlignType.center;
+
+    // Closing Wt Total
+    final cellTotClosingW = sheet.getRangeByIndex(rowIndex, 13);
+    cellTotClosingW.setText(sumClosingWeight > 0 ? (sumClosingWeight % 1 == 0 ? sumClosingWeight.toInt().toString() : sumClosingWeight.toStringAsFixed(2)) : '-');
+    cellTotClosingW.cellStyle.bold = true;
+    cellTotClosingW.cellStyle.backColor = '#D9E1F2';
+    cellTotClosingW.cellStyle.fontColor = '#002060';
+    cellTotClosingW.cellStyle.hAlign = HAlignType.center;
+    cellTotClosingW.cellStyle.vAlign = VAlignType.center;
+
+    // Unit column
+    final cellTotUnit = sheet.getRangeByIndex(rowIndex, 14);
+    cellTotUnit.setText('');
+    cellTotUnit.cellStyle.backColor = '#D9E1F2';
+
+    // Total Value
+    final cellTotVal = sheet.getRangeByIndex(rowIndex, 15);
+    cellTotVal.setNumber(sumValue);
+    cellTotVal.numberFormat = '#,##0.00';
+    cellTotVal.cellStyle.bold = true;
+    cellTotVal.cellStyle.backColor = '#D9E1F2';
+    cellTotVal.cellStyle.fontColor = '#002060';
+    cellTotVal.cellStyle.hAlign = HAlignType.right;
+    cellTotVal.cellStyle.vAlign = VAlignType.center;
+
+    for (int col = 2; col <= 15; col++) {
       sheet.getRangeByIndex(rowIndex, col).cellStyle.borders.top.lineStyle = LineStyle.thin;
       sheet.getRangeByIndex(rowIndex, col).cellStyle.borders.bottom.lineStyle = LineStyle.medium;
       sheet.getRangeByIndex(rowIndex, col).cellStyle.borders.all.color = '#8EAADB';
@@ -2104,14 +2269,20 @@ class ExcelGenerator {
 
     // Set Column Widths
     sheet.getRangeByIndex(1, 1).columnWidth = 3.0;   // A
-    sheet.getRangeByIndex(1, 2).columnWidth = 26.0;  // B: CATEGORY
-    sheet.getRangeByIndex(1, 3).columnWidth = 36.0;  // C: PRODUCT NAME
-    sheet.getRangeByIndex(1, 4).columnWidth = 14.0;  // D: DATE
+    sheet.getRangeByIndex(1, 2).columnWidth = 24.0;  // B: CATEGORY
+    sheet.getRangeByIndex(1, 3).columnWidth = 32.0;  // C: PRODUCT NAME
+    sheet.getRangeByIndex(1, 4).columnWidth = 13.0;  // D: DATE
     sheet.getRangeByIndex(1, 5).columnWidth = 13.0;  // E: PRICE
-    sheet.getRangeByIndex(1, 6).columnWidth = 18.0;  // F: TOTAL INWARD
-    sheet.getRangeByIndex(1, 7).columnWidth = 12.0;  // G: ISSUE
-    sheet.getRangeByIndex(1, 8).columnWidth = 12.0;  // H: Sales
-    sheet.getRangeByIndex(1, 9).columnWidth = 14.0;  // I: Closing
+    sheet.getRangeByIndex(1, 6).columnWidth = 13.0;  // F: PURCHASED QTY
+    sheet.getRangeByIndex(1, 7).columnWidth = 16.0;  // G: PURCHASED WT
+    sheet.getRangeByIndex(1, 8).columnWidth = 12.0;  // H: ISSUE QTY
+    sheet.getRangeByIndex(1, 9).columnWidth = 14.0;  // I: ISSUE WT
+    sheet.getRangeByIndex(1, 10).columnWidth = 12.0; // J: SOLD QTY
+    sheet.getRangeByIndex(1, 11).columnWidth = 14.0; // K: SOLD WT
+    sheet.getRangeByIndex(1, 12).columnWidth = 13.0; // L: CLOSING QTY
+    sheet.getRangeByIndex(1, 13).columnWidth = 16.0; // M: CLOSING WT
+    sheet.getRangeByIndex(1, 14).columnWidth = 11.0; // N: UNIT
+    sheet.getRangeByIndex(1, 15).columnWidth = 16.0; // O: VALUE
 
     final List<int> bytes = workbook.saveAsStream();
     workbook.dispose();

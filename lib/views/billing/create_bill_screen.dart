@@ -31,14 +31,68 @@ class CreateBillScreen extends StatefulWidget {
   });
 
   @override
-  State<CreateBillScreen> createState() => _CreateBillScreenState();
+  State<CreateBillScreen> createState() => CreateBillScreenState();
 }
 
 class _CancelEditIntent extends Intent {
   const _CancelEditIntent();
 }
 
-class _CreateBillScreenState extends State<CreateBillScreen> {
+class CreateBillScreenState extends State<CreateBillScreen> {
+  final ScrollController _leftScrollCtrl = ScrollController();
+  final Map<BillRow, GlobalKey> _rowKeys = {};
+
+  GlobalKey _getRowKey(BillRow row) {
+    return _rowKeys.putIfAbsent(row, () => GlobalKey());
+  }
+
+  void _scrollToRow(int index) {
+    if (index < 0 || index >= _rows.length) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (index >= _rows.length) return;
+      final key = _rowKeys[_rows[index]];
+      final ctx = key?.currentContext;
+      if (ctx != null) {
+        Scrollable.ensureVisible(
+          ctx,
+          alignment: 0.5,
+          duration: const Duration(milliseconds: 250),
+          curve: Curves.easeInOut,
+        );
+      }
+    });
+  }
+
+  void focusSearch() {
+    _topEntryFieldFocus?.requestFocus();
+    if (_topEntryTextCtrl != null) {
+      _topEntryTextCtrl!.selection = TextSelection(
+        baseOffset: 0,
+        extentOffset: _topEntryTextCtrl!.text.length,
+      );
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (_leftScrollCtrl.hasClients) {
+        final ctx = _topEntryFieldFocus?.context;
+        if (ctx != null) {
+          Scrollable.ensureVisible(
+            ctx,
+            alignment: 0.0,
+            duration: const Duration(milliseconds: 250),
+            curve: Curves.easeInOut,
+          );
+        } else {
+          _leftScrollCtrl.animateTo(
+            0,
+            duration: const Duration(milliseconds: 250),
+            curve: Curves.easeInOut,
+          );
+        }
+      }
+    });
+  }
   final _fmt = DateFormat('dd/MM/yyyy');
 
   final _billNoCtrl = TextEditingController();
@@ -99,21 +153,23 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
         : (current + 1) % _rows.length;
     _lastFocusedBoxIndex = nextIndex;
     _getCardFocusNode(nextIndex).requestFocus();
+    _scrollToRow(nextIndex);
   }
 
   bool _handleBillingShortcuts(KeyEvent event) {
     if (event is! KeyDownEvent) return false;
     final isAlt = HardwareKeyboard.instance.isAltPressed;
     final isCtrl = HardwareKeyboard.instance.isControlPressed;
+    final isMeta = HardwareKeyboard.instance.isMetaPressed;
 
     // Alt + P or Ctrl + P -> Cycle through product boxes
     if ((isAlt || isCtrl) && event.logicalKey == LogicalKeyboardKey.keyP) {
       _cycleProductBox();
       return true;
     }
-    // Alt + S -> Focus product search bar
-    if (isAlt && event.logicalKey == LogicalKeyboardKey.keyS) {
-      _topEntryFieldFocus?.requestFocus();
+    // Alt + S / Ctrl + S / Meta + S -> Focus product search bar
+    if ((isAlt || isCtrl || isMeta) && event.logicalKey == LogicalKeyboardKey.keyS) {
+      focusSearch();
       return true;
     }
     return false;
@@ -509,6 +565,7 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
     _customerMobileFocusNode.removeListener(_onMobileFocusChanged);
     widget.state.removeListener(_onStateProductsUpdate);
     HardwareKeyboard.instance.removeHandler(_handleBillingShortcuts);
+    _leftScrollCtrl.dispose();
     _autocompleteScrollCtrl.dispose();
     for (final node in _cardFocusNodes.values) { node.dispose(); }
     for (final node in _scanFocusNodes.values) { node.dispose(); }
@@ -1160,7 +1217,9 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
     return CallbackShortcuts(
       bindings: {
         const SingleActivator(LogicalKeyboardKey.keyP, alt: true): _cycleProductBox,
-        const SingleActivator(LogicalKeyboardKey.keyS, alt: true): () => _topEntryFieldFocus?.requestFocus(),
+        const SingleActivator(LogicalKeyboardKey.keyS, alt: true): focusSearch,
+        const SingleActivator(LogicalKeyboardKey.keyS, control: true): focusSearch,
+        const SingleActivator(LogicalKeyboardKey.keyS, meta: true): focusSearch,
       },
       child: Shortcuts(
       shortcuts: <ShortcutActivator, Intent>{
@@ -1202,6 +1261,7 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
             flex: 7,
             child: FocusTraversalGroup(
               child: SingleChildScrollView(
+                controller: _leftScrollCtrl,
                 padding: const EdgeInsets.all(32),
               child: Column(
                 children: [
@@ -1840,6 +1900,7 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
                   return KeyEventResult.handled;
                 } else if (_rows.isNotEmpty && textCtrl.text.trim().isEmpty) {
                   _getCardFocusNode(0).requestFocus();
+                  _scrollToRow(0);
                   return KeyEventResult.handled;
                 }
               } else if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
@@ -1997,23 +2058,32 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
           else
             for (int i = 0; i < _rows.length; i++)
               _BillRowWidget(
-                key: ObjectKey(_rows[i]),
+                key: _getRowKey(_rows[i]),
                 index: i,
                 row: _rows[i],
                 cardFocusNode: _getCardFocusNode(i),
                 scanFocusNode: _getScanFocusNode(i),
                 deleteFocusNode: _getDeleteFocusNode(i),
                 onNextBox: (i + 1 < _rows.length)
-                    ? () => _getCardFocusNode(i + 1).requestFocus()
+                    ? () {
+                        _getCardFocusNode(i + 1).requestFocus();
+                        _scrollToRow(i + 1);
+                      }
                     : null,
                 onPrevBox: (i > 0)
-                    ? () => _getCardFocusNode(i - 1).requestFocus()
-                    : () => _topEntryFieldFocus?.requestFocus(),
+                    ? () {
+                        _getCardFocusNode(i - 1).requestFocus();
+                        _scrollToRow(i - 1);
+                      }
+                    : () => focusSearch(),
                 onTabFromDelete: (i + 1 < _rows.length)
-                    ? () => _getScanFocusNode(i + 1).requestFocus()
-                    : () => _topEntryFieldFocus?.requestFocus(),
+                    ? () {
+                        _getScanFocusNode(i + 1).requestFocus();
+                        _scrollToRow(i + 1);
+                      }
+                    : () => focusSearch(),
                 onShiftTabFromScan: () => _getCardFocusNode(i).requestFocus(),
-                onRequestFocusSearch: () => _topEntryFieldFocus?.requestFocus(),
+                onRequestFocusSearch: focusSearch,
                 products: _cachedProducts,
                 getAvailableStock: _getAvailableStock,
                 getAvailableWeight: _getAvailableWeight,
@@ -2024,7 +2094,8 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
                 onDelete: () {
                   _rowVersion.value++;
                   setState(() {
-                    _rows.removeAt(i);
+                    final removed = _rows.removeAt(i);
+                    _rowKeys.remove(removed);
                     _cardFocusNodes.remove(i)?.dispose();
                     _scanFocusNodes.remove(i)?.dispose();
                     _deleteFocusNodes.remove(i)?.dispose();
@@ -2032,8 +2103,9 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
                   if (_rows.isNotEmpty) {
                     final nextIdx = i.clamp(0, _rows.length - 1);
                     _getCardFocusNode(nextIdx).requestFocus();
+                    _scrollToRow(nextIdx);
                   } else {
-                    _topEntryFieldFocus?.requestFocus();
+                    focusSearch();
                   }
                 },
               ),
@@ -2429,7 +2501,21 @@ class _BillRowWidgetState extends State<_BillRowWidget> {
     return Focus(
       focusNode: widget.cardFocusNode,
       onFocusChange: (f) {
-        if (mounted) setState(() => _isCardFocused = f);
+        if (mounted) {
+          setState(() => _isCardFocused = f);
+          if (f) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) {
+                Scrollable.ensureVisible(
+                  context,
+                  alignment: 0.5,
+                  duration: const Duration(milliseconds: 250),
+                  curve: Curves.easeInOut,
+                );
+              }
+            });
+          }
+        }
       },
       onKeyEvent: (node, event) {
         if (event is KeyDownEvent) {
@@ -2504,7 +2590,7 @@ class _BillRowWidgetState extends State<_BillRowWidget> {
         ),
         child: Row(
           children: [
-            // Product display â€” read-only when selected, or autocomplete if null
+            // Product display — read-only when selected, or autocomplete if null
             Expanded(
               flex: 4,
               child: row.product != null
@@ -2572,7 +2658,7 @@ class _BillRowWidgetState extends State<_BillRowWidget> {
             ),
             const SizedBox(width: 12),
 
-            // Qty stepper â€” 2. Minus, 3. Qty, 4. Plus
+            // Qty stepper — 2. Minus, 3. Qty, 4. Plus
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
               decoration: BoxDecoration(
@@ -2695,9 +2781,8 @@ class _BillRowWidgetState extends State<_BillRowWidget> {
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   Text(
-                    'â‚¹${row.lineAmount.toStringAsFixed(2)}',
+                    '₹${row.lineAmount.toStringAsFixed(2)}',
                     style: const TextStyle(
-                      fontFamily: 'serif',
                       fontSize: 15,
                       fontWeight: FontWeight.bold,
                       color: BoutiqueColors.textPrimary,
@@ -2717,8 +2802,8 @@ class _BillRowWidgetState extends State<_BillRowWidget> {
                         children: [
                           Text(
                             row.product?.pricingType == 'Weight-Based'
-                                ? '@ â‚¹${row.price}/${row.product?.weightUnit ?? 'g'}'
-                                : '@ â‚¹${row.price}',
+                                ? '@ ₹${row.price == row.price.toInt() ? row.price.toInt() : row.price.toStringAsFixed(2)}/${row.product?.weightUnit ?? 'g'}'
+                                : '@ ₹${row.price == row.price.toInt() ? row.price.toInt() : row.price.toStringAsFixed(2)}',
                             style: const TextStyle(
                               fontSize: 12,
                               color: BoutiqueColors.accent,
@@ -2989,7 +3074,7 @@ class _ProductAutocomplete extends StatelessWidget {
           focusNode: focusNode,
           style: const TextStyle(fontSize: 13),
           decoration: BoutiqueInputDecoration.field(
-            hintText: 'Search product name or tag ID...',
+            hintText: 'Search product name or tag ID... (Ctrl+S)',
             prefixIcon: const Icon(Icons.search_rounded, size: 16, color: BoutiqueColors.textSecondary),
           ),
         );

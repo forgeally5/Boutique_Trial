@@ -32,6 +32,25 @@ class BillingViewState extends State<BillingView> {
   int _tab = 0;
   Map<String, dynamic>? _billToEdit;
   final GlobalKey<BillHistoryScreenState> _billHistoryKey = GlobalKey<BillHistoryScreenState>();
+  final GlobalKey<CreateBillScreenState> _createBillKey = GlobalKey<CreateBillScreenState>();
+  final GlobalKey<CustomerLedgerScreenState> _customerLedgerKey = GlobalKey<CustomerLedgerScreenState>();
+
+  void focusActiveSearch() {
+    switch (_tab) {
+      case 0:
+        _createBillKey.currentState?.focusSearch();
+        _createBillFocusNode.requestFocus();
+        break;
+      case 1:
+        _billHistoryKey.currentState?.focusSearch();
+        _billHistoryFocusNode.requestFocus();
+        break;
+      case 2:
+        _customerLedgerKey.currentState?.focusSearch();
+        _customerLedgerFocusNode.requestFocus();
+        break;
+    }
+  }
 
   // One FocusNode per tab button so we can explicitly request focus on each
   final _tabFocus = [
@@ -148,6 +167,8 @@ class BillingViewState extends State<BillingView> {
 
     return CallbackShortcuts(
       bindings: {
+        const SingleActivator(LogicalKeyboardKey.keyS, control: true): focusActiveSearch,
+        const SingleActivator(LogicalKeyboardKey.keyS, meta: true): focusActiveSearch,
         const SingleActivator(LogicalKeyboardKey.keyB, alt: true): () => selectTab(0, focusFirstField: true),
         const SingleActivator(LogicalKeyboardKey.keyH, alt: true): () => selectTab(1, focusFirstField: true),
         const SingleActivator(LogicalKeyboardKey.keyC, alt: true): () => selectTab(2, focusFirstField: true),
@@ -221,7 +242,7 @@ class BillingViewState extends State<BillingView> {
                     Offstage(
                       offstage: _tab != 0,
                       child: CreateBillScreen(
-                        key: ValueKey(_billToEdit?['billNo'] ?? 'create'),
+                        key: _createBillKey,
                         state: widget.state,
                         initialBill: _billToEdit,
                         firstFieldFocusNode: _createBillFocusNode,
@@ -257,6 +278,7 @@ class BillingViewState extends State<BillingView> {
                   Offstage(
                     offstage: _tab != 2,
                     child: CustomerLedgerScreen(
+                      key: _customerLedgerKey,
                       state: widget.state,
                       searchFocusNode: _customerLedgerFocusNode,
                       onReturnToMainTab: () => _tabFocus[2].requestFocus(),

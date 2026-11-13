@@ -18,11 +18,23 @@ class StockReportScreen extends StatefulWidget {
   const StockReportScreen({super.key, this.searchFocusNode, this.onReturnToMainTab});
 
   @override
-  State<StockReportScreen> createState() => _StockReportScreenState();
+  State<StockReportScreen> createState() => StockReportScreenState();
 }
 
-class _StockReportScreenState extends State<StockReportScreen>
+class StockReportScreenState extends State<StockReportScreen>
     with SingleTickerProviderStateMixin {
+  void focusSearch() {
+    if (_currentSubTab == 0) {
+      _searchFocusNode.requestFocus();
+      _searchCtrl.selection = TextSelection(baseOffset: 0, extentOffset: _searchCtrl.text.length);
+    } else if (_currentSubTab == 1) {
+      _catSearchFocusNode.requestFocus();
+      _catSearchCtrl.selection = TextSelection(baseOffset: 0, extentOffset: _catSearchCtrl.text.length);
+    } else {
+      _ledgerSearchFocusNode.requestFocus();
+      _ledgerSearchCtrl.selection = TextSelection(baseOffset: 0, extentOffset: _ledgerSearchCtrl.text.length);
+    }
+  }
   final _numFmt = NumberFormat('#,##,##0.00', 'en_IN');
   final _fmt = DateFormat('dd/MM/yyyy');
 
@@ -228,6 +240,7 @@ class _StockReportScreenState extends State<StockReportScreen>
         debugPrint('Error fetching vendor issues: $e');
       }
       final Map<String, int> issueMap = {};
+      final Map<String, double> issueWeightMap = {};
       for (final vi in vendorIssueList) {
         final status = (vi['status']?.toString() ?? '').toLowerCase();
         if (!status.contains('resolved')) {
@@ -236,17 +249,24 @@ class _StockReportScreenState extends State<StockReportScreen>
             if (it is Map) {
               final tagId = it['tagId']?.toString().trim() ?? '';
               final q = (it['qty'] as num?)?.toInt() ?? 0;
+              final w = (it['weight'] as num?)?.toDouble() ?? 0.0;
               if (tagId.isNotEmpty) {
-                issueMap[tagId.toUpperCase()] = (issueMap[tagId.toUpperCase()] ?? 0) + q;
+                final key = tagId.toUpperCase();
+                issueMap[key] = (issueMap[key] ?? 0) + q;
+                issueWeightMap[key] = (issueWeightMap[key] ?? 0.0) + w;
               }
             }
           }
         }
       }
 
-      // Fetch sales from bills to compute total sold per product
+      // Fetch sales and inward from bills to compute totals per product
       final billList = await ApiService().getBills();
       final Map<String, int> soldMap = {};
+      final Map<String, double> soldWeightMap = {};
+      final Map<String, int> inwardQtyMap = {};
+      final Map<String, double> inwardWeightMap = {};
+
       for (final bill in billList) {
         final billType = (bill['billType']?.toString() ?? 'Sale').trim();
         final isSale = billType == 'Sale' ||
@@ -254,20 +274,27 @@ class _StockReportScreenState extends State<StockReportScreen>
             billType.toLowerCase() == 'invoice' ||
             billType.toLowerCase() == 'advance payment';
         final isReturn = billType == 'Return' || billType.toLowerCase() == 'customer return';
-        if (!isSale && !isReturn) continue;
+        final isInward = billType == 'Inward' || billType.toLowerCase() == 'inward bill';
+        if (!isSale && !isReturn && !isInward) continue;
 
         final items = (bill['items'] as List?) ?? [];
         for (final item in items) {
           if (item is! Map) continue;
           final tagId = item['tagId']?.toString().trim() ?? '';
+          if (tagId.isEmpty) continue;
+          final key = tagId.toUpperCase();
           final q = (item['qty'] as num?)?.toInt() ?? 0;
-          if (tagId.isNotEmpty) {
-            final key = tagId.toUpperCase();
-            if (isReturn) {
-              soldMap[key] = (soldMap[key] ?? 0) - q;
-            } else if (isSale) {
-              soldMap[key] = (soldMap[key] ?? 0) + q;
-            }
+          final w = (item['weight'] as num?)?.toDouble() ?? 0.0;
+
+          if (isReturn) {
+            soldMap[key] = (soldMap[key] ?? 0) - q;
+            soldWeightMap[key] = (soldWeightMap[key] ?? 0.0) - w;
+          } else if (isSale) {
+            soldMap[key] = (soldMap[key] ?? 0) + q;
+            soldWeightMap[key] = (soldWeightMap[key] ?? 0.0) + w;
+          } else if (isInward) {
+            inwardQtyMap[key] = (inwardQtyMap[key] ?? 0) + q;
+            inwardWeightMap[key] = (inwardWeightMap[key] ?? 0.0) + w;
           }
         }
       }
@@ -312,7 +339,45 @@ class _StockReportScreenState extends State<StockReportScreen>
         final issueQty = math.max((data['issueQuantity'] as num?)?.toInt() ?? 0, issueMap[tagKey] ?? 0);
         final soldQty = (soldMap[tagKey] ?? 0).clamp(0, 999999);
         final totalReceived = (data['totalQuantity'] as num?)?.toInt() ??
-            (balance + issueQty + soldQty);
+            math.max(balance + issueQty + soldQty, inwardQtyMap[tagKey] ?? 0);
+
+        // ── Weight Calculations ──────────────────────────────────────────
+        final currentGrossWeight = p.grossWeight > 0 ? p.grossWeight : 0.0;
+        double soldWeight = math.max(0.0, soldWeightMap[tagKey] ?? 0.0);
+        double issueWeight = math.max(0.0, issueWeightMap[tagKey] ?? 0.0);
+        final recordedInwardWeight = inwardWeightMap[tagKey] ?? 0.0;
+        double totalReceivedWeight = recordedInwardWeight > 0
+            ? recordedInwardWeight
+            : (currentGrossWeight + soldWeight + issueWeight);
+
+        // If sold/issue weights were not recorded on bill items, allocate proportionally if gross weight exists
+        if (soldWeight <= 0.0 && soldQty > 0 && totalReceivedWeight > 0 && totalReceived > 0) {
+          final unitWeight = totalReceivedWeight / totalReceived;
+          soldWeight = soldQty * unitWeight;
+        }
+        if (issueWeight <= 0.0 && issueQty > 0 && totalReceivedWeight > 0 && totalReceived > 0) {
+          final unitWeight = totalReceivedWeight / totalReceived;
+          issueWeight = issueQty * unitWeight;
+        }
+
+        double closingWeight = currentGrossWeight > 0
+            ? currentGrossWeight
+            : math.max(0.0, totalReceivedWeight - soldWeight - issueWeight);
+
+        final weightUnit = p.weightUnit.trim().isNotEmpty
+            ? p.weightUnit.trim()
+            : (p.pricingType == 'Weight-Based' ? 'g' : '');
+
+        data['totalReceived'] = totalReceived;
+        data['totalReceivedWeight'] = totalReceivedWeight;
+        data['issueQty'] = issueQty;
+        data['issueWeight'] = issueWeight;
+        data['soldQty'] = soldQty;
+        data['soldWeight'] = soldWeight;
+        data['balance'] = balance;
+        data['closingQty'] = balance;
+        data['closingWeight'] = closingWeight;
+        data['weightUnit'] = weightUnit;
 
         final cat = (data['category']?.toString().trim().isNotEmpty ?? false)
             ? data['category'].toString().trim()
@@ -329,10 +394,18 @@ class _StockReportScreenState extends State<StockReportScreen>
           final existing = productAgg[prodKey]!;
           existing['quantity'] = (existing['quantity'] as int) + balance;
           existing['balance'] = (existing['balance'] as int? ?? 0) + balance;
+          existing['closingQty'] = (existing['closingQty'] as int? ?? 0) + balance;
+          existing['closingWeight'] = (existing['closingWeight'] as double? ?? 0.0) + closingWeight;
           existing['totalReceived'] = (existing['totalReceived'] as int) + totalReceived;
+          existing['totalReceivedWeight'] = (existing['totalReceivedWeight'] as double? ?? 0.0) + totalReceivedWeight;
           existing['issueQty'] = (existing['issueQty'] as int) + issueQty;
+          existing['issueWeight'] = (existing['issueWeight'] as double? ?? 0.0) + issueWeight;
           existing['soldQty'] = (existing['soldQty'] as int) + soldQty;
+          existing['soldWeight'] = (existing['soldWeight'] as double? ?? 0.0) + soldWeight;
           existing['stockValue'] = (existing['stockValue'] as double) + itemStockVal;
+          if ((existing['weightUnit']?.toString() ?? '').isEmpty && weightUnit.isNotEmpty) {
+            existing['weightUnit'] = weightUnit;
+          }
           if (!existing['tagId'].toString().contains(tagId) && existing['tagId'].toString().length < 30) {
              existing['tagId'] = '${existing['tagId']}, $tagId';
           } else if (!existing['tagId'].toString().endsWith('...')) {
@@ -342,10 +415,16 @@ class _StockReportScreenState extends State<StockReportScreen>
           final goodStock = Map<String, dynamic>.from(data);
           goodStock['category'] = cat;
           goodStock['balance'] = balance;
+          goodStock['closingQty'] = balance;
+          goodStock['closingWeight'] = closingWeight;
           goodStock['totalReceived'] = totalReceived;
+          goodStock['totalReceivedWeight'] = totalReceivedWeight;
           goodStock['issueQty'] = issueQty;
+          goodStock['issueWeight'] = issueWeight;
           goodStock['soldQty'] = soldQty;
+          goodStock['soldWeight'] = soldWeight;
           goodStock['stockValue'] = itemStockVal;
+          goodStock['weightUnit'] = weightUnit;
           productAgg[prodKey] = goodStock;
         }
 
@@ -355,28 +434,46 @@ class _StockReportScreenState extends State<StockReportScreen>
             'category': cat,
             'skuCount': 0,
             'totalPurchased': 0,
+            'totalPurchasedWeight': 0.0,
             'totalIssued': 0,
+            'totalIssuedWeight': 0.0,
             'totalSold': 0,
+            'totalSoldWeight': 0.0,
             'closingQty': 0,
+            'closingWeight': 0.0,
             'closingValue': 0.0,
+            'weightUnit': weightUnit,
             'products': <Map<String, dynamic>>[],
           };
         });
 
         entry['skuCount'] = (entry['skuCount'] as int) + 1;
         entry['totalPurchased'] = (entry['totalPurchased'] as int) + totalReceived;
+        entry['totalPurchasedWeight'] = (entry['totalPurchasedWeight'] as double) + totalReceivedWeight;
         entry['totalIssued'] = (entry['totalIssued'] as int) + issueQty;
+        entry['totalIssuedWeight'] = (entry['totalIssuedWeight'] as double) + issueWeight;
         entry['totalSold'] = (entry['totalSold'] as int) + soldQty;
+        entry['totalSoldWeight'] = (entry['totalSoldWeight'] as double) + soldWeight;
         entry['closingQty'] = (entry['closingQty'] as int) + balance;
+        entry['closingWeight'] = (entry['closingWeight'] as double) + closingWeight;
         entry['closingValue'] = (entry['closingValue'] as double) + itemStockVal;
+        if ((entry['weightUnit']?.toString() ?? '').isEmpty && weightUnit.isNotEmpty) {
+          entry['weightUnit'] = weightUnit;
+        }
         
         final goodStockForCat = Map<String, dynamic>.from(data);
         goodStockForCat['category'] = cat;
         goodStockForCat['balance'] = balance;
+        goodStockForCat['closingQty'] = balance;
+        goodStockForCat['closingWeight'] = closingWeight;
         goodStockForCat['totalReceived'] = totalReceived;
+        goodStockForCat['totalReceivedWeight'] = totalReceivedWeight;
         goodStockForCat['issueQty'] = issueQty;
+        goodStockForCat['issueWeight'] = issueWeight;
         goodStockForCat['soldQty'] = soldQty;
+        goodStockForCat['soldWeight'] = soldWeight;
         goodStockForCat['stockValue'] = itemStockVal;
+        goodStockForCat['weightUnit'] = weightUnit;
         (entry['products'] as List<Map<String, dynamic>>).add(goodStockForCat);
 
         // 2. Defective Stock Row
@@ -385,8 +482,12 @@ class _StockReportScreenState extends State<StockReportScreen>
              final existingDef = defectiveAgg[prodKey]!;
              existingDef['quantity'] = (existingDef['quantity'] as int) + issueQty;
              existingDef['balance'] = (existingDef['balance'] as int? ?? 0) + issueQty;
+             existingDef['closingQty'] = (existingDef['closingQty'] as int? ?? 0) + issueQty;
+             existingDef['closingWeight'] = (existingDef['closingWeight'] as double? ?? 0.0) + issueWeight;
              existingDef['totalReceived'] = (existingDef['totalReceived'] as int) + issueQty;
+             existingDef['totalReceivedWeight'] = (existingDef['totalReceivedWeight'] as double? ?? 0.0) + issueWeight;
              existingDef['issueQty'] = (existingDef['issueQty'] as int) + issueQty;
+             existingDef['issueWeight'] = (existingDef['issueWeight'] as double? ?? 0.0) + issueWeight;
              existingDef['stockValue'] = (existingDef['stockValue'] as double) + (issueQty * effectiveSp);
              if (!existingDef['tagId'].toString().contains(tagId) && existingDef['tagId'].toString().length < 30) {
                existingDef['tagId'] = '${existingDef['tagId']}, $tagId';
@@ -399,9 +500,14 @@ class _StockReportScreenState extends State<StockReportScreen>
             defectiveStock['name'] = '${data['name']} (Defective)';
             defectiveStock['quantity'] = issueQty;
             defectiveStock['balance'] = issueQty;
+            defectiveStock['closingQty'] = issueQty;
+            defectiveStock['closingWeight'] = issueWeight;
             defectiveStock['totalReceived'] = issueQty;
+            defectiveStock['totalReceivedWeight'] = issueWeight;
             defectiveStock['issueQty'] = issueQty;
+            defectiveStock['issueWeight'] = issueWeight;
             defectiveStock['soldQty'] = 0;
+            defectiveStock['soldWeight'] = 0.0;
             defectiveStock['status'] = 'Damaged/Defective';
             defectiveStock['stockValue'] = issueQty * effectiveSp;
             defectiveAgg[prodKey] = defectiveStock;
@@ -563,18 +669,32 @@ class _StockReportScreenState extends State<StockReportScreen>
 
           processedInwardTagIds.add(tagKey);
 
+          final wUnit = prod?.weightUnit.isNotEmpty == true ? prod!.weightUnit : (isWeight ? 'g' : '');
+          final inWeight = weight > 0 ? weight : (isWeight ? inwardVal : 0.0);
+          final inQty = qty > 0 ? qty.toDouble() : (isWeight ? (prod?.quantity.toDouble() ?? 1.0) : inwardVal);
+          final isWeightVal = isWeight && inWeight > 0;
+          final issWeight = isWeightVal ? allocatedIssue : (inQty > 0 ? allocatedIssue * (inWeight / inQty) : 0.0);
+          final sWeight = isWeightVal ? allocatedSold : (inQty > 0 ? allocatedSold * (inWeight / inQty) : 0.0);
+          final cWeight = isWeightVal ? batchClosing : (inQty > 0 ? batchClosing * (inWeight / inQty) : 0.0);
+
           ledgerRows.add({
             'tagId': tagId,
             'category': category,
             'name': name,
             'date': itemDate,
             'price': rate,
-            'inwardQty': inwardVal,
+            'inwardQty': inQty,
+            'inwardWeight': inWeight,
             'unit': unit,
+            'weightUnit': wUnit,
             'isWeight': isWeight,
             'issueQty': allocatedIssue,
+            'issueWeight': issWeight,
             'soldQty': allocatedSold,
-            'closingQty': batchClosing,
+            'soldWeight': sWeight,
+            'closingQty': isWeightVal ? (prod?.quantity.toDouble() ?? 1.0) : batchClosing,
+            'closingWeight': cWeight,
+            'value': isWeightVal ? batchClosing * rate : batchClosing * rate,
             'status': status,
             'source': 'Inward Bill',
           });
@@ -606,18 +726,31 @@ class _StockReportScreenState extends State<StockReportScreen>
             ? 'Out of Stock'
             : (closing < 5 ? 'Low Stock' : 'In Stock');
 
+        final wUnit = p.weightUnit.isNotEmpty ? p.weightUnit : (isWeight ? 'g' : '');
+        final inWeight = isWeight ? p.grossWeight : (p.grossWeight > 0 ? p.grossWeight : 0.0);
+        final inQty = (p.quantity + sold + issue).toDouble();
+        final issWeight = issueMap[tag] != null && inQty > 0 ? issue * (inWeight / inQty) : 0.0;
+        final sWeight = soldWeightMap[tag] ?? (inQty > 0 ? sold * (inWeight / inQty) : 0.0);
+        final cWeight = isWeight ? p.grossWeight : math.max(0.0, inWeight - sWeight - issWeight);
+
         ledgerRows.add({
           'tagId': p.tagId,
           'category': category,
           'name': p.name,
           'date': p.addedDate ?? DateTime.now(),
           'price': rate,
-          'inwardQty': inwardVal,
+          'inwardQty': inQty,
+          'inwardWeight': inWeight,
           'unit': unit,
+          'weightUnit': wUnit,
           'isWeight': isWeight,
           'issueQty': issue,
+          'issueWeight': issWeight,
           'soldQty': sold,
+          'soldWeight': sWeight,
           'closingQty': closing,
+          'closingWeight': cWeight,
+          'value': closing * rate,
           'status': status,
           'source': 'Product Master',
         });
@@ -800,12 +933,18 @@ class _StockReportScreenState extends State<StockReportScreen>
 
   int get _totalPurchasedQty => _filtered.fold(
       0, (s, r) => s + ((r['totalReceived'] as num?)?.toInt() ?? 0));
+  double get _totalPurchasedWeight => _filtered.fold(
+      0.0, (s, r) => s + ((r['totalReceivedWeight'] as num?)?.toDouble() ?? 0.0));
 
   int get _totalIssuedQty =>
       _filtered.fold(0, (s, r) => s + ((r['issueQty'] as num?)?.toInt() ?? 0));
+  double get _totalIssuedWeight => _filtered.fold(
+      0.0, (s, r) => s + ((r['issueWeight'] as num?)?.toDouble() ?? 0.0));
 
   int get _totalSoldQty =>
       _filtered.fold(0, (s, r) => s + ((r['soldQty'] as num?)?.toInt() ?? 0));
+  double get _totalSoldWeight => _filtered.fold(
+      0.0, (s, r) => s + ((r['soldWeight'] as num?)?.toDouble() ?? 0.0));
 
   int get _totalBalanceQty => _filtered.fold(
       0,
@@ -814,6 +953,8 @@ class _StockReportScreenState extends State<StockReportScreen>
           ((r['balance'] as num?)?.toInt() ??
               (r['quantity'] as num?)?.toInt() ??
               0));
+  double get _totalBalanceWeight => _filtered.fold(
+      0.0, (s, r) => s + ((r['closingWeight'] as num?)?.toDouble() ?? 0.0));
 
   int get _lowStockCount =>
       _filtered.where((r) => r['status'] == 'Low Stock').length;
@@ -827,21 +968,36 @@ class _StockReportScreenState extends State<StockReportScreen>
 
   int get _catTotalPurchased => _filteredCategoryRows.fold(
       0, (s, r) => s + ((r['totalPurchased'] as num?)?.toInt() ?? 0));
+  double get _catTotalPurchasedWeight => _filteredCategoryRows.fold(
+      0.0, (s, r) => s + ((r['totalPurchasedWeight'] as num?)?.toDouble() ?? 0.0));
 
   int get _catTotalIssued => _filteredCategoryRows.fold(
       0, (s, r) => s + ((r['totalIssued'] as num?)?.toInt() ?? 0));
+  double get _catTotalIssuedWeight => _filteredCategoryRows.fold(
+      0.0, (s, r) => s + ((r['totalIssuedWeight'] as num?)?.toDouble() ?? 0.0));
 
   int get _catTotalSold => _filteredCategoryRows.fold(
       0, (s, r) => s + ((r['totalSold'] as num?)?.toInt() ?? 0));
+  double get _catTotalSoldWeight => _filteredCategoryRows.fold(
+      0.0, (s, r) => s + ((r['totalSoldWeight'] as num?)?.toDouble() ?? 0.0));
 
   int get _catTotalClosingQty => _filteredCategoryRows.fold(
       0, (s, r) => s + ((r['closingQty'] as num?)?.toInt() ?? 0));
+  double get _catTotalClosingWeight => _filteredCategoryRows.fold(
+      0.0, (s, r) => s + ((r['closingWeight'] as num?)?.toDouble() ?? 0.0));
 
   double get _catTotalClosingValue => _filteredCategoryRows.fold(
       0.0, (s, r) => s + ((r['closingValue'] as num?)?.toDouble() ?? 0.0));
 
   int get _catZeroStockCount =>
       _filteredCategoryRows.where((r) => (r['closingQty'] as int) <= 0).length;
+
+  String _formatWeight(double wt, [String unit = '']) {
+    if (wt <= 0) return '—';
+    final formatted = wt % 1 == 0 ? wt.toInt().toString() : wt.toStringAsFixed(2);
+    final u = unit.trim();
+    return u.isNotEmpty ? '$formatted $u' : formatted;
+  }
 
   // ── Helpers to build Stock Ledger format rows based on Expand/Collapse state ─
   List<Map<String, dynamic>> _buildProductWiseLedgerExportRows() {
@@ -865,10 +1021,18 @@ class _StockReportScreenState extends State<StockReportScreen>
           final balance = (p['balance'] as num?)?.toDouble() ??
               (p['quantity'] as num?)?.toDouble() ??
               0.0;
+          final balanceWeight = (p['closingWeight'] as num?)?.toDouble() ??
+              (p['grossWeight'] as num?)?.toDouble() ??
+              0.0;
           final totalReceived = (p['totalReceived'] as num?)?.toDouble() ?? 0.0;
+          final totalReceivedWeight = (p['totalReceivedWeight'] as num?)?.toDouble() ?? 0.0;
           final issueQty = (p['issueQty'] as num?)?.toDouble() ?? 0.0;
+          final issueWeight = (p['issueWeight'] as num?)?.toDouble() ?? 0.0;
           final soldQty = (p['soldQty'] as num?)?.toDouble() ?? 0.0;
+          final soldWeight = (p['soldWeight'] as num?)?.toDouble() ?? 0.0;
           final sp = (p['sellingPrice'] as num?)?.toDouble() ?? 0.0;
+          final val = (p['stockValue'] as num?)?.toDouble() ?? (balance * sp);
+          final wUnit = p['weightUnit']?.toString() ?? '';
 
           result.add({
             'tagId': p['tagId']?.toString() ?? '',
@@ -877,28 +1041,48 @@ class _StockReportScreenState extends State<StockReportScreen>
             'date': p['addedDate'],
             'price': sp,
             'inwardQty': totalReceived,
+            'inwardWeight': totalReceivedWeight,
             'unit': p['unit']?.toString() ?? (isWeight ? 'Gram' : 'Nos'),
+            'weightUnit': wUnit,
             'isWeight': isWeight,
             'issueQty': issueQty,
+            'issueWeight': issueWeight,
             'soldQty': soldQty,
+            'soldWeight': soldWeight,
             'closingQty': balance,
+            'closingWeight': balanceWeight,
+            'value': val,
             'status': p['status'] ?? 'In Stock',
           });
         }
       } else {
         // Collapsed category summary row
         double catPurchased = 0.0;
+        double catPurchasedWeight = 0.0;
         double catIssued = 0.0;
+        double catIssuedWeight = 0.0;
         double catSold = 0.0;
+        double catSoldWeight = 0.0;
         double catClosing = 0.0;
+        double catClosingWeight = 0.0;
+        double catVal = 0.0;
+        String wUnit = '';
 
         for (final p in products) {
           catPurchased += (p['totalReceived'] as num?)?.toDouble() ?? 0.0;
+          catPurchasedWeight += (p['totalReceivedWeight'] as num?)?.toDouble() ?? 0.0;
           catIssued += (p['issueQty'] as num?)?.toDouble() ?? 0.0;
+          catIssuedWeight += (p['issueWeight'] as num?)?.toDouble() ?? 0.0;
           catSold += (p['soldQty'] as num?)?.toDouble() ?? 0.0;
+          catSoldWeight += (p['soldWeight'] as num?)?.toDouble() ?? 0.0;
           catClosing += ((p['balance'] as num?)?.toDouble() ??
               (p['quantity'] as num?)?.toDouble() ??
               0.0);
+          catClosingWeight += (p['closingWeight'] as num?)?.toDouble() ?? 0.0;
+          catVal += (p['stockValue'] as num?)?.toDouble() ?? 0.0;
+          if (wUnit.isEmpty && (p['weightUnit']?.toString() ?? '').isNotEmpty) {
+            wUnit = p['weightUnit'].toString();
+          }
         }
 
         result.add({
@@ -907,11 +1091,17 @@ class _StockReportScreenState extends State<StockReportScreen>
           'date': null,
           'price': 0.0,
           'inwardQty': catPurchased,
+          'inwardWeight': catPurchasedWeight,
           'unit': 'Nos',
+          'weightUnit': wUnit,
           'isWeight': false,
           'issueQty': catIssued,
+          'issueWeight': catIssuedWeight,
           'soldQty': catSold,
+          'soldWeight': catSoldWeight,
           'closingQty': catClosing,
+          'closingWeight': catClosingWeight,
+          'value': catVal,
           'status': 'In Stock',
           'isSummary': true,
         });
@@ -925,42 +1115,48 @@ class _StockReportScreenState extends State<StockReportScreen>
     for (final catRow in _filteredCategoryRows) {
       final category = catRow['category']?.toString().trim() ?? 'Uncategorized';
       final isExpanded = _expandedCategories.contains(category);
+      final prods = (catRow['products'] as List?) ?? [];
 
       if (isExpanded) {
-        // Expanded: matching ledger rows under this category
-        final matchingLedgerRows = _allLedgerRows.where((lr) =>
-            (lr['category']?.toString().trim().toLowerCase() ?? '') ==
-            category.toLowerCase()).toList();
-
-        if (matchingLedgerRows.isNotEmpty) {
-          result.addAll(matchingLedgerRows);
-        } else {
-          final prods = (catRow['products'] as List?) ?? [];
-          for (final p in prods) {
-            if (p is Map) {
-              result.add({
-                'category': category,
-                'name': p['name']?.toString() ?? '',
-                'date': p['addedDate'],
-                'price': (p['sellingPrice'] as num?)?.toDouble() ?? 0.0,
-                'inwardQty': (p['totalReceived'] as num?)?.toDouble() ?? 0.0,
-                'unit': p['unit']?.toString() ?? 'Nos',
-                'isWeight': p['pricingType'] == 'Weight-Based',
-                'issueQty': (p['issueQty'] as num?)?.toDouble() ?? 0.0,
-                'soldQty': (p['soldQty'] as num?)?.toDouble() ?? 0.0,
-                'closingQty': (p['balance'] as num?)?.toDouble() ?? 0.0,
-                'status': p['status'] ?? 'In Stock',
-              });
-            }
+        for (final p in prods) {
+          if (p is Map) {
+            final balance = (p['balance'] as num?)?.toDouble() ?? (p['quantity'] as num?)?.toDouble() ?? 0.0;
+            final sp = (p['sellingPrice'] as num?)?.toDouble() ?? 0.0;
+            final val = (p['stockValue'] as num?)?.toDouble() ?? (balance * sp);
+            result.add({
+              'tagId': p['tagId']?.toString() ?? '',
+              'category': category,
+              'name': p['name']?.toString() ?? '',
+              'date': p['addedDate'],
+              'price': sp,
+              'inwardQty': (p['totalReceived'] as num?)?.toDouble() ?? 0.0,
+              'inwardWeight': (p['totalReceivedWeight'] as num?)?.toDouble() ?? 0.0,
+              'unit': p['unit']?.toString() ?? 'Nos',
+              'weightUnit': p['weightUnit']?.toString() ?? '',
+              'isWeight': p['pricingType'] == 'Weight-Based',
+              'issueQty': (p['issueQty'] as num?)?.toDouble() ?? 0.0,
+              'issueWeight': (p['issueWeight'] as num?)?.toDouble() ?? 0.0,
+              'soldQty': (p['soldQty'] as num?)?.toDouble() ?? 0.0,
+              'soldWeight': (p['soldWeight'] as num?)?.toDouble() ?? 0.0,
+              'closingQty': balance,
+              'closingWeight': (p['closingWeight'] as num?)?.toDouble() ?? 0.0,
+              'value': val,
+              'status': p['status'] ?? 'In Stock',
+            });
           }
         }
       } else {
         // Collapsed: single summary row for this category
         final skuCount = (catRow['skuCount'] as num?)?.toInt() ?? 0;
         final totalPurchased = (catRow['totalPurchased'] as num?)?.toDouble() ?? 0.0;
+        final totalPurchasedWeight = (catRow['totalPurchasedWeight'] as num?)?.toDouble() ?? 0.0;
         final totalIssued = (catRow['totalIssued'] as num?)?.toDouble() ?? 0.0;
+        final totalIssuedWeight = (catRow['totalIssuedWeight'] as num?)?.toDouble() ?? 0.0;
         final totalSold = (catRow['totalSold'] as num?)?.toDouble() ?? 0.0;
+        final totalSoldWeight = (catRow['totalSoldWeight'] as num?)?.toDouble() ?? 0.0;
         final closingQty = (catRow['closingQty'] as num?)?.toDouble() ?? 0.0;
+        final closingWeight = (catRow['closingWeight'] as num?)?.toDouble() ?? 0.0;
+        final closingValue = (catRow['closingValue'] as num?)?.toDouble() ?? 0.0;
 
         result.add({
           'category': category,
@@ -968,11 +1164,17 @@ class _StockReportScreenState extends State<StockReportScreen>
           'date': null,
           'price': 0.0,
           'inwardQty': totalPurchased,
+          'inwardWeight': totalPurchasedWeight,
           'unit': 'Nos',
+          'weightUnit': catRow['weightUnit']?.toString() ?? '',
           'isWeight': false,
           'issueQty': totalIssued,
+          'issueWeight': totalIssuedWeight,
           'soldQty': totalSold,
+          'soldWeight': totalSoldWeight,
           'closingQty': closingQty,
+          'closingWeight': closingWeight,
+          'value': closingValue,
           'status': catRow['status'] ?? 'In Stock',
           'isSummary': true,
         });
@@ -1200,75 +1402,81 @@ class _StockReportScreenState extends State<StockReportScreen>
         }
       });
     }
-    return Container(
-      color: BoutiqueColors.bgMain,
-      child: Column(
-        children: [
-          // ── Sub-Tab Bar (Product-Wise vs Category-Wise vs Stock Ledger) ──
-          Container(
-            decoration: const BoxDecoration(
-              color: BoutiqueColors.bgCard,
-              border: Border(
-                bottom: BorderSide(color: BoutiqueColors.border, width: 1),
+    return CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.keyS, control: true): focusSearch,
+        const SingleActivator(LogicalKeyboardKey.keyS, meta: true): focusSearch,
+      },
+      child: Container(
+        color: BoutiqueColors.bgMain,
+        child: Column(
+          children: [
+            // ── Sub-Tab Bar (Product-Wise vs Category-Wise vs Stock Ledger) ──
+            Container(
+              decoration: const BoxDecoration(
+                color: BoutiqueColors.bgCard,
+                border: Border(
+                  bottom: BorderSide(color: BoutiqueColors.border, width: 1),
+                ),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Row(
+                children: [
+                  _StockSubTabButton(
+                    focusNode: _productWiseTabFocusNode,
+                    index: 0,
+                    icon: Icons.list_alt_rounded,
+                    label: 'Product-Wise Stock Report',
+                    isSelected: _currentSubTab == 0,
+                    order: 1.0,
+                    onSelect: () => _selectSubTab(0),
+                    onArrowRight: () => _closingStockTabFocusNode.requestFocus(),
+                    onArrowLeft: null,
+                    onShiftTab: widget.onReturnToMainTab,
+                  ),
+                  const SizedBox(width: 6),
+                  _StockSubTabButton(
+                    focusNode: _closingStockTabFocusNode,
+                    index: 1,
+                    icon: Icons.category_outlined,
+                    label: 'Closing Stock Report (Category-Wise)',
+                    isSelected: _currentSubTab == 1,
+                    order: 2.0,
+                    onSelect: () => _selectSubTab(1),
+                    onArrowRight: () => _stockLedgerTabFocusNode.requestFocus(),
+                    onArrowLeft: () => _productWiseTabFocusNode.requestFocus(),
+                    onShiftTab: widget.onReturnToMainTab,
+                  ),
+                  const SizedBox(width: 6),
+                  _StockSubTabButton(
+                    focusNode: _stockLedgerTabFocusNode,
+                    index: 2,
+                    icon: Icons.menu_book_rounded,
+                    label: 'Stock Ledger (Format Statement)',
+                    isSelected: _currentSubTab == 2,
+                    order: 3.0,
+                    onSelect: () => _selectSubTab(2),
+                    onArrowRight: null,
+                    onArrowLeft: () => _closingStockTabFocusNode.requestFocus(),
+                    onShiftTab: widget.onReturnToMainTab,
+                  ),
+                ],
               ),
             ),
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Row(
-              children: [
-                _StockSubTabButton(
-                  focusNode: _productWiseTabFocusNode,
-                  index: 0,
-                  icon: Icons.list_alt_rounded,
-                  label: 'Product-Wise Stock Report',
-                  isSelected: _currentSubTab == 0,
-                  order: 1.0,
-                  onSelect: () => _selectSubTab(0),
-                  onArrowRight: () => _closingStockTabFocusNode.requestFocus(),
-                  onArrowLeft: null,
-                  onShiftTab: widget.onReturnToMainTab,
-                ),
-                const SizedBox(width: 6),
-                _StockSubTabButton(
-                  focusNode: _closingStockTabFocusNode,
-                  index: 1,
-                  icon: Icons.category_outlined,
-                  label: 'Closing Stock Report (Category-Wise)',
-                  isSelected: _currentSubTab == 1,
-                  order: 2.0,
-                  onSelect: () => _selectSubTab(1),
-                  onArrowRight: () => _stockLedgerTabFocusNode.requestFocus(),
-                  onArrowLeft: () => _productWiseTabFocusNode.requestFocus(),
-                  onShiftTab: widget.onReturnToMainTab,
-                ),
-                const SizedBox(width: 6),
-                _StockSubTabButton(
-                  focusNode: _stockLedgerTabFocusNode,
-                  index: 2,
-                  icon: Icons.menu_book_rounded,
-                  label: 'Stock Ledger (Format Statement)',
-                  isSelected: _currentSubTab == 2,
-                  order: 3.0,
-                  onSelect: () => _selectSubTab(2),
-                  onArrowRight: null,
-                  onArrowLeft: () => _closingStockTabFocusNode.requestFocus(),
-                  onShiftTab: widget.onReturnToMainTab,
-                ),
-              ],
-            ),
-          ),
 
-          // ── Sub-Tab Views ──────────────────────────────────────────────
-          Expanded(
-            child: TabBarView(
-              controller: _subTabController,
-              children: [
-                _buildProductWiseView(),
-                _buildCategoryWiseClosingView(),
-                _buildStockLedgerView(),
-              ],
+            // ── Sub-Tab Views ──────────────────────────────────────────────
+            Expanded(
+              child: TabBarView(
+                controller: _subTabController,
+                children: [
+                  _buildProductWiseView(),
+                  _buildCategoryWiseClosingView(),
+                  _buildStockLedgerView(),
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -1309,7 +1517,7 @@ class _StockReportScreenState extends State<StockReportScreen>
                     controller: _searchCtrl,
                     style: const TextStyle(fontSize: 13),
                     decoration: BoutiqueInputDecoration.field(
-                      hintText: 'Search tag ID or product name…',
+                      hintText: 'Search tag ID or product name… (Ctrl+S)',
                       prefixIcon: const Icon(Icons.search_rounded,
                           size: 18, color: BoutiqueColors.textSecondary),
                     ),
@@ -1496,16 +1704,16 @@ class _StockReportScreenState extends State<StockReportScreen>
                     '${_filtered.length}', BoutiqueColors.accent),
                 const SizedBox(width: 14),
                 _summaryCard(Icons.shopping_bag_outlined, 'Total Purchased',
-                    '$_totalPurchasedQty', BoutiqueColors.accent),
+                    _totalPurchasedWeight > 0 ? '$_totalPurchasedQty (${_formatWeight(_totalPurchasedWeight)})' : '$_totalPurchasedQty', BoutiqueColors.accent),
                 const SizedBox(width: 14),
                 _summaryCard(Icons.assignment_return_outlined, 'Total Issued',
-                    '$_totalIssuedQty', BoutiqueColors.warning),
+                    _totalIssuedWeight > 0 ? '$_totalIssuedQty (${_formatWeight(_totalIssuedWeight)})' : '$_totalIssuedQty', BoutiqueColors.warning),
                 const SizedBox(width: 14),
                 _summaryCard(Icons.point_of_sale_rounded, 'Total Sold',
-                    '$_totalSoldQty', BoutiqueColors.success),
+                    _totalSoldWeight > 0 ? '$_totalSoldQty (${_formatWeight(_totalSoldWeight)})' : '$_totalSoldQty', BoutiqueColors.success),
                 const SizedBox(width: 14),
                 _summaryCard(Icons.numbers_rounded, 'Balance Stock',
-                    '$_totalBalanceQty', BoutiqueColors.gold),
+                    _totalBalanceWeight > 0 ? '$_totalBalanceQty (${_formatWeight(_totalBalanceWeight)})' : '$_totalBalanceQty', BoutiqueColors.gold),
                 const SizedBox(width: 14),
                 _summaryCard(
                     Icons.currency_rupee_rounded,
@@ -1533,29 +1741,40 @@ class _StockReportScreenState extends State<StockReportScreen>
                       CircularProgressIndicator(color: BoutiqueColors.accent))
               : _filtered.isEmpty
                   ? _emptyState('No products found matching the current filters.')
-                  : Container(
-                      margin: const EdgeInsets.all(24),
-                      decoration: BoutiqueDecoration.card(),
-                      child: Column(
-                        children: [
-                          _prodCatTableHeader(),
-                          Expanded(
-                            child: ListView.separated(
-                              itemCount: sortedCategories.length,
-                              separatorBuilder: (_, _) => const Divider(
-                                  height: 1,
-                                  color: BoutiqueColors.borderLight),
-                              itemBuilder: (ctx, i) {
-                                final cat = sortedCategories[i];
-                                final catProds = groupedByCategory[cat]!;
-                                return _buildProductCategoryGroup(
-                                    cat, catProds, i);
-                              },
+                  : LayoutBuilder(
+                      builder: (context, constraints) {
+                        final tableWidth = math.max(constraints.maxWidth - 48, 1400.0);
+                        return Container(
+                          margin: const EdgeInsets.all(24),
+                          decoration: BoutiqueDecoration.card(),
+                          child: SingleChildScrollView(
+                            scrollDirection: Axis.horizontal,
+                            child: SizedBox(
+                              width: tableWidth,
+                              child: Column(
+                                children: [
+                                  _prodCatTableHeader(),
+                                  Expanded(
+                                    child: ListView.separated(
+                                      itemCount: sortedCategories.length,
+                                      separatorBuilder: (_, _) => const Divider(
+                                          height: 1,
+                                          color: BoutiqueColors.borderLight),
+                                      itemBuilder: (ctx, i) {
+                                        final cat = sortedCategories[i];
+                                        final catProds = groupedByCategory[cat]!;
+                                        return _buildProductCategoryGroup(
+                                            cat, catProds, i);
+                                      },
+                                    ),
+                                  ),
+                                  _productGrandTotalFooter(),
+                                ],
+                              ),
                             ),
                           ),
-                          _productGrandTotalFooter(),
-                        ],
-                      ),
+                        );
+                      },
                     ),
         ),
       ],
@@ -1567,13 +1786,17 @@ class _StockReportScreenState extends State<StockReportScreen>
       'S.No',
       'Category Name',
       'Total Items (SKUs)',
-      'Total Purchased',
+      'Purchased Qty',
+      'Purchased Wt',
       'Issued Qty',
+      'Issued Wt',
       'Sold Qty',
+      'Sold Wt',
       'Balance Qty',
+      'Balance Wt',
       'Stock Value (₹)',
     ];
-    const flexes = [1, 4, 2, 2, 2, 2, 2, 3];
+    const flexes = [1, 4, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3];
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
       decoration: const BoxDecoration(
@@ -1605,31 +1828,47 @@ class _StockReportScreenState extends State<StockReportScreen>
       String category, List<Map<String, dynamic>> products, int catIndex) {
     final isExpanded = _expandedProductCategories.contains(category);
     int catPurchased = 0;
+    double catPurchasedWeight = 0.0;
     int catIssued = 0;
+    double catIssuedWeight = 0.0;
     int catSold = 0;
+    double catSoldWeight = 0.0;
     int catBalance = 0;
+    double catBalanceWeight = 0.0;
     double catStockVal = 0.0;
+    String catWeightUnit = '';
 
     for (final p in products) {
       final pricingType = p['pricingType']?.toString() ?? 'Quantity-Based';
       final grossWeight = (p['grossWeight'] as num?)?.toDouble() ?? 0.0;
       final ratePerGram = (p['ratePerGram'] as num?)?.toDouble() ?? 0.0;
       final totalReceived = (p['totalReceived'] as num?)?.toInt() ?? 0;
+      final totalReceivedWeight = (p['totalReceivedWeight'] as num?)?.toDouble() ?? 0.0;
       final issueQty = (p['issueQty'] as num?)?.toInt() ?? 0;
+      final issueWeight = (p['issueWeight'] as num?)?.toDouble() ?? 0.0;
       final soldQty = (p['soldQty'] as num?)?.toInt() ?? 0;
+      final soldWeight = (p['soldWeight'] as num?)?.toDouble() ?? 0.0;
       final balance = (p['balance'] as num?)?.toInt() ??
           (p['quantity'] as num?)?.toInt() ??
           0;
+      final closingWeight = (p['closingWeight'] as num?)?.toDouble() ?? 0.0;
       final sp = (p['sellingPrice'] as num?)?.toDouble() ?? 0.0;
       final sVal = pricingType == 'Weight-Based'
           ? (grossWeight * ratePerGram)
           : (balance * sp);
 
       catPurchased += totalReceived;
+      catPurchasedWeight += totalReceivedWeight;
       catIssued += issueQty;
+      catIssuedWeight += issueWeight;
       catSold += soldQty;
+      catSoldWeight += soldWeight;
       catBalance += balance;
+      catBalanceWeight += closingWeight;
       catStockVal += sVal;
+      if (catWeightUnit.isEmpty && (p['weightUnit']?.toString() ?? '').isNotEmpty) {
+        catWeightUnit = p['weightUnit'].toString();
+      }
     }
 
     return Column(
@@ -1704,11 +1943,35 @@ class _StockReportScreenState extends State<StockReportScreen>
                   child: Padding(
                     padding: const EdgeInsets.only(right: 6),
                     child: _cell(
+                      _formatWeight(catPurchasedWeight, catWeightUnit),
+                      color: BoutiqueColors.accent,
+                      bold: true,
+                    ),
+                  ),
+                ),
+                Expanded(
+                  flex: 2,
+                  child: Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: _cell(
                       '$catIssued',
                       color: catIssued > 0
                           ? BoutiqueColors.warning
                           : BoutiqueColors.textSecondary,
                       bold: catIssued > 0,
+                    ),
+                  ),
+                ),
+                Expanded(
+                  flex: 2,
+                  child: Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: _cell(
+                      _formatWeight(catIssuedWeight, catWeightUnit),
+                      color: catIssuedWeight > 0
+                          ? BoutiqueColors.warning
+                          : BoutiqueColors.textSecondary,
+                      bold: catIssuedWeight > 0,
                     ),
                   ),
                 ),
@@ -1730,7 +1993,35 @@ class _StockReportScreenState extends State<StockReportScreen>
                   child: Padding(
                     padding: const EdgeInsets.only(right: 6),
                     child: _cell(
+                      _formatWeight(catSoldWeight, catWeightUnit),
+                      color: catSoldWeight > 0
+                          ? BoutiqueColors.success
+                          : BoutiqueColors.textSecondary,
+                      bold: catSoldWeight > 0,
+                    ),
+                  ),
+                ),
+                Expanded(
+                  flex: 2,
+                  child: Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: _cell(
                       '$catBalance',
+                      color: catBalance == 0
+                          ? BoutiqueColors.destructive
+                          : catBalance < 5
+                              ? BoutiqueColors.warning
+                              : BoutiqueColors.textPrimary,
+                      bold: true,
+                    ),
+                  ),
+                ),
+                Expanded(
+                  flex: 2,
+                  child: Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: _cell(
+                      _formatWeight(catBalanceWeight, catWeightUnit),
                       color: catBalance == 0
                           ? BoutiqueColors.destructive
                           : catBalance < 5
@@ -1792,21 +2083,42 @@ class _StockReportScreenState extends State<StockReportScreen>
                                     color: BoutiqueColors.textSecondary))),
                         Expanded(
                             flex: 2,
-                            child: Text('Purchased',
+                            child: Text('Purchased Qty',
                                 style: TextStyle(
                                     fontSize: 10,
                                     fontWeight: FontWeight.bold,
                                     color: BoutiqueColors.textSecondary))),
                         Expanded(
                             flex: 2,
-                            child: Text('Issued',
+                            child: Text('Purchased Wt',
                                 style: TextStyle(
                                     fontSize: 10,
                                     fontWeight: FontWeight.bold,
                                     color: BoutiqueColors.textSecondary))),
                         Expanded(
                             flex: 2,
-                            child: Text('Sold',
+                            child: Text('Issued Qty',
+                                style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                    color: BoutiqueColors.textSecondary))),
+                        Expanded(
+                            flex: 2,
+                            child: Text('Issued Wt',
+                                style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                    color: BoutiqueColors.textSecondary))),
+                        Expanded(
+                            flex: 2,
+                            child: Text('Sold Qty',
+                                style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                    color: BoutiqueColors.textSecondary))),
+                        Expanded(
+                            flex: 2,
+                            child: Text('Sold Wt',
                                 style: TextStyle(
                                     fontSize: 10,
                                     fontWeight: FontWeight.bold,
@@ -1814,6 +2126,13 @@ class _StockReportScreenState extends State<StockReportScreen>
                         Expanded(
                             flex: 2,
                             child: Text('Balance Qty',
+                                style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                    color: BoutiqueColors.textSecondary))),
+                        Expanded(
+                            flex: 2,
+                            child: Text('Balance Wt',
                                 style: TextStyle(
                                     fontSize: 10,
                                     fontWeight: FontWeight.bold,
@@ -1856,16 +2175,16 @@ class _StockReportScreenState extends State<StockReportScreen>
                     final ratePerGram = (p['ratePerGram'] as num?)?.toDouble() ?? 0.0;
                     final weightUnit = p['weightUnit']?.toString() ?? 'g';
                     final totalReceived = (p['totalReceived'] as num?)?.toInt() ?? 0;
+                    final totalReceivedWeight = (p['totalReceivedWeight'] as num?)?.toDouble() ?? 0.0;
                     final issueQty = (p['issueQty'] as num?)?.toInt() ?? 0;
+                    final issueWeight = (p['issueWeight'] as num?)?.toDouble() ?? 0.0;
                     final soldQty = (p['soldQty'] as num?)?.toInt() ?? 0;
+                    final soldWeight = (p['soldWeight'] as num?)?.toDouble() ?? 0.0;
                     final bal = (p['balance'] as num?)?.toInt() ?? (p['quantity'] as num?)?.toInt() ?? 0;
+                    final closingWeight = (p['closingWeight'] as num?)?.toDouble() ?? 0.0;
                     final sp = (p['sellingPrice'] as num?)?.toDouble() ?? 0;
                     final displaySp = pricingType == 'Weight-Based' ? ratePerGram : sp;
                     final sVal = pricingType == 'Weight-Based' ? (grossWeight * ratePerGram) : (bal * sp);
-                    String balanceStr = bal.toString();
-                    if (pricingType == 'Weight-Based' && grossWeight > 0) {
-                      balanceStr = '${grossWeight.toStringAsFixed(2)}$weightUnit ($bal pc)';
-                    }
                     final status = p['status']?.toString() ?? 'In Stock';
 
                     return Container(
@@ -1891,9 +2210,18 @@ class _StockReportScreenState extends State<StockReportScreen>
                                   color: BoutiqueColors.accent, bold: true)),
                           Expanded(
                               flex: 2,
+                              child: _cell(_formatWeight(totalReceivedWeight, weightUnit),
+                                  color: BoutiqueColors.accent, bold: true)),
+                          Expanded(
+                              flex: 2,
                               child: _cell('$issueQty',
                                   color: issueQty > 0 ? BoutiqueColors.warning : BoutiqueColors.textSecondary,
                                   bold: issueQty > 0)),
+                          Expanded(
+                              flex: 2,
+                              child: _cell(_formatWeight(issueWeight, weightUnit),
+                                  color: issueWeight > 0 ? BoutiqueColors.warning : BoutiqueColors.textSecondary,
+                                  bold: issueWeight > 0)),
                           Expanded(
                               flex: 2,
                               child: _cell('$soldQty',
@@ -1901,7 +2229,21 @@ class _StockReportScreenState extends State<StockReportScreen>
                                   bold: soldQty > 0)),
                           Expanded(
                               flex: 2,
-                              child: _cell(balanceStr,
+                              child: _cell(_formatWeight(soldWeight, weightUnit),
+                                  color: soldWeight > 0 ? BoutiqueColors.success : BoutiqueColors.textSecondary,
+                                  bold: soldWeight > 0)),
+                          Expanded(
+                              flex: 2,
+                              child: _cell('$bal',
+                                  color: bal == 0
+                                      ? BoutiqueColors.destructive
+                                      : bal < 5
+                                          ? BoutiqueColors.warning
+                                          : BoutiqueColors.textPrimary,
+                                  bold: true)),
+                          Expanded(
+                              flex: 2,
+                              child: _cell(_formatWeight(closingWeight, weightUnit),
                                   color: bal == 0
                                       ? BoutiqueColors.destructive
                                       : bal < 5
@@ -1933,6 +2275,7 @@ class _StockReportScreenState extends State<StockReportScreen>
   }
 
   Widget _productGrandTotalFooter() {
+    const flexes = [1, 4, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3];
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
       decoration: const BoxDecoration(
@@ -1944,13 +2287,13 @@ class _StockReportScreenState extends State<StockReportScreen>
       ),
       child: Row(
         children: [
-          const Expanded(
-            flex: 1,
-            child: SizedBox(),
+          Expanded(
+            flex: flexes[0],
+            child: const SizedBox(),
           ),
-          const Expanded(
-            flex: 4,
-            child: Text(
+          Expanded(
+            flex: flexes[1],
+            child: const Text(
               'GRAND TOTAL',
               style: TextStyle(
                 fontSize: 12,
@@ -1960,12 +2303,12 @@ class _StockReportScreenState extends State<StockReportScreen>
               ),
             ),
           ),
-          const Expanded(
-            flex: 2,
-            child: SizedBox(),
+          Expanded(
+            flex: flexes[2],
+            child: const SizedBox(),
           ),
           Expanded(
-            flex: 2,
+            flex: flexes[3],
             child: Padding(
               padding: const EdgeInsets.only(right: 6),
               child: _cell('$_totalPurchasedQty',
@@ -1973,7 +2316,15 @@ class _StockReportScreenState extends State<StockReportScreen>
             ),
           ),
           Expanded(
-            flex: 2,
+            flex: flexes[4],
+            child: Padding(
+              padding: const EdgeInsets.only(right: 6),
+              child: _cell(_formatWeight(_totalPurchasedWeight),
+                  color: BoutiqueColors.accent, bold: true),
+            ),
+          ),
+          Expanded(
+            flex: flexes[5],
             child: Padding(
               padding: const EdgeInsets.only(right: 6),
               child: _cell('$_totalIssuedQty',
@@ -1981,7 +2332,15 @@ class _StockReportScreenState extends State<StockReportScreen>
             ),
           ),
           Expanded(
-            flex: 2,
+            flex: flexes[6],
+            child: Padding(
+              padding: const EdgeInsets.only(right: 6),
+              child: _cell(_formatWeight(_totalIssuedWeight),
+                  color: BoutiqueColors.warning, bold: true),
+            ),
+          ),
+          Expanded(
+            flex: flexes[7],
             child: Padding(
               padding: const EdgeInsets.only(right: 6),
               child: _cell('$_totalSoldQty',
@@ -1989,7 +2348,15 @@ class _StockReportScreenState extends State<StockReportScreen>
             ),
           ),
           Expanded(
-            flex: 2,
+            flex: flexes[8],
+            child: Padding(
+              padding: const EdgeInsets.only(right: 6),
+              child: _cell(_formatWeight(_totalSoldWeight),
+                  color: BoutiqueColors.success, bold: true),
+            ),
+          ),
+          Expanded(
+            flex: flexes[9],
             child: Padding(
               padding: const EdgeInsets.only(right: 6),
               child: _cell('$_totalBalanceQty',
@@ -1997,7 +2364,15 @@ class _StockReportScreenState extends State<StockReportScreen>
             ),
           ),
           Expanded(
-            flex: 3,
+            flex: flexes[10],
+            child: Padding(
+              padding: const EdgeInsets.only(right: 6),
+              child: _cell(_formatWeight(_totalBalanceWeight),
+                  color: BoutiqueColors.accent, bold: true),
+            ),
+          ),
+          Expanded(
+            flex: flexes[11],
             child: Padding(
               padding: const EdgeInsets.only(right: 6),
               child: Text(
@@ -2040,7 +2415,7 @@ class _StockReportScreenState extends State<StockReportScreen>
                     controller: _catSearchCtrl,
                     style: const TextStyle(fontSize: 13),
                     decoration: BoutiqueInputDecoration.field(
-                      hintText: 'Search category name…',
+                      hintText: 'Search category name… (Ctrl+S)',
                       prefixIcon: const Icon(Icons.search_rounded,
                           size: 18, color: BoutiqueColors.textSecondary),
                     ),
@@ -2185,16 +2560,16 @@ class _StockReportScreenState extends State<StockReportScreen>
                     '$_catTotalSkus', BoutiqueColors.accent),
                 const SizedBox(width: 14),
                 _summaryCard(Icons.shopping_bag_outlined, 'Opening / Purchased',
-                    '$_catTotalPurchased', BoutiqueColors.accent),
+                    _catTotalPurchasedWeight > 0 ? '$_catTotalPurchased (${_formatWeight(_catTotalPurchasedWeight)})' : '$_catTotalPurchased', BoutiqueColors.accent),
                 const SizedBox(width: 14),
                 _summaryCard(Icons.assignment_return_outlined, 'Issued / Defect',
-                    '$_catTotalIssued', BoutiqueColors.warning),
+                    _catTotalIssuedWeight > 0 ? '$_catTotalIssued (${_formatWeight(_catTotalIssuedWeight)})' : '$_catTotalIssued', BoutiqueColors.warning),
                 const SizedBox(width: 14),
                 _summaryCard(Icons.point_of_sale_rounded, 'Sold Qty',
-                    '$_catTotalSold', BoutiqueColors.success),
+                    _catTotalSoldWeight > 0 ? '$_catTotalSold (${_formatWeight(_catTotalSoldWeight)})' : '$_catTotalSold', BoutiqueColors.success),
                 const SizedBox(width: 14),
                 _summaryCard(Icons.inventory_rounded, 'Closing Stock Qty',
-                    '$_catTotalClosingQty', BoutiqueColors.gold),
+                    _catTotalClosingWeight > 0 ? '$_catTotalClosingQty (${_formatWeight(_catTotalClosingWeight)})' : '$_catTotalClosingQty', BoutiqueColors.gold),
                 const SizedBox(width: 14),
                 _summaryCard(
                     Icons.currency_rupee_rounded,
@@ -2220,25 +2595,36 @@ class _StockReportScreenState extends State<StockReportScreen>
               : _filteredCategoryRows.isEmpty
                   ? _emptyState(
                       'No categories found matching the current filters.')
-                  : Container(
-                      margin: const EdgeInsets.all(24),
-                      decoration: BoutiqueDecoration.card(),
-                      child: Column(
-                        children: [
-                          _catTableHeader(),
-                          Expanded(
-                            child: ListView.separated(
-                              itemCount: _filteredCategoryRows.length,
-                              separatorBuilder: (_, _) => const Divider(
-                                  height: 1,
-                                  color: BoutiqueColors.borderLight),
-                              itemBuilder: (ctx, i) =>
-                                  _catTableRow(_filteredCategoryRows[i], i),
+                  : LayoutBuilder(
+                      builder: (context, constraints) {
+                        final tableWidth = math.max(constraints.maxWidth - 48, 1400.0);
+                        return Container(
+                          margin: const EdgeInsets.all(24),
+                          decoration: BoutiqueDecoration.card(),
+                          child: SingleChildScrollView(
+                            scrollDirection: Axis.horizontal,
+                            child: SizedBox(
+                              width: tableWidth,
+                              child: Column(
+                                children: [
+                                  _catTableHeader(),
+                                  Expanded(
+                                    child: ListView.separated(
+                                      itemCount: _filteredCategoryRows.length,
+                                      separatorBuilder: (_, _) => const Divider(
+                                          height: 1,
+                                          color: BoutiqueColors.borderLight),
+                                      itemBuilder: (ctx, i) =>
+                                          _catTableRow(_filteredCategoryRows[i], i),
+                                    ),
+                                  ),
+                                  _catGrandTotalFooter(),
+                                ],
+                              ),
                             ),
                           ),
-                          _catGrandTotalFooter(),
-                        ],
-                      ),
+                        );
+                      },
                     ),
         ),
       ],
@@ -2251,12 +2637,16 @@ class _StockReportScreenState extends State<StockReportScreen>
       'Category Name',
       'Total Items (SKUs)',
       'Purchased Qty',
+      'Purchased Wt',
       'Issued Qty',
+      'Issued Wt',
       'Sold Qty',
+      'Sold Wt',
       'Closing Stock Qty',
+      'Closing Stock Wt',
       'Closing Value (₹)',
     ];
-    const flexes = [1, 4, 2, 2, 2, 2, 2, 3];
+    const flexes = [1, 4, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3];
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
       decoration: const BoxDecoration(
@@ -2288,10 +2678,15 @@ class _StockReportScreenState extends State<StockReportScreen>
     final category = r['category']?.toString() ?? 'Uncategorized';
     final skuCount = (r['skuCount'] as num?)?.toInt() ?? 0;
     final totalPurchased = (r['totalPurchased'] as num?)?.toInt() ?? 0;
+    final totalPurchasedWeight = (r['totalPurchasedWeight'] as num?)?.toDouble() ?? 0.0;
     final totalIssued = (r['totalIssued'] as num?)?.toInt() ?? 0;
+    final totalIssuedWeight = (r['totalIssuedWeight'] as num?)?.toDouble() ?? 0.0;
     final totalSold = (r['totalSold'] as num?)?.toInt() ?? 0;
+    final totalSoldWeight = (r['totalSoldWeight'] as num?)?.toDouble() ?? 0.0;
     final closingQty = (r['closingQty'] as num?)?.toInt() ?? 0;
+    final closingWeight = (r['closingWeight'] as num?)?.toDouble() ?? 0.0;
     final closingValue = (r['closingValue'] as num?)?.toDouble() ?? 0.0;
+    final catWeightUnit = r['weightUnit']?.toString() ?? '';
     final products =
         (r['products'] as List<Map<String, dynamic>>?) ?? const [];
 
@@ -2369,11 +2764,35 @@ class _StockReportScreenState extends State<StockReportScreen>
                   child: Padding(
                     padding: const EdgeInsets.only(right: 6),
                     child: _cell(
+                      _formatWeight(totalPurchasedWeight, catWeightUnit),
+                      color: BoutiqueColors.accent,
+                      bold: true,
+                    ),
+                  ),
+                ),
+                Expanded(
+                  flex: 2,
+                  child: Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: _cell(
                       '$totalIssued',
                       color: totalIssued > 0
                           ? BoutiqueColors.warning
                           : BoutiqueColors.textSecondary,
                       bold: totalIssued > 0,
+                    ),
+                  ),
+                ),
+                Expanded(
+                  flex: 2,
+                  child: Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: _cell(
+                      _formatWeight(totalIssuedWeight, catWeightUnit),
+                      color: totalIssuedWeight > 0
+                          ? BoutiqueColors.warning
+                          : BoutiqueColors.textSecondary,
+                      bold: totalIssuedWeight > 0,
                     ),
                   ),
                 ),
@@ -2395,7 +2814,35 @@ class _StockReportScreenState extends State<StockReportScreen>
                   child: Padding(
                     padding: const EdgeInsets.only(right: 6),
                     child: _cell(
+                      _formatWeight(totalSoldWeight, catWeightUnit),
+                      color: totalSoldWeight > 0
+                          ? BoutiqueColors.success
+                          : BoutiqueColors.textSecondary,
+                      bold: totalSoldWeight > 0,
+                    ),
+                  ),
+                ),
+                Expanded(
+                  flex: 2,
+                  child: Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: _cell(
                       '$closingQty',
+                      color: closingQty == 0
+                          ? BoutiqueColors.destructive
+                          : closingQty < 5
+                              ? BoutiqueColors.warning
+                              : BoutiqueColors.textPrimary,
+                      bold: true,
+                    ),
+                  ),
+                ),
+                Expanded(
+                  flex: 2,
+                  child: Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: _cell(
+                      _formatWeight(closingWeight, catWeightUnit),
                       color: closingQty == 0
                           ? BoutiqueColors.destructive
                           : closingQty < 5
@@ -2460,21 +2907,42 @@ class _StockReportScreenState extends State<StockReportScreen>
                                     color: BoutiqueColors.textSecondary))),
                         Expanded(
                             flex: 2,
-                            child: Text('Purchased',
+                            child: Text('Purchased Qty',
                                 style: TextStyle(
                                     fontSize: 10,
                                     fontWeight: FontWeight.bold,
                                     color: BoutiqueColors.textSecondary))),
                         Expanded(
                             flex: 2,
-                            child: Text('Issued',
+                            child: Text('Purchased Wt',
                                 style: TextStyle(
                                     fontSize: 10,
                                     fontWeight: FontWeight.bold,
                                     color: BoutiqueColors.textSecondary))),
                         Expanded(
                             flex: 2,
-                            child: Text('Sold',
+                            child: Text('Issued Qty',
+                                style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                    color: BoutiqueColors.textSecondary))),
+                        Expanded(
+                            flex: 2,
+                            child: Text('Issued Wt',
+                                style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                    color: BoutiqueColors.textSecondary))),
+                        Expanded(
+                            flex: 2,
+                            child: Text('Sold Qty',
+                                style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                    color: BoutiqueColors.textSecondary))),
+                        Expanded(
+                            flex: 2,
+                            child: Text('Sold Wt',
                                 style: TextStyle(
                                     fontSize: 10,
                                     fontWeight: FontWeight.bold,
@@ -2482,6 +2950,13 @@ class _StockReportScreenState extends State<StockReportScreen>
                         Expanded(
                             flex: 2,
                             child: Text('Closing Qty',
+                                style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                    color: BoutiqueColors.textSecondary))),
+                        Expanded(
+                            flex: 2,
+                            child: Text('Closing Wt',
                                 style: TextStyle(
                                     fontSize: 10,
                                     fontWeight: FontWeight.bold,
@@ -2514,6 +2989,15 @@ class _StockReportScreenState extends State<StockReportScreen>
                     final p = pe.value;
                     final bal = (p['balance'] as num?)?.toInt() ?? (p['quantity'] as num?)?.toInt() ?? 0;
                     final sp = (p['sellingPrice'] as num?)?.toDouble() ?? 0;
+                    final weightUnit = p['weightUnit']?.toString() ?? '';
+                    final totalReceived = (p['totalReceived'] as num?)?.toInt() ?? 0;
+                    final totalReceivedWeight = (p['totalReceivedWeight'] as num?)?.toDouble() ?? 0.0;
+                    final issueQty = (p['issueQty'] as num?)?.toInt() ?? 0;
+                    final issueWeight = (p['issueWeight'] as num?)?.toDouble() ?? 0.0;
+                    final soldQty = (p['soldQty'] as num?)?.toInt() ?? 0;
+                    final soldWeight = (p['soldWeight'] as num?)?.toDouble() ?? 0.0;
+                    final closingWeight = (p['closingWeight'] as num?)?.toDouble() ?? 0.0;
+
                     return Container(
                       padding: const EdgeInsets.symmetric(
                           horizontal: 12, vertical: 6),
@@ -2534,14 +3018,42 @@ class _StockReportScreenState extends State<StockReportScreen>
                               child: _cell(p['name']?.toString() ?? '—')),
                           Expanded(
                               flex: 2,
-                              child: _cell('${p['totalReceived'] ?? 0}')),
+                              child: _cell('$totalReceived',
+                                  color: BoutiqueColors.accent, bold: true)),
                           Expanded(
-                              flex: 2, child: _cell('${p['issueQty'] ?? 0}')),
+                              flex: 2,
+                              child: _cell(_formatWeight(totalReceivedWeight, weightUnit),
+                                  color: BoutiqueColors.accent, bold: true)),
                           Expanded(
-                              flex: 2, child: _cell('${p['soldQty'] ?? 0}')),
+                              flex: 2,
+                              child: _cell('$issueQty',
+                                  color: issueQty > 0 ? BoutiqueColors.warning : BoutiqueColors.textSecondary,
+                                  bold: issueQty > 0)),
+                          Expanded(
+                              flex: 2,
+                              child: _cell(_formatWeight(issueWeight, weightUnit),
+                                  color: issueWeight > 0 ? BoutiqueColors.warning : BoutiqueColors.textSecondary,
+                                  bold: issueWeight > 0)),
+                          Expanded(
+                              flex: 2,
+                              child: _cell('$soldQty',
+                                  color: soldQty > 0 ? BoutiqueColors.success : BoutiqueColors.textSecondary,
+                                  bold: soldQty > 0)),
+                          Expanded(
+                              flex: 2,
+                              child: _cell(_formatWeight(soldWeight, weightUnit),
+                                  color: soldWeight > 0 ? BoutiqueColors.success : BoutiqueColors.textSecondary,
+                                  bold: soldWeight > 0)),
                           Expanded(
                               flex: 2,
                               child: _cell('$bal',
+                                  color: bal == 0
+                                      ? BoutiqueColors.destructive
+                                      : BoutiqueColors.textPrimary,
+                                  bold: true)),
+                          Expanded(
+                              flex: 2,
+                              child: _cell(_formatWeight(closingWeight, weightUnit),
                                   color: bal == 0
                                       ? BoutiqueColors.destructive
                                       : BoutiqueColors.textPrimary,
@@ -2569,7 +3081,7 @@ class _StockReportScreenState extends State<StockReportScreen>
   }
 
   Widget _catGrandTotalFooter() {
-    const flexes = [1, 4, 2, 2, 2, 2, 2, 3];
+    const flexes = [1, 4, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3];
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
       decoration: const BoxDecoration(
@@ -2605,21 +3117,41 @@ class _StockReportScreenState extends State<StockReportScreen>
           ),
           Expanded(
             flex: flexes[4],
+            child: _cell(_formatWeight(_catTotalPurchasedWeight),
+                color: BoutiqueColors.accent, bold: true),
+          ),
+          Expanded(
+            flex: flexes[5],
             child: _cell('$_catTotalIssued',
                 color: BoutiqueColors.warning, bold: true),
           ),
           Expanded(
-            flex: flexes[5],
+            flex: flexes[6],
+            child: _cell(_formatWeight(_catTotalIssuedWeight),
+                color: BoutiqueColors.warning, bold: true),
+          ),
+          Expanded(
+            flex: flexes[7],
             child: _cell('$_catTotalSold',
                 color: BoutiqueColors.success, bold: true),
           ),
           Expanded(
-            flex: flexes[6],
+            flex: flexes[8],
+            child: _cell(_formatWeight(_catTotalSoldWeight),
+                color: BoutiqueColors.success, bold: true),
+          ),
+          Expanded(
+            flex: flexes[9],
             child: _cell('$_catTotalClosingQty',
                 color: BoutiqueColors.accent, bold: true),
           ),
           Expanded(
-            flex: flexes[7],
+            flex: flexes[10],
+            child: _cell(_formatWeight(_catTotalClosingWeight),
+                color: BoutiqueColors.accent, bold: true),
+          ),
+          Expanded(
+            flex: flexes[11],
             child: Text(
               '₹${_numFmt.format(_catTotalClosingValue)}',
               style: const TextStyle(
@@ -2716,7 +3248,7 @@ class _StockReportScreenState extends State<StockReportScreen>
                   controller: _ledgerSearchCtrl,
                   style: const TextStyle(fontSize: 13),
                   decoration: BoutiqueInputDecoration.field(
-                    hintText: 'Search product, category, or tag ID…',
+                    hintText: 'Search product, category, or tag ID… (Ctrl+S)',
                     prefixIcon: const Icon(Icons.search_rounded,
                         size: 18, color: BoutiqueColors.textSecondary),
                   ),

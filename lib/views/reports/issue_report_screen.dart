@@ -21,10 +21,14 @@ class IssueReportScreen extends StatefulWidget {
   const IssueReportScreen({super.key, this.searchFocusNode});
 
   @override
-  State<IssueReportScreen> createState() => _IssueReportScreenState();
+  State<IssueReportScreen> createState() => IssueReportScreenState();
 }
 
-class _IssueReportScreenState extends State<IssueReportScreen> {
+class IssueReportScreenState extends State<IssueReportScreen> {
+  void focusSearch() {
+    _searchFocusNode.requestFocus();
+    _searchCtrl.selection = TextSelection(baseOffset: 0, extentOffset: _searchCtrl.text.length);
+  }
   final _fmt = DateFormat('dd/MM/yyyy');
   final _fileDateFmt = DateFormat('dd-MM-yyyy');
   final _numFmt = NumberFormat('#,##,##0.00', 'en_IN');
@@ -1066,7 +1070,7 @@ class _ReportSearchBarState extends State<_ReportSearchBar> {
           autofocus: true,
           style: const TextStyle(fontSize: 13),
           decoration: BoutiqueInputDecoration.field(
-            hintText: 'Search product, customer, vendor, bill no…',
+            hintText: 'Search product, customer, vendor, bill no… (Ctrl+S)',
             prefixIcon: const Icon(Icons.search_rounded,
                 size: 18, color: BoutiqueColors.textSecondary),
           ).copyWith(

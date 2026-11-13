@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../../auth/models/app_user_model.dart';
 import '../../auth/viewmodels/auth_viewmodel.dart';
@@ -11,17 +12,36 @@ class UserManagementScreen extends StatefulWidget {
   const UserManagementScreen({super.key});
 
   @override
-  State<UserManagementScreen> createState() => _UserManagementScreenState();
+  State<UserManagementScreen> createState() => UserManagementScreenState();
 }
 
-class _UserManagementScreenState extends State<UserManagementScreen> {
+class UserManagementScreenState extends State<UserManagementScreen> {
   final UserManagementService _userService = UserManagementService();
   String _searchQuery = '';
   String _roleFilter = 'All'; // 'All', 'Admin', 'Salesman'
+  final TextEditingController _searchCtrl = TextEditingController();
+  final FocusNode _searchFocusNode = FocusNode(debugLabel: 'user_management_search');
+
+  void focusSearch() {
+    _searchFocusNode.requestFocus();
+    _searchCtrl.selection = TextSelection(baseOffset: 0, extentOffset: _searchCtrl.text.length);
+  }
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    _searchFocusNode.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.keyS, control: true): focusSearch,
+        const SingleActivator(LogicalKeyboardKey.keyS, meta: true): focusSearch,
+      },
+      child: Scaffold(
       appBar: AppBar(
         title: const Text('User Management'),
         actions: [
@@ -67,8 +87,10 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
               children: [
                 Expanded(
                   child: TextField(
+                    controller: _searchCtrl,
+                    focusNode: _searchFocusNode,
                     decoration: const InputDecoration(
-                      labelText: 'Search Users',
+                      labelText: 'Search Users (Ctrl+S)',
                       prefixIcon: Icon(Icons.search),
                       border: OutlineInputBorder(),
                     ),
@@ -104,6 +126,7 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
           ),
         ],
       ),
+    ),
     );
   }
 

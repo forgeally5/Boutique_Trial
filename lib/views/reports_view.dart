@@ -28,6 +28,12 @@ class ReportsViewState extends State<ReportsView>
 
   final GlobalKey<InwardReportScreenState> _inwardReportKey =
       GlobalKey<InwardReportScreenState>();
+  final GlobalKey<IssueReportScreenState> _issueReportKey =
+      GlobalKey<IssueReportScreenState>();
+  final GlobalKey<StockReportScreenState> _stockReportKey =
+      GlobalKey<StockReportScreenState>();
+  final GlobalKey<SalesReportScreenState> _salesReportKey =
+      GlobalKey<SalesReportScreenState>();
 
   final List<FocusNode> _tabFocusNodes = [
     FocusNode(debugLabel: 'tab_issue_report'),
@@ -43,6 +49,25 @@ class ReportsViewState extends State<ReportsView>
 
   void selectTab(int index) {
     _selectTab(index);
+  }
+
+  void focusActiveSearch() {
+    switch (_currentTab) {
+      case 0:
+        _issueReportKey.currentState?.focusSearch();
+        _issueSearchFocusNode.requestFocus();
+        break;
+      case 1:
+        _stockReportKey.currentState?.focusSearch();
+        break;
+      case 2:
+        _salesReportKey.currentState?.focusSearch();
+        break;
+      case 3:
+        _inwardReportKey.currentState?.focusSearch();
+        _inwardSearchFocusNode.requestFocus();
+        break;
+    }
   }
 
   @override
@@ -133,6 +158,8 @@ class ReportsViewState extends State<ReportsView>
   Widget build(BuildContext context) {
     return CallbackShortcuts(
       bindings: {
+        const SingleActivator(LogicalKeyboardKey.keyS, control: true): focusActiveSearch,
+        const SingleActivator(LogicalKeyboardKey.keyS, meta: true): focusActiveSearch,
         const SingleActivator(LogicalKeyboardKey.digit1, alt: true): () => _selectTab(0),
         const SingleActivator(LogicalKeyboardKey.digit2, alt: true): () => _selectTab(1),
         const SingleActivator(LogicalKeyboardKey.digit3, alt: true): () => _selectTab(2),
@@ -293,13 +320,17 @@ class ReportsViewState extends State<ReportsView>
                   FocusScope(
                     child: FocusTraversalGroup(
                       policy: OrderedTraversalPolicy(),
-                      child: IssueReportScreen(searchFocusNode: _issueSearchFocusNode),
+                      child: IssueReportScreen(
+                        key: _issueReportKey,
+                        searchFocusNode: _issueSearchFocusNode,
+                      ),
                     ),
                   ),
                   FocusScope(
                     child: FocusTraversalGroup(
                       policy: OrderedTraversalPolicy(),
                       child: StockReportScreen(
+                        key: _stockReportKey,
                         searchFocusNode: _stockSearchFocusNode,
                         onReturnToMainTab: () => _tabFocusNodes[1].requestFocus(),
                       ),
@@ -309,6 +340,7 @@ class ReportsViewState extends State<ReportsView>
                     child: FocusTraversalGroup(
                       policy: OrderedTraversalPolicy(),
                       child: SalesReportScreen(
+                        key: _salesReportKey,
                         searchFocusNode: _salesSearchFocusNode,
                         onReturnToMainTab: () => _tabFocusNodes[2].requestFocus(),
                       ),

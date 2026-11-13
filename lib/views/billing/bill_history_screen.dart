@@ -57,6 +57,14 @@ enum BillTileAction { due, view, edit, delete }
 class BillHistoryScreenState extends State<BillHistoryScreen> {
   void reloadBills() => _loadBills();
 
+  void focusSearch() {
+    _searchFocusNode.requestFocus();
+    _searchCtrl.selection = TextSelection(
+      baseOffset: 0,
+      extentOffset: _searchCtrl.text.length,
+    );
+  }
+
   final _fmt = DateFormat('dd/MM/yyyy');
   late DateTime _dateFrom;
   late DateTime _dateTo;
@@ -572,7 +580,12 @@ class BillHistoryScreenState extends State<BillHistoryScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.keyS, control: true): focusSearch,
+        const SingleActivator(LogicalKeyboardKey.keyS, meta: true): focusSearch,
+      },
+      child: Container(
       color: BoutiqueColors.bgMain,
       child: Column(
         children: [
@@ -597,7 +610,7 @@ class BillHistoryScreenState extends State<BillHistoryScreen> {
                         autofocus: false,
                         style: const TextStyle(fontSize: 13),
                         decoration: BoutiqueInputDecoration.field(
-                          hintText: 'Search bill #, customer, mobile...',
+                          hintText: 'Search bill #, customer, mobile... (Ctrl+S)',
                           prefixIcon: const Icon(Icons.search_rounded, size: 18, color: BoutiqueColors.textSecondary),
                           suffixIcon: Row(
                             mainAxisSize: MainAxisSize.min,
@@ -839,6 +852,7 @@ class BillHistoryScreenState extends State<BillHistoryScreen> {
           ),
         ],
       ),
+    ),
     );
   }
 

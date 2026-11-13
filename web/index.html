@@ -84,6 +84,14 @@
     <div class="spinner"></div>
   </div>
 
+  <script>
+    // Prevent browser default 'Save Page As' dialog when user presses Ctrl+S / Cmd+S
+    window.addEventListener('keydown', function(e) {
+      if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) {
+        e.preventDefault();
+      }
+    });
+  </script>
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>

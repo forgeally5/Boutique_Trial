@@ -22,11 +22,18 @@ class SalesReportScreen extends StatefulWidget {
   });
 
   @override
-  State<SalesReportScreen> createState() => _SalesReportScreenState();
+  State<SalesReportScreen> createState() => SalesReportScreenState();
 }
 
-class _SalesReportScreenState extends State<SalesReportScreen>
+class SalesReportScreenState extends State<SalesReportScreen>
     with SingleTickerProviderStateMixin {
+  void focusSearch() {
+    if (_currentTab == 0) {
+      _productWiseSearchFocusNode.requestFocus();
+    } else {
+      _totalSalesSearchFocusNode.requestFocus();
+    }
+  }
   late TabController _tabController;
   int _currentTab = 0;
 
@@ -91,87 +98,93 @@ class _SalesReportScreenState extends State<SalesReportScreen>
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      color: BoutiqueColors.bgMain,
-      child: Column(
-        children: [
-          // ── Sub-Tab Bar (Product-wise Sales vs Total Sales) ──
-          Container(
-            decoration: const BoxDecoration(
-              color: BoutiqueColors.bgCard,
-              border: Border(
-                bottom: BorderSide(color: BoutiqueColors.border, width: 1),
+    return CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.keyS, control: true): focusSearch,
+        const SingleActivator(LogicalKeyboardKey.keyS, meta: true): focusSearch,
+      },
+      child: Container(
+        color: BoutiqueColors.bgMain,
+        child: Column(
+          children: [
+            // ── Sub-Tab Bar (Product-wise Sales vs Total Sales) ──
+            Container(
+              decoration: const BoxDecoration(
+                color: BoutiqueColors.bgCard,
+                border: Border(
+                  bottom: BorderSide(color: BoutiqueColors.border, width: 1),
+                ),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Row(
+                children: [
+                  _SalesSubTabButton(
+                    focusNode: _productWiseTabFocusNode,
+                    index: 0,
+                    icon: Icons.category_rounded,
+                    label: 'Product-wise Sales Summary',
+                    isSelected: _currentTab == 0,
+                    order: 1.0,
+                    onSelect: () => _selectSubTab(0),
+                    onArrowRight: () => _totalSalesTabFocusNode.requestFocus(),
+                    onArrowLeft: null,
+                    onShiftTab: widget.onReturnToMainTab,
+                  ),
+                  const SizedBox(width: 6),
+                  _SalesSubTabButton(
+                    focusNode: _totalSalesTabFocusNode,
+                    index: 1,
+                    icon: Icons.bar_chart_rounded,
+                    label: 'Total Sales Summary',
+                    isSelected: _currentTab == 1,
+                    order: 2.0,
+                    onSelect: () => _selectSubTab(1),
+                    onArrowRight: null,
+                    onArrowLeft: () => _productWiseTabFocusNode.requestFocus(),
+                    onShiftTab: widget.onReturnToMainTab,
+                  ),
+                ],
               ),
             ),
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Row(
-              children: [
-                _SalesSubTabButton(
-                  focusNode: _productWiseTabFocusNode,
-                  index: 0,
-                  icon: Icons.category_rounded,
-                  label: 'Product-wise Sales Summary',
-                  isSelected: _currentTab == 0,
-                  order: 1.0,
-                  onSelect: () => _selectSubTab(0),
-                  onArrowRight: () => _totalSalesTabFocusNode.requestFocus(),
-                  onArrowLeft: null,
-                  onShiftTab: widget.onReturnToMainTab,
-                ),
-                const SizedBox(width: 6),
-                _SalesSubTabButton(
-                  focusNode: _totalSalesTabFocusNode,
-                  index: 1,
-                  icon: Icons.bar_chart_rounded,
-                  label: 'Total Sales Summary',
-                  isSelected: _currentTab == 1,
-                  order: 2.0,
-                  onSelect: () => _selectSubTab(1),
-                  onArrowRight: null,
-                  onArrowLeft: () => _productWiseTabFocusNode.requestFocus(),
-                  onShiftTab: widget.onReturnToMainTab,
-                ),
-              ],
-            ),
-          ),
-          // ── Tab Content ──────────────────────────────────────────────
-          Expanded(
-            child: TabBarView(
-              controller: _tabController,
-              physics: const NeverScrollableScrollPhysics(),
-              children: [
-                Focus(
-                  onKeyEvent: (node, event) {
-                    if (event is KeyDownEvent &&
-                        event.logicalKey == LogicalKeyboardKey.escape) {
-                      _productWiseTabFocusNode.requestFocus();
-                      return KeyEventResult.handled;
-                    }
-                    return KeyEventResult.ignored;
-                  },
-                  child: _ProductWiseSalesTab(
-                    searchFocusNode: _productWiseSearchFocusNode,
-                    onShiftTab: () => _productWiseTabFocusNode.requestFocus(),
+            // ── Tab Content ──────────────────────────────────────────────
+            Expanded(
+              child: TabBarView(
+                controller: _tabController,
+                physics: const NeverScrollableScrollPhysics(),
+                children: [
+                  Focus(
+                    onKeyEvent: (node, event) {
+                      if (event is KeyDownEvent &&
+                          event.logicalKey == LogicalKeyboardKey.escape) {
+                        _productWiseTabFocusNode.requestFocus();
+                        return KeyEventResult.handled;
+                      }
+                      return KeyEventResult.ignored;
+                    },
+                    child: _ProductWiseSalesTab(
+                      searchFocusNode: _productWiseSearchFocusNode,
+                      onShiftTab: () => _productWiseTabFocusNode.requestFocus(),
+                    ),
                   ),
-                ),
-                Focus(
-                  onKeyEvent: (node, event) {
-                    if (event is KeyDownEvent &&
-                        event.logicalKey == LogicalKeyboardKey.escape) {
-                      _totalSalesTabFocusNode.requestFocus();
-                      return KeyEventResult.handled;
-                    }
-                    return KeyEventResult.ignored;
-                  },
-                  child: _TotalSalesTab(
-                    searchFocusNode: _totalSalesSearchFocusNode,
-                    onShiftTab: () => _totalSalesTabFocusNode.requestFocus(),
+                  Focus(
+                    onKeyEvent: (node, event) {
+                      if (event is KeyDownEvent &&
+                          event.logicalKey == LogicalKeyboardKey.escape) {
+                        _totalSalesTabFocusNode.requestFocus();
+                        return KeyEventResult.handled;
+                      }
+                      return KeyEventResult.ignored;
+                    },
+                    child: _TotalSalesTab(
+                      searchFocusNode: _totalSalesSearchFocusNode,
+                      onShiftTab: () => _totalSalesTabFocusNode.requestFocus(),
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -1148,7 +1161,7 @@ class _TotalSalesTabState extends State<_TotalSalesTab> {
                         controller: _searchCtrl,
                         style: const TextStyle(fontSize: 13),
                         decoration: BoutiqueInputDecoration.field(
-                          hintText: 'Search bill no, customer, mobile…',
+                          hintText: 'Search bill no, customer, mobile… (Ctrl+S)',
                           prefixIcon: const Icon(Icons.search_rounded,
                               size: 18, color: BoutiqueColors.textSecondary),
                         ),
@@ -1507,9 +1520,9 @@ class _TotalSalesTabState extends State<_TotalSalesTab> {
     );
   }
 }
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// -----------------------------------------------------------------------------
 // TAB C: Product-wise Sales Summary
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// -----------------------------------------------------------------------------
 
 class _ProductWiseSalesTab extends StatefulWidget {
   final FocusNode? searchFocusNode;
@@ -1614,17 +1627,17 @@ class _ProductWiseSalesTabState extends State<_ProductWiseSalesTab> {
 
         final items = (data['items'] as List?) ?? [];
         for (final item in items) {
-          final cat = item['category']?.toString() ?? 'â€”';
+          final cat = item['category']?.toString() ?? '-';
           catSet.add(cat);
           rows.add({
-            'billNo': data['billNo'] ?? 'â€”',
-            'tagId': item['tagId'] ?? 'â€”',
+            'billNo': data['billNo'] ?? '-',
+            'tagId': item['tagId'] ?? '-',
             'productName': item['name'] ?? '',
             'category': cat,
             'qty': (item['qty'] as num?)?.toInt() ?? 1,
             'discountAmt': (item['discountAmt'] as num?)?.toDouble() ?? 0.0,
             'lineAmount': (item['lineAmount'] as num?)?.toDouble() ?? 0.0,
-            'paymentMode': data['paymentMode'] ?? 'â€”',
+            'paymentMode': data['paymentMode'] ?? '-',
           });
         }
       }
@@ -1852,7 +1865,7 @@ class _ProductWiseSalesTabState extends State<_ProductWiseSalesTab> {
                         controller: _searchCtrl,
                         style: const TextStyle(fontSize: 13),
                         decoration: BoutiqueInputDecoration.field(
-                          hintText: 'Search product name or tag ID…',
+                          hintText: 'Search product name or tag ID… (Ctrl+S)',
                           prefixIcon: const Icon(Icons.search_rounded,
                               size: 18, color: BoutiqueColors.textSecondary),
                         ),

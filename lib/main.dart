@@ -1,4 +1,4 @@
-﻿import 'dart:async';
+import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -257,13 +257,32 @@ class AdminHomeShell extends StatefulWidget {
 
 class _AdminHomeShellState extends State<AdminHomeShell> {
   final AdminState _state = AdminState();
+  final GlobalKey<InventoryViewState> _inventoryKey = GlobalKey<InventoryViewState>();
   final GlobalKey<ReportsViewState> _reportsKey = GlobalKey<ReportsViewState>();
   final GlobalKey<BillingViewState> _billingKey = GlobalKey<BillingViewState>();
+  final GlobalKey<UserManagementScreenState> _usersKey = GlobalKey<UserManagementScreenState>();
   int _reportsSubTab = 0;
   int _activeTabIndex = 2; // Default to Billing / POS on login
   String _selectedBillingSection = 'A Sales Entry';
   final TextEditingController _globalSearchCtrl = TextEditingController();
   final FocusScopeNode _mainContentFocusScopeNode = FocusScopeNode(debugLabel: 'MainContentFocusScope');
+
+  void _focusActiveSearch() {
+    switch (_activeTabIndex) {
+      case 1:
+        _inventoryKey.currentState?.focusSearch();
+        break;
+      case 2:
+        _billingKey.currentState?.focusActiveSearch();
+        break;
+      case 3:
+        _reportsKey.currentState?.focusActiveSearch();
+        break;
+      case 4:
+        _usersKey.currentState?.focusSearch();
+        break;
+    }
+  }
 
   void _switchTab(int index) {
     if (index == _activeTabIndex) return;
@@ -384,6 +403,12 @@ class _AdminHomeShellState extends State<AdminHomeShell> {
         _navigateToBillingTab(2);
         return true;
       }
+    }
+
+    // Global Search shortcut: Ctrl+S / Meta+S (without Shift/Alt)
+    if (isCtrlOrMeta && !isShift && !isAlt && event.logicalKey == LogicalKeyboardKey.keyS) {
+      _focusActiveSearch();
+      return true;
     }
 
     // Main navigation tabs: Ctrl+1..5 / Meta+1..5 (without Shift)
@@ -1154,7 +1179,7 @@ class _AdminHomeShellState extends State<AdminHomeShell> {
                           // Index 0: Inventory
                           ExcludeFocus(
                             excluding: _stackIndex != 0,
-                            child: InventoryView(state: _state, globalSearchCtrl: _globalSearchCtrl),
+                            child: InventoryView(key: _inventoryKey, state: _state, globalSearchCtrl: _globalSearchCtrl),
                           ),
                           // Index 1: Billing
                           ExcludeFocus(
@@ -1183,7 +1208,7 @@ class _AdminHomeShellState extends State<AdminHomeShell> {
                           // Index 3: Users
                           ExcludeFocus(
                             excluding: _stackIndex != 3,
-                            child: const UserManagementScreen(),
+                            child: UserManagementScreen(key: _usersKey),
                           ),
                           // Index 4: Settings
                           ExcludeFocus(
