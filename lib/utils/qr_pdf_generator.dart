@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/foundation.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
@@ -5,15 +7,36 @@ import 'package:printing/printing.dart';
 import '../models/product.dart';
 
 class QrPdfGenerator {
-  // 2.5 cm (25 mm) Left to Right  x  1.5 cm (15 mm) Top to Bottom
-  // Exact micro-sticker size: Left is QR Code + Tag ID, Right is Item Name + Price.
-  static const PdfPageFormat labelPageFormat = PdfPageFormat(
-    2.5 * PdfPageFormat.cm, // 70.87 pt (25.0 mm) - Left to right width
-    1.5 * PdfPageFormat.cm, // 42.52 pt (15.0 mm) - Top to bottom height
-    marginAll: 0,
-  );
+  // ─────────────────────────────────────────────────────────────
+  // PRINTER ORIENTATION SETTINGS  (change only these if needed)
+  // ─────────────────────────────────────────────────────────────
 
-  /// Generates and prints a horizontal 2.5 cm x 1.5 cm QR barcode label for a single product.
+  /// true  -> PDF page is PORTRAIT (15 x 25 mm), same as the printer's paper
+  ///          definition. The landscape tag design is rotated inside the page,
+  ///          so the printer/driver has nothing to rotate. (Fixes sideways print)
+  /// false -> PDF page is LANDSCAPE (25 x 15 mm). Use this only if the printer
+  ///          driver paper is set to landscape / 25 x 15 mm.
+  static const bool printerPaperIsPortrait = true;
+
+  /// Direction of rotation when [printerPaperIsPortrait] is true.
+  /// 3 = -90 degrees, 1 = +90 degrees.
+  /// Print once. If the text comes out upside down, change 3 -> 1 (or 1 -> 3).
+  static const int rotationQuarterTurns = 3;
+
+  // ─────────────────────────────────────────────────────────────
+  // PAGE FORMATS
+  // ─────────────────────────────────────────────────────────────
+
+  // The DESIGN of the tag is always 25 mm wide x 15 mm tall (landscape).
+  static const double _tagWidth = 2.5 * PdfPageFormat.cm;
+  static const double _tagHeight = 1.5 * PdfPageFormat.cm;
+
+  // The PAGE sent to the printer. Portrait pages are 15 x 25 mm.
+  static const PdfPageFormat labelPageFormat = printerPaperIsPortrait
+      ? PdfPageFormat(_tagHeight, _tagWidth, marginAll: 0) // 15 x 25 mm
+      : PdfPageFormat(_tagWidth, _tagHeight, marginAll: 0); // 25 x 15 mm
+
+  /// Generates and prints a QR barcode label for a single product.
   static Future<void> printProductQr(Product product) async {
     final doc = await generateProductQrPdf(product);
     await Printing.layoutPdf(
@@ -24,7 +47,7 @@ class QrPdfGenerator {
     );
   }
 
-  /// Generates and prints bulk QR labels for multiple products (N products x copies = total stickers).
+  /// Generates and prints bulk QR labels (N products x copies = total stickers).
   static Future<void> printBulkProductQr(
     List<Product> products, {
     int copies = 1,
@@ -39,27 +62,15 @@ class QrPdfGenerator {
     );
   }
 
-  /// Generates a PDF Document with a single 2.5 cm x 1.5 cm horizontal barcode label.
+  /// PDF with a single label page.
   static Future<pw.Document> generateProductQrPdf(Product product) async {
     final pdf = pw.Document();
     final fonts = await _loadFonts();
-
-    pdf.addPage(
-      pw.Page(
-        pageFormat: labelPageFormat,
-        orientation: pw.PageOrientation.landscape,
-        theme: fonts.theme,
-        build: (pw.Context context) {
-          return buildTagWidget(product, fonts.currencySymbol);
-        },
-      ),
-    );
-
+    pdf.addPage(_buildLabelPage(product, fonts));
     return pdf;
   }
 
-  /// Generates a multi-page PDF Document for bulk products with copies.
-  /// Each tag is on its own separate page of 2.5 cm x 1.5 cm size.
+  /// Multi-page PDF. Each label is its own page.
   static Future<pw.Document> generateBulkProductQrPdf(
     List<Product> products, {
     int copies = 1,
@@ -70,33 +81,46 @@ class QrPdfGenerator {
 
     for (final product in products) {
       for (int i = 0; i < safeCopies; i++) {
-        pdf.addPage(
-          pw.Page(
-            pageFormat: labelPageFormat,
-            orientation: pw.PageOrientation.landscape,
-            theme: fonts.theme,
-            build: (pw.Context context) {
-              return buildTagWidget(product, fonts.currencySymbol);
-            },
-          ),
-        );
+        pdf.addPage(_buildLabelPage(product, fonts));
       }
     }
-
     return pdf;
   }
 
-  /// Shared reusable Tag Widget:
+  /// Builds ONE page. The page shape matches the printer paper, and the
+  /// landscape tag is rotated inside it when the printer paper is portrait.
+  static pw.Page _buildLabelPage(Product product, _LoadedFonts fonts) {
+    return pw.Page(
+      pageFormat: labelPageFormat,
+      // No `orientation:` here. The page format already has the right shape.
+      theme: fonts.theme,
+      build: (pw.Context context) {
+        final tag = buildTagWidget(product, fonts.currencySymbol);
+
+        if (!printerPaperIsPortrait) {
+          return tag;
+        }
+
+        return pw.Center(
+          child: pw.Transform.rotateBox(
+            angle: rotationQuarterTurns * math.pi / 2,
+            child: tag,
+          ),
+        );
+      },
+    );
+  }
+
+  /// Tag design (always landscape 25 x 15 mm):
   /// Left: QR Code + Tag ID below QR.
   /// Right: Item Name & Price (and weight if applicable).
-  /// Dimensions: 2.5 cm width x 1.5 cm height.
   static pw.Widget buildTagWidget(Product product, String currencySymbol) {
     final priceStr = _formatPrice(product);
     final weightStr = _getWeightString(product);
 
     return pw.Container(
-      width: 2.5 * PdfPageFormat.cm,
-      height: 1.5 * PdfPageFormat.cm,
+      width: _tagWidth,
+      height: _tagHeight,
       padding: const pw.EdgeInsets.symmetric(horizontal: 2.0, vertical: 1.5),
       child: pw.Row(
         crossAxisAlignment: pw.CrossAxisAlignment.center,
@@ -131,13 +155,12 @@ class QrPdfGenerator {
 
           pw.SizedBox(width: 3.0),
 
-          // ── RIGHT COLUMN: Item Name & Price directly underneath/beside ──
+          // ── RIGHT COLUMN: Item Name & Price ──
           pw.Expanded(
             child: pw.Column(
               crossAxisAlignment: pw.CrossAxisAlignment.start,
               mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
               children: [
-                // Item Name & Weight
                 pw.Column(
                   crossAxisAlignment: pw.CrossAxisAlignment.start,
                   children: [
@@ -166,8 +189,6 @@ class QrPdfGenerator {
                     ],
                   ],
                 ),
-
-                // Price (Prominent)
                 if (priceStr.isNotEmpty)
                   pw.Container(
                     alignment: pw.Alignment.bottomRight,
