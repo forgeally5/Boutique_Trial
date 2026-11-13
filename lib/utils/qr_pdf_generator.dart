@@ -5,33 +5,32 @@ import 'package:printing/printing.dart';
 import '../models/product.dart';
 
 class QrPdfGenerator {
-  // Standard 2.5 inch x 1.0 inch barcode sticker label format (63.5 mm x 25.4 mm)
-  // Perfectly matches standard continuous roll boutique / jewelry price tags.
+  // 2.5 inch (63.5 mm) Left to Right  x  1.5 inch (38.1 mm) Top to Bottom
+  // Matches Photo 2 (Horizontal Tag: Store Header at top, QR on left, Name/Weight/Price on right)
   static const PdfPageFormat labelPageFormat = PdfPageFormat(
-    2.5 * PdfPageFormat.inch, // 180 pt (63.5 mm width)
-    1.0 * PdfPageFormat.inch, // 72 pt (25.4 mm height)
+    2.5 * PdfPageFormat.inch, // 180 pt (63.5 mm) - Left to right width
+    1.5 * PdfPageFormat.inch, // 108 pt (38.1 mm) - Top to bottom height
     marginAll: 0,
   );
 
-  /// Generates and prints a 2.5" x 1.0" QR barcode label for a single product.
+  /// Generates and prints a horizontal 2.5" x 1.5" QR barcode label for a single product.
   static Future<void> printProductQr(
     Product product, {
-    PdfPageFormat? format,
+    String storeName = 'VilakkuKadai',
   }) async {
-    final pageFormat = format ?? labelPageFormat;
-    final doc = await generateProductQrPdf(product, format: pageFormat);
+    final doc = await generateProductQrPdf(product, storeName: storeName);
     await Printing.layoutPdf(
       onLayout: (PdfPageFormat layoutFormat) async => doc.save(),
       name: 'QR_${product.tagId}',
-      format: pageFormat,
+      format: labelPageFormat,
       dynamicLayout: false,
     );
   }
 
-  /// Generates a PDF Document with 2.5" x 1.0" barcode label.
+  /// Generates a PDF Document with the horizontal barcode label matching Photo 2.
   static Future<pw.Document> generateProductQrPdf(
     Product product, {
-    PdfPageFormat format = labelPageFormat,
+    String storeName = 'VilakkuKadai',
   }) async {
     final pdf = pw.Document();
 
@@ -50,104 +49,119 @@ class QrPdfGenerator {
     final priceStr = _formatPrice(product);
     final weightStr = _getWeightString(product);
 
-    // Responsive sizing based on page height (72 pt for 1.0" label)
-    final qrSize = (format.height <= 80) ? 46.0 : 60.0;
-    final qrColWidth = (format.height <= 80) ? 56.0 : 70.0;
-
     pdf.addPage(
       pw.Page(
-        pageFormat: format,
+        pageFormat: labelPageFormat,
         orientation: pw.PageOrientation.landscape,
         theme: fontRegular != null && fontBold != null
             ? pw.ThemeData.withFont(base: fontRegular, bold: fontBold)
             : pw.ThemeData.base(),
         build: (pw.Context context) {
           return pw.Container(
-            width: format.width,
-            height: format.height,
-            padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-            child: pw.Row(
-              crossAxisAlignment: pw.CrossAxisAlignment.center,
+            width: 2.5 * PdfPageFormat.inch,
+            height: 1.5 * PdfPageFormat.inch,
+            padding: const pw.EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+            child: pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
               children: [
-                // ── LEFT COLUMN: QR Code + Tag ID below QR ──
-                pw.Container(
-                  width: qrColWidth,
-                  child: pw.Column(
-                    mainAxisAlignment: pw.MainAxisAlignment.center,
-                    crossAxisAlignment: pw.CrossAxisAlignment.center,
-                    children: [
-                      // QR Code
-                      pw.BarcodeWidget(
-                        data: product.tagId,
-                        barcode: pw.Barcode.qrCode(),
-                        width: qrSize,
-                        height: qrSize,
-                      ),
-                      pw.SizedBox(height: 1.5),
-
-                      // QR ku keela Tag ID Number
-                      pw.Text(
-                        product.tagId,
-                        style: pw.TextStyle(
-                          fontSize: 8.5,
-                          fontWeight: pw.FontWeight.bold,
-                          color: PdfColors.black,
-                        ),
-                        textAlign: pw.TextAlign.center,
-                        maxLines: 1,
-                      ),
-                    ],
+                // ── 1. STORE HEADER (Matching Photo 2: "VilakkuKadai") ──
+                pw.Padding(
+                  padding: const pw.EdgeInsets.only(left: 2, bottom: 2),
+                  child: pw.Text(
+                    storeName,
+                    style: pw.TextStyle(
+                      fontSize: 8.5,
+                      fontWeight: pw.FontWeight.bold,
+                      color: PdfColors.black,
+                    ),
                   ),
                 ),
 
-                pw.SizedBox(width: 8),
-
-                // ── RIGHT COLUMN: Product Name, Weight & Price directly underneath ──
+                // ── 2. MAIN HORIZONTAL CONTENT ROW (Matching Photo 2) ──
                 pw.Expanded(
-                  child: pw.Column(
+                  child: pw.Row(
                     crossAxisAlignment: pw.CrossAxisAlignment.start,
-                    mainAxisAlignment: pw.MainAxisAlignment.center,
                     children: [
-                      // Product Name
-                      pw.Text(
-                        product.name.trim().toUpperCase(),
-                        style: pw.TextStyle(
-                          fontSize: (weightStr.isNotEmpty) ? 9.0 : 10.0,
-                          fontWeight: pw.FontWeight.bold,
-                          color: PdfColors.black,
-                          lineSpacing: 1.0,
-                        ),
-                        maxLines: (weightStr.isNotEmpty) ? 1 : 2,
-                        overflow: pw.TextOverflow.clip,
+                      // ── LEFT COLUMN: QR Code + Tag ID underneath ──
+                      pw.Column(
+                        crossAxisAlignment: pw.CrossAxisAlignment.center,
+                        mainAxisSize: pw.MainAxisSize.min,
+                        children: [
+                          pw.BarcodeWidget(
+                            data: product.tagId,
+                            barcode: pw.Barcode.qrCode(),
+                            width: 54,
+                            height: 54,
+                          ),
+                          pw.SizedBox(height: 2),
+                          pw.Text(
+                            product.tagId,
+                            style: pw.TextStyle(
+                              fontSize: 8.5,
+                              fontWeight: pw.FontWeight.bold,
+                              color: PdfColors.black,
+                            ),
+                            textAlign: pw.TextAlign.center,
+                            maxLines: 1,
+                          ),
+                        ],
                       ),
 
-                      // Only weight if weight-based product
-                      if (weightStr.isNotEmpty) ...[
-                        pw.SizedBox(height: 1.5),
-                        pw.Text(
-                          weightStr,
-                          style: pw.TextStyle(
-                            fontSize: 7.5,
-                            fontWeight: pw.FontWeight.bold,
-                            color: PdfColors.grey800,
-                          ),
-                          maxLines: 1,
-                        ),
-                      ],
+                      pw.SizedBox(width: 8),
 
-                      pw.SizedBox(height: 3),
+                      // ── RIGHT COLUMN: Product Name, Weight & Price (Bottom Right) ──
+                      pw.Expanded(
+                        child: pw.Column(
+                          crossAxisAlignment: pw.CrossAxisAlignment.start,
+                          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                          children: [
+                            // Product Name & Weight
+                            pw.Column(
+                              crossAxisAlignment: pw.CrossAxisAlignment.start,
+                              children: [
+                                pw.Text(
+                                  product.name.trim().toUpperCase(),
+                                  style: pw.TextStyle(
+                                    fontSize: 10.0,
+                                    fontWeight: pw.FontWeight.bold,
+                                    color: PdfColors.black,
+                                    lineSpacing: 1.1,
+                                  ),
+                                  maxLines: 2,
+                                  overflow: pw.TextOverflow.clip,
+                                ),
+                                if (weightStr.isNotEmpty) ...[
+                                  pw.SizedBox(height: 2),
+                                  pw.Text(
+                                    weightStr,
+                                    style: pw.TextStyle(
+                                      fontSize: 8.5,
+                                      fontWeight: pw.FontWeight.bold,
+                                      color: PdfColors.black,
+                                    ),
+                                    maxLines: 1,
+                                  ),
+                                ],
+                              ],
+                            ),
 
-                      // Price below Product Name
-                      if (priceStr.isNotEmpty)
-                        pw.Text(
-                          '$currencySymbol$priceStr',
-                          style: pw.TextStyle(
-                            fontSize: 14.5,
-                            fontWeight: pw.FontWeight.bold,
-                            color: PdfColors.black,
-                          ),
-                          maxLines: 1,
+                            // Price (Bottom Right in Photo 2)
+                            if (priceStr.isNotEmpty)
+                              pw.Container(
+                                alignment: pw.Alignment.bottomRight,
+                                child: pw.Text(
+                                  '$currencySymbol$priceStr',
+                                  style: pw.TextStyle(
+                                    fontSize: 17.0,
+                                    fontWeight: pw.FontWeight.bold,
+                                    color: PdfColors.black,
+                                  ),
+                                  maxLines: 1,
+                                ),
+                              ),
+                          ],
                         ),
+                      ),
                     ],
                   ),
                 ),
