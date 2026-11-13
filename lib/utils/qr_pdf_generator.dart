@@ -5,25 +5,34 @@ import 'package:printing/printing.dart';
 import '../models/product.dart';
 
 class QrPdfGenerator {
-  // 2.5 inch x 1.5 inch barcode sticker label format (63.5 mm x 38.1 mm)
+  // Standard 2.5 inch x 1.0 inch barcode sticker label format (63.5 mm x 25.4 mm)
+  // Perfectly matches standard continuous roll boutique / jewelry price tags.
   static const PdfPageFormat labelPageFormat = PdfPageFormat(
-    2.5 * PdfPageFormat.inch, // 180 pt
-    1.5 * PdfPageFormat.inch, // 108 pt
+    2.5 * PdfPageFormat.inch, // 180 pt (63.5 mm width)
+    1.0 * PdfPageFormat.inch, // 72 pt (25.4 mm height)
     marginAll: 0,
   );
 
-  /// Generates and prints a 2.5" x 1.5" QR barcode label for a single product.
-  static Future<void> printProductQr(Product product) async {
-    final doc = await generateProductQrPdf(product);
+  /// Generates and prints a 2.5" x 1.0" QR barcode label for a single product.
+  static Future<void> printProductQr(
+    Product product, {
+    PdfPageFormat? format,
+  }) async {
+    final pageFormat = format ?? labelPageFormat;
+    final doc = await generateProductQrPdf(product, format: pageFormat);
     await Printing.layoutPdf(
-      onLayout: (PdfPageFormat format) async => doc.save(),
+      onLayout: (PdfPageFormat layoutFormat) async => doc.save(),
       name: 'QR_${product.tagId}',
-      format: labelPageFormat,
+      format: pageFormat,
+      dynamicLayout: false,
     );
   }
 
-  /// Generates a PDF Document with 2.5" x 1.5" barcode label.
-  static Future<pw.Document> generateProductQrPdf(Product product) async {
+  /// Generates a PDF Document with 2.5" x 1.0" barcode label.
+  static Future<pw.Document> generateProductQrPdf(
+    Product product, {
+    PdfPageFormat format = labelPageFormat,
+  }) async {
     final pdf = pw.Document();
 
     pw.Font? fontRegular;
@@ -41,23 +50,28 @@ class QrPdfGenerator {
     final priceStr = _formatPrice(product);
     final weightStr = _getWeightString(product);
 
+    // Responsive sizing based on page height (72 pt for 1.0" label)
+    final qrSize = (format.height <= 80) ? 46.0 : 60.0;
+    final qrColWidth = (format.height <= 80) ? 56.0 : 70.0;
+
     pdf.addPage(
       pw.Page(
-        pageFormat: labelPageFormat,
+        pageFormat: format,
+        orientation: pw.PageOrientation.landscape,
         theme: fontRegular != null && fontBold != null
             ? pw.ThemeData.withFont(base: fontRegular, bold: fontBold)
             : pw.ThemeData.base(),
         build: (pw.Context context) {
           return pw.Container(
-            width: 2.5 * PdfPageFormat.inch,
-            height: 1.5 * PdfPageFormat.inch,
-            padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            width: format.width,
+            height: format.height,
+            padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 3),
             child: pw.Row(
               crossAxisAlignment: pw.CrossAxisAlignment.center,
               children: [
                 // ── LEFT COLUMN: QR Code + Tag ID below QR ──
                 pw.Container(
-                  width: 76,
+                  width: qrColWidth,
                   child: pw.Column(
                     mainAxisAlignment: pw.MainAxisAlignment.center,
                     crossAxisAlignment: pw.CrossAxisAlignment.center,
@@ -66,16 +80,16 @@ class QrPdfGenerator {
                       pw.BarcodeWidget(
                         data: product.tagId,
                         barcode: pw.Barcode.qrCode(),
-                        width: 66,
-                        height: 66,
+                        width: qrSize,
+                        height: qrSize,
                       ),
-                      pw.SizedBox(height: 3),
+                      pw.SizedBox(height: 1.5),
 
                       // QR ku keela Tag ID Number
                       pw.Text(
                         product.tagId,
                         style: pw.TextStyle(
-                          fontSize: 9,
+                          fontSize: 8.5,
                           fontWeight: pw.FontWeight.bold,
                           color: PdfColors.black,
                         ),
@@ -86,9 +100,9 @@ class QrPdfGenerator {
                   ),
                 ),
 
-                pw.SizedBox(width: 10),
+                pw.SizedBox(width: 8),
 
-                // ── RIGHT COLUMN: Product Name & Price directly underneath ──
+                // ── RIGHT COLUMN: Product Name, Weight & Price directly underneath ──
                 pw.Expanded(
                   child: pw.Column(
                     crossAxisAlignment: pw.CrossAxisAlignment.start,
@@ -98,22 +112,22 @@ class QrPdfGenerator {
                       pw.Text(
                         product.name.trim().toUpperCase(),
                         style: pw.TextStyle(
-                          fontSize: 11,
+                          fontSize: (weightStr.isNotEmpty) ? 9.0 : 10.0,
                           fontWeight: pw.FontWeight.bold,
                           color: PdfColors.black,
-                          lineSpacing: 1.1,
+                          lineSpacing: 1.0,
                         ),
-                        maxLines: 2,
+                        maxLines: (weightStr.isNotEmpty) ? 1 : 2,
                         overflow: pw.TextOverflow.clip,
                       ),
 
                       // Only weight if weight-based product
                       if (weightStr.isNotEmpty) ...[
-                        pw.SizedBox(height: 2),
+                        pw.SizedBox(height: 1.5),
                         pw.Text(
                           weightStr,
                           style: pw.TextStyle(
-                            fontSize: 8.5,
+                            fontSize: 7.5,
                             fontWeight: pw.FontWeight.bold,
                             color: PdfColors.grey800,
                           ),
@@ -121,14 +135,14 @@ class QrPdfGenerator {
                         ),
                       ],
 
-                      pw.SizedBox(height: 6),
+                      pw.SizedBox(height: 3),
 
                       // Price below Product Name
                       if (priceStr.isNotEmpty)
                         pw.Text(
                           '$currencySymbol$priceStr',
                           style: pw.TextStyle(
-                            fontSize: 18,
+                            fontSize: 14.5,
                             fontWeight: pw.FontWeight.bold,
                             color: PdfColors.black,
                           ),
