@@ -1,119 +1,263 @@
+import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/product.dart';
 
-class QrPdfGenerator {
-  // ─────────────────────────────────────────────────────────────
-  // PRINTER ORIENTATION SETTINGS  (change only these if needed)
-  // ─────────────────────────────────────────────────────────────
+/// fillRow       : 3 tags per row (one per sticker column). Fewer pages, no waste.
+/// singleColumn  : one tag per page, only in [LabelRollConfig.startColumn].
+enum LabelPrintMode { fillRow, singleColumn }
 
-  /// true  -> PDF page is PORTRAIT (15 x 25 mm), same as the printer's paper
-  ///          definition. The landscape tag design is rotated inside the page,
-  ///          so the printer/driver has nothing to rotate. (Fixes sideways print)
-  /// false -> PDF page is LANDSCAPE (25 x 15 mm). Use this only if the printer
-  ///          driver paper is set to landscape / 25 x 15 mm.
-  static const bool printerPaperIsPortrait = true;
+/// Everything that can differ between rolls / printers. The client can change
+/// these from the settings dialog (label_settings_dialog.dart), no code change.
+class LabelRollConfig {
+  double labelWidthMm; // one sticker
+  double labelHeightMm;
+  int columns; // stickers across the roll
+  double hGapMm; // gap between stickers, left-right
+  double vGapMm; // gap between rows, top-bottom
+  double sideMarginMm; // liner margin on the left AND right of the 3 stickers
+  int rotationQuarterTurns; // 0, 1, 2, 3  (0, 90, 180, 270 degrees)
+  double offsetXmm; // nudge everything right (+) / left (-)
+  double offsetYmm; // nudge everything down (+) / up (-)
+  int startColumn; // 1..columns, used in singleColumn mode
+  LabelPrintMode mode;
 
-  /// Direction of rotation when [printerPaperIsPortrait] is true.
-  /// 3 = -90 degrees, 1 = +90 degrees.
-  /// Print once. If the text comes out upside down, change 3 -> 1 (or 1 -> 3).
-  static const int rotationQuarterTurns = 3;
+  LabelRollConfig({
+    this.labelWidthMm = 34,
+    this.labelHeightMm = 21,
+    this.columns = 3,
+    this.hGapMm = 1,
+    this.vGapMm = 3,
+    this.sideMarginMm = 2,
+    this.rotationQuarterTurns = 0,
+    this.offsetXmm = 0,
+    this.offsetYmm = 0,
+    this.startColumn = 1,
+    this.mode = LabelPrintMode.fillRow,
+  });
 
-  // ─────────────────────────────────────────────────────────────
-  // PAGE FORMATS
-  // ─────────────────────────────────────────────────────────────
+  Map<String, dynamic> toJson() => {
+        'labelWidthMm': labelWidthMm,
+        'labelHeightMm': labelHeightMm,
+        'columns': columns,
+        'hGapMm': hGapMm,
+        'vGapMm': vGapMm,
+        'sideMarginMm': sideMarginMm,
+        'rotationQuarterTurns': rotationQuarterTurns,
+        'offsetXmm': offsetXmm,
+        'offsetYmm': offsetYmm,
+        'startColumn': startColumn,
+        'mode': mode.name,
+      };
 
-  // The DESIGN of the tag is always 25 mm wide x 15 mm tall (landscape).
-  static const double _tagWidth = 2.5 * PdfPageFormat.cm;
-  static const double _tagHeight = 1.5 * PdfPageFormat.cm;
-
-  // The PAGE sent to the printer. Portrait pages are 15 x 25 mm.
-  static const PdfPageFormat labelPageFormat = printerPaperIsPortrait
-      ? PdfPageFormat(_tagHeight, _tagWidth, marginAll: 0) // 15 x 25 mm
-      : PdfPageFormat(_tagWidth, _tagHeight, marginAll: 0); // 25 x 15 mm
-
-  /// Generates and prints a QR barcode label for a single product.
-  static Future<void> printProductQr(Product product) async {
-    final doc = await generateProductQrPdf(product);
-    await Printing.layoutPdf(
-      onLayout: (PdfPageFormat layoutFormat) async => doc.save(),
-      name: 'QR_${product.tagId}',
-      format: labelPageFormat,
-      dynamicLayout: false,
+  factory LabelRollConfig.fromJson(Map<String, dynamic> j) {
+    final d = LabelRollConfig();
+    double dbl(String k, double def) => (j[k] as num?)?.toDouble() ?? def;
+    int integer(String k, int def) => (j[k] as num?)?.toInt() ?? def;
+    return LabelRollConfig(
+      labelWidthMm: dbl('labelWidthMm', d.labelWidthMm),
+      labelHeightMm: dbl('labelHeightMm', d.labelHeightMm),
+      columns: integer('columns', d.columns).clamp(1, 6),
+      hGapMm: dbl('hGapMm', d.hGapMm),
+      vGapMm: dbl('vGapMm', d.vGapMm),
+      sideMarginMm: dbl('sideMarginMm', d.sideMarginMm),
+      rotationQuarterTurns: integer('rotationQuarterTurns', 0).clamp(0, 3),
+      offsetXmm: dbl('offsetXmm', 0),
+      offsetYmm: dbl('offsetYmm', 0),
+      startColumn: integer('startColumn', 1).clamp(1, 6),
+      mode: j['mode'] == 'singleColumn'
+          ? LabelPrintMode.singleColumn
+          : LabelPrintMode.fillRow,
     );
   }
+}
 
-  /// Generates and prints bulk QR labels (N products x copies = total stickers).
+class QrPdfGenerator {
+  static const double _mm = PdfPageFormat.mm;
+  static const String _prefsKey = 'label_roll_config_v1';
+
+  static LabelRollConfig config = LabelRollConfig();
+  static bool _loaded = false;
+
+  // ─────────────────────────── CONFIG STORAGE ───────────────────────────
+
+  static Future<void> loadConfig() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_prefsKey);
+      if (raw != null) {
+        config = LabelRollConfig.fromJson(
+          jsonDecode(raw) as Map<String, dynamic>,
+        );
+      }
+    } catch (e) {
+      debugPrint('[QrPdfGenerator] Could not load label config: $e');
+    }
+    _loaded = true;
+  }
+
+  static Future<void> saveConfig(LabelRollConfig newConfig) async {
+    config = newConfig;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_prefsKey, jsonEncode(newConfig.toJson()));
+    } catch (e) {
+      debugPrint('[QrPdfGenerator] Could not save label config: $e');
+    }
+  }
+
+  static Future<void> _ensureLoaded() async {
+    if (!_loaded) await loadConfig();
+  }
+
+  // ─────────────────────────── PAGE SIZE ───────────────────────────
+  // The PDF page is ONE ROW of stickers (3 across) and nothing else, so it can
+  // match the printer driver's custom paper size exactly:
+  //   width  = 2*sideMargin + 3*labelWidth + 2*hGap   (default 108 mm)
+  //   height = labelHeight + vGap                     (default 24 mm)
+
+  static double get _rowW =>
+      (config.sideMarginMm * 2 +
+          config.columns * config.labelWidthMm +
+          (config.columns - 1) * config.hGapMm) *
+      _mm;
+
+  static double get _rowH => (config.labelHeightMm + config.vGapMm) * _mm;
+
+  static bool get _swapPage => config.rotationQuarterTurns.isOdd;
+
+  /// Size of the PDF page sent to the printer.
+  /// Rotation 90/270 swaps width and height (portrait paper in the driver).
+  static PdfPageFormat get labelPageFormat => _swapPage
+      ? PdfPageFormat(_rowH, _rowW, marginAll: 0)
+      : PdfPageFormat(_rowW, _rowH, marginAll: 0);
+
+  // ─────────────────────────── PRINT ENTRY POINTS ───────────────────────────
+
+  /// Prints one tag (in the start column).
+  static Future<void> printProductQr(Product product) async {
+    await _ensureLoaded();
+    final doc = await generateProductQrPdf(product);
+    await _send(doc, 'QR_${product.tagId}');
+  }
+
+  /// Prints N products x copies. In fillRow mode 3 stickers share one row.
   static Future<void> printBulkProductQr(
     List<Product> products, {
     int copies = 1,
   }) async {
     if (products.isEmpty) return;
+    await _ensureLoaded();
     final doc = await generateBulkProductQrPdf(products, copies: copies);
+    await _send(doc, 'Bulk_QR_Tags_${products.length}');
+  }
+
+  /// Prints 2 rows of empty bordered cells with column numbers and a
+  /// "TOP / FEED" marker. Use it to check: which sticker each cell lands on,
+  /// whether stickers are skipped, and which way the content is rotated.
+  static Future<void> printCalibrationTest() async {
+    await _ensureLoaded();
+    final fonts = await _loadFonts();
+    final pdf = pw.Document();
+    for (int r = 0; r < 2; r++) {
+      final cells = List<pw.Widget?>.generate(
+        config.columns,
+        (i) => _calibrationCell(i + 1, r + 1),
+      );
+      pdf.addPage(_rowPage(cells, fonts.theme));
+    }
+    await _send(pdf, 'Label_Calibration_Test');
+  }
+
+  static Future<void> _send(pw.Document doc, String name) async {
+    final f = labelPageFormat;
+    debugPrint(
+      '[QrPdfGenerator] page ${(f.width / _mm).toStringAsFixed(1)} x '
+      '${(f.height / _mm).toStringAsFixed(1)} mm | config ${jsonEncode(config.toJson())}',
+    );
     await Printing.layoutPdf(
       onLayout: (PdfPageFormat layoutFormat) async => doc.save(),
-      name: 'Bulk_QR_Tags_${products.length}',
-      format: labelPageFormat,
+      name: name,
+      format: f,
       dynamicLayout: false,
     );
   }
 
-  /// PDF with a single label page.
+  // ─────────────────────────── PDF BUILDERS ───────────────────────────
+
   static Future<pw.Document> generateProductQrPdf(Product product) async {
-    final pdf = pw.Document();
-    final fonts = await _loadFonts();
-    pdf.addPage(_buildLabelPage(product, fonts));
-    return pdf;
+    return _buildDoc([product], forceSingle: true);
   }
 
-  /// Multi-page PDF. Each label is its own page.
   static Future<pw.Document> generateBulkProductQrPdf(
     List<Product> products, {
     int copies = 1,
   }) async {
+    final safeCopies = copies < 1 ? 1 : copies;
+    final expanded = <Product>[
+      for (final p in products)
+        for (int i = 0; i < safeCopies; i++) p,
+    ];
+    return _buildDoc(expanded);
+  }
+
+  static Future<pw.Document> _buildDoc(
+    List<Product> items, {
+    bool forceSingle = false,
+  }) async {
+    await _ensureLoaded();
     final pdf = pw.Document();
     final fonts = await _loadFonts();
-    final safeCopies = copies < 1 ? 1 : copies;
+    final cols = config.columns;
+    final fill = config.mode == LabelPrintMode.fillRow && !forceSingle;
 
-    for (final product in products) {
-      for (int i = 0; i < safeCopies; i++) {
-        pdf.addPage(_buildLabelPage(product, fonts));
+    if (fill) {
+      for (int i = 0; i < items.length; i += cols) {
+        final chunk = items.skip(i).take(cols).toList();
+        final cells = <pw.Widget?>[
+          for (final p in chunk) buildTagWidget(p, fonts.currencySymbol),
+        ];
+        pdf.addPage(_rowPage(cells, fonts.theme));
+      }
+    } else {
+      final col = (config.startColumn.clamp(1, cols)) - 1;
+      for (final p in items) {
+        final cells = List<pw.Widget?>.filled(cols, null);
+        cells[col] = buildTagWidget(p, fonts.currencySymbol);
+        pdf.addPage(_rowPage(cells, fonts.theme));
       }
     }
     return pdf;
   }
 
-  /// Builds ONE page. The page shape matches the printer paper, and the
-  /// landscape tag is rotated inside it when the printer paper is portrait.
-  static pw.Page _buildLabelPage(Product product, _LoadedFonts fonts) {
+  /// One PDF page = one row of stickers. Rotates the whole row when needed.
+  static pw.Page _rowPage(List<pw.Widget?> cells, pw.ThemeData theme) {
     return pw.Page(
       pageFormat: labelPageFormat,
-      // No `orientation:` here. The page format already has the right shape.
-      theme: fonts.theme,
+      margin: pw.EdgeInsets.zero,
+      theme: theme,
       build: (pw.Context context) {
-        final tag = buildTagWidget(product, fonts.currencySymbol);
+        final row = _buildRow(cells);
+        final q = config.rotationQuarterTurns % 4;
+        if (q == 0) return row;
 
-        if (!printerPaperIsPortrait) {
-          return tag;
-        }
-
-        // OverflowBox gives the tag its REAL size (25 x 15 mm) instead of the
-        // portrait page's constraints (15 mm wide). Without it the tag gets
-        // squeezed to 15 mm width and the name/price column is cut off.
+        // OverflowBox gives the row its REAL size, so the rotated content is
+        // not squeezed by the (swapped) page constraints.
         return pw.Center(
           child: pw.Transform.rotateBox(
-            angle: rotationQuarterTurns * math.pi / 2,
+            angle: q * math.pi / 2,
             child: pw.OverflowBox(
-              minWidth: _tagWidth,
-              maxWidth: _tagWidth,
-              minHeight: _tagHeight,
-              maxHeight: _tagHeight,
+              minWidth: _rowW,
+              maxWidth: _rowW,
+              minHeight: _rowH,
+              maxHeight: _rowH,
               alignment: pw.Alignment.center,
-              child: tag,
+              child: row,
             ),
           ),
         );
@@ -121,23 +265,61 @@ class QrPdfGenerator {
     );
   }
 
-  /// Tag design (always landscape 25 x 15 mm):
-  /// Left: QR Code + Tag ID below QR.
-  /// Right: Item Name & Price (and weight if applicable).
+  /// Places each sticker at its exact x position in the row.
+  static pw.Widget _buildRow(List<pw.Widget?> cells) {
+    final c = config;
+    final cellW = c.labelWidthMm * _mm;
+    final cellH = c.labelHeightMm * _mm;
+    final children = <pw.Widget>[];
+
+    for (int i = 0; i < c.columns && i < cells.length; i++) {
+      final cell = cells[i];
+      if (cell == null) continue;
+      final left =
+          (c.sideMarginMm + i * (c.labelWidthMm + c.hGapMm) + c.offsetXmm) *
+              _mm;
+      final top = c.offsetYmm * _mm;
+      children.add(
+        pw.Positioned(
+          left: left,
+          top: top,
+          child: pw.SizedBox(width: cellW, height: cellH, child: cell),
+        ),
+      );
+    }
+
+    return pw.SizedBox(
+      width: _rowW,
+      height: _rowH,
+      child: pw.Stack(overflow: pw.Overflow.visible, children: children),
+    );
+  }
+
+  // ─────────────────────────── TAG DESIGN (34 x 21 mm) ───────────────────────────
+  // Left : QR code, Tag ID below it.
+  // Right: Item name (max 3 lines), weight (if weight-based), price at bottom.
+
   static pw.Widget buildTagWidget(Product product, String currencySymbol) {
+    final c = config;
+    final w = c.labelWidthMm * _mm;
+    final h = c.labelHeightMm * _mm;
+    final pad = 1.0 * _mm;
+    final qrSize = math.min(h * 0.66, w * 0.43);
+    final leftW = qrSize + 1.0 * _mm;
+
     final priceStr = _formatPrice(product);
     final weightStr = _getWeightString(product);
 
     return pw.Container(
-      width: _tagWidth,
-      height: _tagHeight,
-      padding: const pw.EdgeInsets.symmetric(horizontal: 2.0, vertical: 1.5),
+      width: w,
+      height: h,
+      padding: pw.EdgeInsets.all(pad),
       child: pw.Row(
-        crossAxisAlignment: pw.CrossAxisAlignment.center,
+        crossAxisAlignment: pw.CrossAxisAlignment.stretch,
         children: [
-          // ── LEFT COLUMN: QR Code + Tag ID below it ──
+          // LEFT: QR + Tag ID
           pw.Container(
-            width: 30.0,
+            width: leftW,
             child: pw.Column(
               mainAxisAlignment: pw.MainAxisAlignment.center,
               crossAxisAlignment: pw.CrossAxisAlignment.center,
@@ -145,14 +327,14 @@ class QrPdfGenerator {
                 pw.BarcodeWidget(
                   data: product.tagId,
                   barcode: pw.Barcode.qrCode(),
-                  width: 27.0,
-                  height: 27.0,
+                  width: qrSize,
+                  height: qrSize,
                 ),
                 pw.SizedBox(height: 1.0),
                 pw.Text(
                   product.tagId,
                   style: pw.TextStyle(
-                    fontSize: 5.5,
+                    fontSize: 6.0,
                     fontWeight: pw.FontWeight.bold,
                     color: PdfColors.black,
                   ),
@@ -163,9 +345,9 @@ class QrPdfGenerator {
             ),
           ),
 
-          pw.SizedBox(width: 3.0),
+          pw.SizedBox(width: 1.5 * _mm),
 
-          // ── RIGHT COLUMN: Item Name & Price ──
+          // RIGHT: name, weight, price
           pw.Expanded(
             child: pw.Column(
               crossAxisAlignment: pw.CrossAxisAlignment.start,
@@ -177,20 +359,20 @@ class QrPdfGenerator {
                     pw.Text(
                       product.name.trim().toUpperCase(),
                       style: pw.TextStyle(
-                        fontSize: 6.5,
+                        fontSize: 7.0,
                         fontWeight: pw.FontWeight.bold,
                         color: PdfColors.black,
-                        lineSpacing: 1.0,
+                        lineSpacing: 0.5,
                       ),
-                      maxLines: 2,
+                      maxLines: 3,
                       overflow: pw.TextOverflow.clip,
                     ),
                     if (weightStr.isNotEmpty) ...[
-                      pw.SizedBox(height: 0.8),
+                      pw.SizedBox(height: 1.0),
                       pw.Text(
                         weightStr,
                         style: pw.TextStyle(
-                          fontSize: 4.8,
+                          fontSize: 5.5,
                           fontWeight: pw.FontWeight.bold,
                           color: PdfColors.grey800,
                         ),
@@ -202,14 +384,18 @@ class QrPdfGenerator {
                 if (priceStr.isNotEmpty)
                   pw.Container(
                     alignment: pw.Alignment.bottomRight,
-                    child: pw.Text(
-                      '$currencySymbol$priceStr',
-                      style: pw.TextStyle(
-                        fontSize: 10.0,
-                        fontWeight: pw.FontWeight.bold,
-                        color: PdfColors.black,
+                    child: pw.FittedBox(
+                      fit: pw.BoxFit.scaleDown,
+                      alignment: pw.Alignment.bottomRight,
+                      child: pw.Text(
+                        '$currencySymbol$priceStr',
+                        style: pw.TextStyle(
+                          fontSize: 12.0,
+                          fontWeight: pw.FontWeight.bold,
+                          color: PdfColors.black,
+                        ),
+                        maxLines: 1,
                       ),
-                      maxLines: 1,
                     ),
                   ),
               ],
@@ -220,7 +406,36 @@ class QrPdfGenerator {
     );
   }
 
-  /// Loads fonts safely with fallback
+  static pw.Widget _calibrationCell(int column, int row) {
+    return pw.Container(
+      decoration: pw.BoxDecoration(
+        border: pw.Border.all(color: PdfColors.black, width: 0.8),
+      ),
+      child: pw.Column(
+        mainAxisAlignment: pw.MainAxisAlignment.center,
+        crossAxisAlignment: pw.CrossAxisAlignment.center,
+        children: [
+          pw.Text(
+            '^ TOP / FEED',
+            style: pw.TextStyle(fontSize: 6, fontWeight: pw.FontWeight.bold),
+          ),
+          pw.SizedBox(height: 2),
+          pw.Text(
+            'COL $column',
+            style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold),
+          ),
+          pw.Text('ROW $row', style: const pw.TextStyle(fontSize: 6)),
+          pw.Text(
+            '${config.labelWidthMm.toStringAsFixed(0)} x ${config.labelHeightMm.toStringAsFixed(0)} mm',
+            style: const pw.TextStyle(fontSize: 5),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ─────────────────────────── HELPERS (unchanged logic) ───────────────────────────
+
   static Future<_LoadedFonts> _loadFonts() async {
     pw.Font? fontRegular;
     pw.Font? fontBold;
@@ -240,7 +455,6 @@ class QrPdfGenerator {
     return _LoadedFonts(theme: theme, currencySymbol: currencySymbol);
   }
 
-  /// Calculates the best price to display for the label
   static String _formatPrice(Product product) {
     double price = 0.0;
     if (product.finalPrice > 0) {
@@ -265,7 +479,6 @@ class QrPdfGenerator {
     return price.toStringAsFixed(2);
   }
 
-  /// Only extracts weight for weight-based products
   static String _getWeightString(Product product) {
     if (product.pricingType == 'Weight-Based') {
       final weight = product.netWeight > 0 ? product.netWeight : product.grossWeight;

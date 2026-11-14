@@ -12,7 +12,7 @@ import '../utils/qr_pdf_generator.dart';
 import '../dialogs/bulk_upload_dialog.dart';
 import '../dialogs/bulk_tag_print_dialog.dart';
 import '../widgets/searchable_dropdown.dart';
-
+import '../utils/label_settings_dialog.dart';
 enum ProductAction {
   row,
   qr,
@@ -618,6 +618,12 @@ class InventoryViewState extends State<InventoryView> {
                                     label: const Text('Add Product', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                                   ),
                                 ),
+                                const SizedBox(width: 8),
+IconButton(
+  icon: const Icon(Icons.print),
+  tooltip: 'Label printer settings',
+  onPressed: () => showLabelSettingsDialog(context),
+),
                               ],
                             ],
                           ),
