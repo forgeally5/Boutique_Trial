@@ -26,9 +26,9 @@ class _BulkTagPrintDialogState extends State<BulkTagPrintDialog> {
     super.initState();
     _copiesMap = {
       for (final p in widget.selectedProducts)
-        p.tagId: p.pricingType == 'Weight-Based'
-            ? 1
-            : (p.sellableQuantity > 0 ? p.sellableQuantity : 1),
+        p.tagId: p.sellableQuantity > 0
+            ? p.sellableQuantity
+            : (p.quantity > 0 ? p.quantity : 1),
     };
   }
 
@@ -325,14 +325,12 @@ class _BulkTagPrintDialogState extends State<BulkTagPrintDialog> {
                         fontSize: 10, color: BoutiqueColors.textSecondary),
                   ),
                 ],
-                if (product.pricingType != 'Weight-Based') ...[
-                  const SizedBox(height: 2),
-                  Text(
-                    'Stock: ${product.sellableQuantity} ${product.unit}',
-                    style: const TextStyle(
-                        fontSize: 10, color: BoutiqueColors.textSecondary),
-                  ),
-                ],
+                const SizedBox(height: 2),
+                Text(
+                  'Stock: ${product.sellableQuantity > 0 ? product.sellableQuantity : product.quantity} ${product.unit.isNotEmpty ? product.unit : (product.pricingType == 'Weight-Based' ? 'piece' : 'pcs')}',
+                  style: const TextStyle(
+                      fontSize: 10, color: BoutiqueColors.textSecondary),
+                ),
               ],
             ),
           ),
