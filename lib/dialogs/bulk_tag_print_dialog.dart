@@ -17,56 +17,50 @@ class BulkTagPrintDialog extends StatefulWidget {
 }
 
 class _BulkTagPrintDialogState extends State<BulkTagPrintDialog> {
-  int _copies = 1;
+  // Per-product copy count — defaults to each product's current stock quantity
+  late final Map<String, int> _copiesMap;
   bool _isPrinting = false;
-  late final TextEditingController _copiesCtrl;
 
   @override
   void initState() {
     super.initState();
-    _copiesCtrl = TextEditingController(text: '1');
+    _copiesMap = {
+      for (final p in widget.selectedProducts)
+        p.tagId: p.pricingType == 'Weight-Based'
+            ? 1
+            : (p.sellableQuantity > 0 ? p.sellableQuantity : 1),
+    };
   }
 
-  @override
-  void dispose() {
-    _copiesCtrl.dispose();
-    super.dispose();
-  }
+  int _copiesFor(Product p) => _copiesMap[p.tagId] ?? 1;
 
-  void _onCopiesChanged(String val) {
-    final parsed = int.tryParse(val.trim());
-    if (parsed != null && parsed > 0 && parsed <= 999) {
-      setState(() => _copies = parsed);
-    }
-  }
-
-  void _incrementCopies() {
+  void _increment(Product p) {
     setState(() {
-      _copies++;
-      _copiesCtrl.text = _copies.toString();
+      _copiesMap[p.tagId] = (_copiesMap[p.tagId] ?? 1) + 1;
     });
   }
 
-  void _decrementCopies() {
-    if (_copies > 1) {
-      setState(() {
-        _copies--;
-        _copiesCtrl.text = _copies.toString();
-      });
+  void _decrement(Product p) {
+    final cur = _copiesMap[p.tagId] ?? 1;
+    if (cur > 1) {
+      setState(() => _copiesMap[p.tagId] = cur - 1);
     }
   }
+
+  int get _totalStickers =>
+      widget.selectedProducts.fold(0, (sum, p) => sum + _copiesFor(p));
 
   Future<void> _handlePrint() async {
     if (_isPrinting) return;
     setState(() => _isPrinting = true);
     try {
-      await QrPdfGenerator.printBulkProductQr(
-        widget.selectedProducts,
-        copies: _copies,
-      );
-      if (mounted) {
-        Navigator.of(context).pop();
-      }
+      // Build expanded list: each product repeated by its copy count
+      final expanded = <Product>[
+        for (final p in widget.selectedProducts)
+          for (int i = 0; i < _copiesFor(p); i++) p,
+      ];
+      await QrPdfGenerator.printBulkProductQr(expanded, copies: 1);
+      if (mounted) Navigator.of(context).pop();
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -74,28 +68,26 @@ class _BulkTagPrintDialogState extends State<BulkTagPrintDialog> {
         );
       }
     } finally {
-      if (mounted) {
-        setState(() => _isPrinting = false);
-      }
+      if (mounted) setState(() => _isPrinting = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final totalStickers = widget.selectedProducts.length * _copies;
+    final total = _totalStickers;
 
     return Dialog(
       backgroundColor: BoutiqueColors.bgCard,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 680, maxHeight: 680),
+        constraints: const BoxConstraints(maxWidth: 720, maxHeight: 720),
         child: Padding(
           padding: const EdgeInsets.all(24),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // ── Title & Close Button ──
+              // ── Title & Close ──
               Row(
                 children: [
                   Container(
@@ -104,7 +96,8 @@ class _BulkTagPrintDialogState extends State<BulkTagPrintDialog> {
                       color: BoutiqueColors.accentSoft,
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    child: const Icon(Icons.print_rounded, color: BoutiqueColors.accent, size: 22),
+                    child: const Icon(Icons.print_rounded,
+                        color: BoutiqueColors.accent, size: 22),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
@@ -112,7 +105,7 @@ class _BulkTagPrintDialogState extends State<BulkTagPrintDialog> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         const Text(
-                          'Bulk Tag Print Preview',
+                          'Bulk Tag Print',
                           style: TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.bold,
@@ -120,101 +113,69 @@ class _BulkTagPrintDialogState extends State<BulkTagPrintDialog> {
                           ),
                         ),
                         Text(
-                          '${widget.selectedProducts.length} products selected • $totalStickers total stickers ($totalStickers pages)',
+                          '${widget.selectedProducts.length} products • $total total tags',
                           style: const TextStyle(
-                            fontSize: 12,
-                            color: BoutiqueColors.textSecondary,
-                          ),
+                              fontSize: 12, color: BoutiqueColors.textSecondary),
                         ),
                       ],
                     ),
                   ),
                   IconButton(
-                    icon: const Icon(Icons.close_rounded, color: BoutiqueColors.textSecondary),
+                    icon: const Icon(Icons.close_rounded,
+                        color: BoutiqueColors.textSecondary),
                     onPressed: () => Navigator.of(context).pop(),
                   ),
                 ],
               ),
 
-              const SizedBox(height: 16),
+              const SizedBox(height: 12),
               const Divider(height: 1, color: BoutiqueColors.borderLight),
-              const SizedBox(height: 16),
+              const SizedBox(height: 4),
 
-              // ── Copies Per Tag Selector ──
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                decoration: BoxDecoration(
-                  color: BoutiqueColors.bgSubtle,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: BoutiqueColors.borderLight),
-                ),
+              // ── Column header ──
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
                 child: Row(
-                  children: [
-                    const Icon(Icons.copy_rounded, size: 18, color: BoutiqueColors.accent),
-                    const SizedBox(width: 10),
-                    const Text(
-                      'Copies per tag:',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.bold,
-                        color: BoutiqueColors.textPrimary,
+                  children: const [
+                    SizedBox(width: 64),
+                    Expanded(
+                      child: Text(
+                        'Product',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: BoutiqueColors.textSecondary,
+                        ),
                       ),
                     ),
-                    const Spacer(),
-                    Container(
-                      decoration: BoxDecoration(
-                        color: BoutiqueColors.bgCard,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: BoutiqueColors.borderLight),
+                    SizedBox(width: 100,
+                      child: Text(
+                        'Price',
+                        textAlign: TextAlign.right,
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: BoutiqueColors.textSecondary,
+                        ),
                       ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          IconButton(
-                            icon: const Icon(Icons.remove_rounded, size: 16),
-                            visualDensity: VisualDensity.compact,
-                            onPressed: _copies > 1 ? _decrementCopies : null,
-                          ),
-                          SizedBox(
-                            width: 44,
-                            child: TextField(
-                              controller: _copiesCtrl,
-                              keyboardType: TextInputType.number,
-                              textAlign: TextAlign.center,
-                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                              decoration: const InputDecoration(
-                                isDense: true,
-                                border: InputBorder.none,
-                                contentPadding: EdgeInsets.symmetric(vertical: 6),
-                              ),
-                              onChanged: _onCopiesChanged,
-                            ),
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.add_rounded, size: 16),
-                            visualDensity: VisualDensity.compact,
-                            onPressed: _incrementCopies,
-                          ),
-                        ],
+                    ),
+                    SizedBox(width: 12),
+                    SizedBox(width: 110,
+                      child: Text(
+                        'Copies',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: BoutiqueColors.textSecondary,
+                        ),
                       ),
                     ),
                   ],
                 ),
               ),
 
-              const SizedBox(height: 14),
-
-              // ── Scrollable Tag Previews (Horizontal 2.5cm x 1.5cm Aspect Ratio) ──
-              const Text(
-                'Tag Preview (2.5 cm × 1.5 cm horizontal stickers):',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                  color: BoutiqueColors.textSecondary,
-                ),
-              ),
-              const SizedBox(height: 8),
-
+              // ── Product list ──
               Expanded(
                 child: Container(
                   decoration: BoxDecoration(
@@ -223,12 +184,12 @@ class _BulkTagPrintDialogState extends State<BulkTagPrintDialog> {
                     border: Border.all(color: BoutiqueColors.borderLight),
                   ),
                   child: ListView.separated(
-                    padding: const EdgeInsets.all(12),
+                    padding: const EdgeInsets.all(10),
                     itemCount: widget.selectedProducts.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 10),
+                    separatorBuilder: (_, __) => const SizedBox(height: 8),
                     itemBuilder: (context, index) {
                       final product = widget.selectedProducts[index];
-                      return _buildTagPreviewCard(product);
+                      return _buildProductRow(product);
                     },
                   ),
                 ),
@@ -236,18 +197,22 @@ class _BulkTagPrintDialogState extends State<BulkTagPrintDialog> {
 
               const SizedBox(height: 16),
 
-              // ── Bottom Action Buttons ──
+              // ── Bottom actions ──
               Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
                   OutlinedButton(
-                    onPressed: _isPrinting ? null : () => Navigator.of(context).pop(),
+                    onPressed:
+                        _isPrinting ? null : () => Navigator.of(context).pop(),
                     style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 20, vertical: 12),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8)),
                       side: const BorderSide(color: BoutiqueColors.borderLight),
                     ),
-                    child: const Text('Cancel', style: TextStyle(color: BoutiqueColors.textSecondary)),
+                    child: const Text('Cancel',
+                        style: TextStyle(color: BoutiqueColors.textSecondary)),
                   ),
                   const SizedBox(width: 12),
                   ElevatedButton.icon(
@@ -256,18 +221,23 @@ class _BulkTagPrintDialogState extends State<BulkTagPrintDialog> {
                         ? const SizedBox(
                             width: 16,
                             height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                            child: CircularProgressIndicator(
+                                strokeWidth: 2, color: Colors.white),
                           )
                         : const Icon(Icons.print_rounded, size: 18),
                     label: Text(
-                      _isPrinting ? 'Preparing Tags...' : 'Print $totalStickers Tags',
+                      _isPrinting
+                          ? 'Preparing Tags...'
+                          : 'Print $total Tags',
                       style: const TextStyle(fontWeight: FontWeight.bold),
                     ),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: BoutiqueColors.accent,
                       foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 24, vertical: 14),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8)),
                     ),
                   ),
                 ],
@@ -279,9 +249,14 @@ class _BulkTagPrintDialogState extends State<BulkTagPrintDialog> {
     );
   }
 
-  /// Builds a visual preview card matching the 2.5cm x 1.5cm horizontal tag format
-  Widget _buildTagPreviewCard(Product product) {
-    final priceStr = _formatPrice(product);
+  Widget _buildProductRow(Product product) {
+    final copies = _copiesFor(product);
+    final hasDiscount = product.finalPrice > 0 &&
+        product.sellingPrice > 0 &&
+        product.finalPrice < product.sellingPrice;
+    final basePrice = product.sellingPrice > 0
+        ? product.sellingPrice
+        : (product.mrp > 0 ? product.mrp : 0.0);
     final weightStr = _getWeightString(product);
 
     return Container(
@@ -300,13 +275,13 @@ class _BulkTagPrintDialogState extends State<BulkTagPrintDialog> {
       ),
       child: Row(
         children: [
-          // Left: QR Code + Tag ID underneath
+          // QR + Tag ID
           Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               SizedBox(
-                width: 48,
-                height: 48,
+                width: 44,
+                height: 44,
                 child: QrImageView(
                   data: product.tagId,
                   version: QrVersions.auto,
@@ -317,16 +292,16 @@ class _BulkTagPrintDialogState extends State<BulkTagPrintDialog> {
               Text(
                 product.tagId,
                 style: const TextStyle(
-                  fontSize: 10,
+                  fontSize: 9,
                   fontWeight: FontWeight.bold,
                   color: BoutiqueColors.accent,
                 ),
               ),
             ],
           ),
-          const SizedBox(width: 16),
+          const SizedBox(width: 12),
 
-          // Right: Item Name, Weight, and Price
+          // Name + weight
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -347,32 +322,121 @@ class _BulkTagPrintDialogState extends State<BulkTagPrintDialog> {
                   Text(
                     weightStr,
                     style: const TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w600,
-                      color: BoutiqueColors.textSecondary,
-                    ),
+                        fontSize: 10, color: BoutiqueColors.textSecondary),
+                  ),
+                ],
+                if (product.pricingType != 'Weight-Based') ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    'Stock: ${product.sellableQuantity} ${product.unit}',
+                    style: const TextStyle(
+                        fontSize: 10, color: BoutiqueColors.textSecondary),
                   ),
                 ],
               ],
             ),
           ),
+          const SizedBox(width: 8),
 
-          // Price Tag
-          if (priceStr.isNotEmpty)
-            Text(
-              '₹$priceStr',
-              style: const TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.bold,
-                color: BoutiqueColors.textPrimary,
-              ),
+          // Price — with strikethrough if discounted
+          SizedBox(
+            width: 100,
+            child: hasDiscount
+                ? Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Old price with strikethrough
+                      Text(
+                        '₹${_priceStr(basePrice)}',
+                        textAlign: TextAlign.right,
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: BoutiqueColors.textSecondary,
+                          decoration: TextDecoration.lineThrough,
+                          decorationColor: Colors.red,
+                          decorationThickness: 2.0,
+                        ),
+                      ),
+                      // New discounted price
+                      Text(
+                        '₹${_priceStr(product.finalPrice)}',
+                        textAlign: TextAlign.right,
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF2E7D32),
+                        ),
+                      ),
+                    ],
+                  )
+                : Text(
+                    _formatPriceDisplay(product),
+                    textAlign: TextAlign.right,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      color: BoutiqueColors.textPrimary,
+                    ),
+                  ),
+          ),
+          const SizedBox(width: 12),
+
+          // Per-product +/- copies counter
+          Container(
+            decoration: BoxDecoration(
+              color: BoutiqueColors.bgSubtle,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: BoutiqueColors.borderLight),
             ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SizedBox(
+                  width: 32,
+                  height: 32,
+                  child: IconButton(
+                    icon: const Icon(Icons.remove_rounded, size: 14),
+                    padding: EdgeInsets.zero,
+                    visualDensity: VisualDensity.compact,
+                    onPressed: copies > 1 ? () => _decrement(product) : null,
+                  ),
+                ),
+                SizedBox(
+                  width: 36,
+                  child: Text(
+                    '$copies',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                        fontWeight: FontWeight.bold, fontSize: 13),
+                  ),
+                ),
+                SizedBox(
+                  width: 32,
+                  height: 32,
+                  child: IconButton(
+                    icon: const Icon(Icons.add_rounded, size: 14),
+                    padding: EdgeInsets.zero,
+                    visualDensity: VisualDensity.compact,
+                    onPressed: () => _increment(product),
+                  ),
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     );
   }
 
-  static String _formatPrice(Product product) {
+  static String _priceStr(double price) {
+    if (price <= 0) return '';
+    return price == price.roundToDouble()
+        ? price.toInt().toString()
+        : price.toStringAsFixed(2);
+  }
+
+  static String _formatPriceDisplay(Product product) {
     double price = 0.0;
     if (product.finalPrice > 0) {
       price = product.finalPrice;
@@ -380,28 +444,31 @@ class _BulkTagPrintDialogState extends State<BulkTagPrintDialog> {
       price = product.sellingPrice;
     } else if (product.mrp > 0) {
       price = product.mrp;
-    } else if (product.pricingType == 'Weight-Based' && product.ratePerGram > 0) {
-      final weight = product.netWeight > 0 ? product.netWeight : product.grossWeight;
-      if (weight > 0) {
-        price = product.ratePerGram * weight;
-      } else {
-        price = product.ratePerGram;
-      }
+    } else if (product.pricingType == 'Weight-Based' &&
+        product.ratePerGram > 0) {
+      final weight = product.netWeight > 0
+          ? product.netWeight
+          : product.grossWeight;
+      price = weight > 0 ? product.ratePerGram * weight : product.ratePerGram;
     }
     if (price <= 0) return '';
-    return price == price.roundToDouble() ? price.toInt().toString() : price.toStringAsFixed(2);
+    return '₹${_priceStr(price)}';
   }
 
   static String _getWeightString(Product product) {
     if (product.pricingType == 'Weight-Based') {
-      final weight = product.netWeight > 0 ? product.netWeight : product.grossWeight;
+      final weight =
+          product.netWeight > 0 ? product.netWeight : product.grossWeight;
       if (weight > 0) {
-        final unit = product.weightUnit.isNotEmpty ? product.weightUnit.toUpperCase() : 'G';
-        final weightStr = weight == weight.roundToDouble() ? weight.toInt().toString() : weight.toStringAsFixed(2);
-        return '$weightStr$unit';
+        final unit = product.weightUnit.isNotEmpty
+            ? product.weightUnit.toUpperCase()
+            : 'G';
+        final w = weight == weight.roundToDouble()
+            ? weight.toInt().toString()
+            : weight.toStringAsFixed(2);
+        return '$w$unit';
       }
     }
     return '';
   }
 }
-

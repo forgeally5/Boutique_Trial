@@ -293,6 +293,12 @@ class QrPdfGenerator {
     final priceStr = _formatPrice(product);
     final weightStr = _getWeightString(product);
 
+    // Detect discount: finalPrice < sellingPrice and both > 0
+    final hasDiscount = product.finalPrice > 0 &&
+        product.sellingPrice > 0 &&
+        product.finalPrice < product.sellingPrice;
+    final oldPriceStr = hasDiscount ? _numStr(product.sellingPrice) : '';
+
     return pw.Container(
       width: w,
       height: h,
@@ -364,21 +370,41 @@ class QrPdfGenerator {
                     ],
                   ],
                 ),
+                // Price section — strikethrough old + bold new when discounted
                 if (priceStr.isNotEmpty)
                   pw.Container(
                     alignment: pw.Alignment.bottomRight,
-                    child: pw.FittedBox(
-                      fit: pw.BoxFit.scaleDown,
-                      alignment: pw.Alignment.bottomRight,
-                      child: pw.Text(
-                        '$currencySymbol$priceStr',
-                        style: pw.TextStyle(
-                          fontSize: 12.0,
-                          fontWeight: pw.FontWeight.bold,
-                          color: PdfColors.black,
+                    child: pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.end,
+                      mainAxisSize: pw.MainAxisSize.min,
+                      children: [
+                        // Old price with strikethrough (only if discounted)
+                        if (hasDiscount)
+                          pw.Text(
+                            '$currencySymbol$oldPriceStr',
+                            style: pw.TextStyle(
+                              fontSize: 7.0,
+                              color: PdfColors.grey600,
+                              decoration: pw.TextDecoration.lineThrough,
+                              decorationColor: PdfColors.red,
+                              decorationThickness: 1.5,
+                            ),
+                          ),
+                        // Final / selling price (prominent)
+                        pw.FittedBox(
+                          fit: pw.BoxFit.scaleDown,
+                          alignment: pw.Alignment.bottomRight,
+                          child: pw.Text(
+                            '$currencySymbol$priceStr',
+                            style: pw.TextStyle(
+                              fontSize: 12.0,
+                              fontWeight: pw.FontWeight.bold,
+                              color: PdfColors.black,
+                            ),
+                            maxLines: 1,
+                          ),
                         ),
-                        maxLines: 1,
-                      ),
+                      ],
                     ),
                   ),
               ],
@@ -436,6 +462,13 @@ class QrPdfGenerator {
         : pw.ThemeData.base();
 
     return _LoadedFonts(theme: theme, currencySymbol: currencySymbol);
+  }
+
+  static String _numStr(double price) {
+    if (price <= 0) return '';
+    return price == price.roundToDouble()
+        ? price.toInt().toString()
+        : price.toStringAsFixed(2);
   }
 
   static String _formatPrice(Product product) {
