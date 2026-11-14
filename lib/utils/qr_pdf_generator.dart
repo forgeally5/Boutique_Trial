@@ -5,7 +5,6 @@ import 'package:flutter/foundation.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../models/product.dart';
 
 /// fillRow       : 3 tags per row (one per sticker column). Fewer pages, no waste.
@@ -28,13 +27,13 @@ class LabelRollConfig {
   LabelPrintMode mode;
 
   LabelRollConfig({
-    this.labelWidthMm = 34,
-    this.labelHeightMm = 21,
-    this.columns = 3,
-    this.hGapMm = 1,
-    this.vGapMm = 3,
-    this.sideMarginMm = 2,
-    this.rotationQuarterTurns = 0,
+    this.labelWidthMm = 35.0, // TVS LP-46 3-up sticker width
+    this.labelHeightMm = 25.0, // TVS LP-46 3-up sticker height
+    this.columns = 3, // 3 stickers across the roll
+    this.hGapMm = 1.0, // 1 mm gap between stickers
+    this.vGapMm = 3.0, // 3 mm gap between rows
+    this.sideMarginMm = 0.5, // Total width fits strictly within 108 mm printhead
+    this.rotationQuarterTurns = 0, // Always 0° (horizontal landscape sticker)
     this.offsetXmm = 0,
     this.offsetYmm = 0,
     this.startColumn = 1,
@@ -66,7 +65,12 @@ class LabelRollConfig {
       hGapMm: dbl('hGapMm', d.hGapMm),
       vGapMm: dbl('vGapMm', d.vGapMm),
       sideMarginMm: dbl('sideMarginMm', d.sideMarginMm),
-      rotationQuarterTurns: integer('rotationQuarterTurns', 0).clamp(0, 3),
+      // 90° and 270° break multi-column rolls (stacking 3 stickers vertically and feeding 5-6 rows).
+      // Only 0° (normal) and 180° (inverted) are valid.
+      rotationQuarterTurns: (() {
+        final rot = integer('rotationQuarterTurns', 0);
+        return (rot == 2) ? 2 : 0;
+      })(),
       offsetXmm: dbl('offsetXmm', 0),
       offsetYmm: dbl('offsetYmm', 0),
       startColumn: integer('startColumn', 1).clamp(1, 6),
@@ -85,30 +89,15 @@ class QrPdfGenerator {
   static bool _loaded = false;
 
   // ─────────────────────────── CONFIG STORAGE ───────────────────────────
+  // Hardcoded for TVS LP-46 (TSC OEM) 3-up roll: 35 x 25 mm stickers, 3 across
 
   static Future<void> loadConfig() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final raw = prefs.getString(_prefsKey);
-      if (raw != null) {
-        config = LabelRollConfig.fromJson(
-          jsonDecode(raw) as Map<String, dynamic>,
-        );
-      }
-    } catch (e) {
-      debugPrint('[QrPdfGenerator] Could not load label config: $e');
-    }
+    config = LabelRollConfig();
     _loaded = true;
   }
 
   static Future<void> saveConfig(LabelRollConfig newConfig) async {
     config = newConfig;
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(_prefsKey, jsonEncode(newConfig.toJson()));
-    } catch (e) {
-      debugPrint('[QrPdfGenerator] Could not save label config: $e');
-    }
   }
 
   static Future<void> _ensureLoaded() async {
@@ -129,13 +118,11 @@ class QrPdfGenerator {
 
   static double get _rowH => (config.labelHeightMm + config.vGapMm) * _mm;
 
-  static bool get _swapPage => config.rotationQuarterTurns.isOdd;
-
   /// Size of the PDF page sent to the printer.
-  /// Rotation 90/270 swaps width and height (portrait paper in the driver).
-  static PdfPageFormat get labelPageFormat => _swapPage
-      ? PdfPageFormat(_rowH, _rowW, marginAll: 0)
-      : PdfPageFormat(_rowW, _rowH, marginAll: 0);
+  /// Fixed strictly to the roll width (108 mm) and row height (24 mm).
+  /// Never swap width and height so the printer feeds exactly 1 row (24 mm).
+  static PdfPageFormat get labelPageFormat =>
+      PdfPageFormat(_rowW, _rowH, marginAll: 0);
 
   // ─────────────────────────── PRINT ENTRY POINTS ───────────────────────────
 
@@ -235,7 +222,7 @@ class QrPdfGenerator {
     return pdf;
   }
 
-  /// One PDF page = one row of stickers. Rotates the whole row when needed.
+  /// One PDF page = one row of stickers. Rotates 180° if inverted.
   static pw.Page _rowPage(List<pw.Widget?> cells, pw.ThemeData theme) {
     return pw.Page(
       pageFormat: labelPageFormat,
@@ -246,21 +233,17 @@ class QrPdfGenerator {
         final q = config.rotationQuarterTurns % 4;
         if (q == 0) return row;
 
-        // OverflowBox gives the row its REAL size, so the rotated content is
-        // not squeezed by the (swapped) page constraints.
-        return pw.Center(
-          child: pw.Transform.rotateBox(
-            angle: q * math.pi / 2,
-            child: pw.OverflowBox(
-              minWidth: _rowW,
-              maxWidth: _rowW,
-              minHeight: _rowH,
-              maxHeight: _rowH,
-              alignment: pw.Alignment.center,
+        if (q == 2) {
+          // 180 degree rotation (upside down)
+          return pw.Center(
+            child: pw.Transform.rotateBox(
+              angle: math.pi,
               child: row,
             ),
-          ),
-        );
+          );
+        }
+
+        return row;
       },
     );
   }

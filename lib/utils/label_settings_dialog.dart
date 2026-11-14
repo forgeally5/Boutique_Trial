@@ -88,12 +88,10 @@ Future<void> showLabelSettingsDialog(BuildContext context) async {
                       children: [
                         const Expanded(child: Text('Rotation')),
                         DropdownButton<int>(
-                          value: c.rotationQuarterTurns,
+                          value: (c.rotationQuarterTurns == 2) ? 2 : 0,
                           items: const [
-                            DropdownMenuItem(value: 0, child: Text('0°')),
-                            DropdownMenuItem(value: 1, child: Text('90°')),
-                            DropdownMenuItem(value: 2, child: Text('180°')),
-                            DropdownMenuItem(value: 3, child: Text('270°')),
+                            DropdownMenuItem(value: 0, child: Text('0° (Normal)')),
+                            DropdownMenuItem(value: 2, child: Text('180° (Inverted)')),
                           ],
                           onChanged: (v) =>
                               setState(() => c.rotationQuarterTurns = v ?? 0),
@@ -150,6 +148,26 @@ Future<void> showLabelSettingsDialog(BuildContext context) async {
               ),
             ),
             actions: [
+              TextButton(
+                onPressed: () {
+                  setState(() {
+                    final d = LabelRollConfig();
+                    c.labelWidthMm = d.labelWidthMm;
+                    c.labelHeightMm = d.labelHeightMm;
+                    c.columns = d.columns;
+                    c.hGapMm = d.hGapMm;
+                    c.vGapMm = d.vGapMm;
+                    c.sideMarginMm = d.sideMarginMm;
+                    c.rotationQuarterTurns = 0;
+                    c.offsetXmm = 0;
+                    c.offsetYmm = 0;
+                    c.startColumn = 1;
+                    c.mode = LabelPrintMode.fillRow;
+                  });
+                },
+                child: const Text('Reset Defaults', style: TextStyle(color: Colors.red)),
+              ),
+              const Spacer(),
               TextButton(
                 onPressed: () => Navigator.of(dialogContext).pop(),
                 child: const Text('Cancel'),
