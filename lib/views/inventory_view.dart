@@ -209,6 +209,21 @@ class InventoryViewState extends State<InventoryView> {
     );
     // Listen to global search from top bar
     widget.globalSearchCtrl?.addListener(_onGlobalSearch);
+    HardwareKeyboard.instance.addHandler(_handleKeyEvent);
+  }
+
+  bool _handleKeyEvent(KeyEvent event) {
+    if (event is KeyDownEvent && event.logicalKey == LogicalKeyboardKey.escape) {
+      if (_selectedDrawerProduct != null) {
+        setState(() => _selectedDrawerProduct = null);
+        return true;
+      }
+      if (_selectedProductIds.isNotEmpty) {
+        setState(() => _selectedProductIds.clear());
+        return true;
+      }
+    }
+    return false;
   }
 
   void _onGlobalSearch() {
@@ -225,6 +240,7 @@ class InventoryViewState extends State<InventoryView> {
 
   @override
   void dispose() {
+    HardwareKeyboard.instance.removeHandler(_handleKeyEvent);
     widget.globalSearchCtrl?.removeListener(_onGlobalSearch);
     _searchFocusNode.dispose();
     _dateFilterFocusNode.dispose();
@@ -412,6 +428,13 @@ class InventoryViewState extends State<InventoryView> {
       bindings: {
         const SingleActivator(LogicalKeyboardKey.keyS, control: true): focusSearch,
         const SingleActivator(LogicalKeyboardKey.keyS, meta: true): focusSearch,
+        const SingleActivator(LogicalKeyboardKey.escape): () {
+          if (_selectedDrawerProduct != null) {
+            setState(() => _selectedDrawerProduct = null);
+          } else if (_selectedProductIds.isNotEmpty) {
+            setState(() => _selectedProductIds.clear());
+          }
+        },
       },
       child: ListenableBuilder(
       listenable: state,
@@ -929,7 +952,7 @@ class InventoryViewState extends State<InventoryView> {
                         TextButton.icon(
                           onPressed: () => setState(() => _selectedProductIds.clear()),
                           icon: const Icon(Icons.close_rounded, size: 16, color: BoutiqueColors.textSecondary),
-                          label: const Text('Clear selection', style: TextStyle(color: BoutiqueColors.textSecondary, fontSize: 12)),
+                          label: const Text('Clear selection (Esc)', style: TextStyle(color: BoutiqueColors.textSecondary, fontSize: 12)),
                         ),
                       ],
                     ),
