@@ -282,21 +282,26 @@ class QrPdfGenerator {
   }
 
   // ─────────────────────────── TAG DESIGN (Compact, Clean Fit) ───────────────────────────
-  // Left : Reduced QR code (~11mm), Tag ID below it.
-  // Right: Item name (max 2 lines), weight (if any), price (compact, well within bounds).
-  // Total usable sticker: 34 x 25 mm with rounded corners.
+  // Left : Reduced QR code (~10mm), Tag ID below it.
+  // Right: Item name (fallback to category if empty, max 2 lines), weight, price.
+  // Total usable sticker: 34 x 25 mm with rounded corners. Safe vertical padding prevents edge clipping.
 
   static pw.Widget buildTagWidget(Product product, String currencySymbol) {
     final c = config;
     final w = c.labelWidthMm * _mm;
     final h = c.labelHeightMm * _mm;
 
-    // Reduced QR code size as requested (10.5 mm) for clean fit and sharp scan
-    final qrSize = 10.5 * _mm;
+    // Compact QR code (10.0 mm) for perfect fit and fast, sharp scan
+    final qrSize = 10.0 * _mm;
     final leftW = qrSize + 1.0 * _mm;
 
     final priceStr = _formatPrice(product);
     final weightStr = _getWeightString(product);
+
+    // Guaranteed non-empty display name: falls back to Category if name is blank, or TagId
+    final nameStr = product.name.trim().isNotEmpty
+        ? product.name.trim().toUpperCase()
+        : (product.category.trim().isNotEmpty ? product.category.trim().toUpperCase() : product.tagId);
 
     // Detect discount: finalPrice < sellingPrice and both > 0
     final hasDiscount = product.finalPrice > 0 &&
@@ -307,12 +312,12 @@ class QrPdfGenerator {
     return pw.Container(
       width: w,
       height: h,
-      // Safe padding so nothing touches the rounded sticker edges or spills into gaps
-      padding: const pw.EdgeInsets.symmetric(horizontal: 2.0 * _mm, vertical: 2.2 * _mm),
+      // 2.8 mm top/bottom padding keeps text safely away from sticker edges and gap
+      padding: const pw.EdgeInsets.symmetric(horizontal: 2.0 * _mm, vertical: 2.8 * _mm),
       child: pw.Row(
-        crossAxisAlignment: pw.CrossAxisAlignment.center,
+        crossAxisAlignment: pw.CrossAxisAlignment.stretch,
         children: [
-          // LEFT: Compact QR + Tag ID
+          // LEFT: Compact QR + Tag ID (vertically centered in safe area)
           pw.Container(
             width: leftW,
             child: pw.Column(
@@ -342,7 +347,7 @@ class QrPdfGenerator {
 
           pw.SizedBox(width: 2.0 * _mm),
 
-          // RIGHT: Name, Weight, Price (Safely fits vertically without touching edges)
+          // RIGHT: Name, Weight, Price (Fits comfortably within 2.8 mm safe margins)
           pw.Expanded(
             child: pw.Column(
               crossAxisAlignment: pw.CrossAxisAlignment.start,
@@ -350,9 +355,10 @@ class QrPdfGenerator {
               children: [
                 pw.Column(
                   crossAxisAlignment: pw.CrossAxisAlignment.start,
+                  mainAxisSize: pw.MainAxisSize.min,
                   children: [
                     pw.Text(
-                      product.name.trim().toUpperCase(),
+                      nameStr,
                       style: pw.TextStyle(
                         fontSize: 6.5,
                         fontWeight: pw.FontWeight.bold,
@@ -376,7 +382,7 @@ class QrPdfGenerator {
                     ],
                   ],
                 ),
-                // Price section — bold, compact, safely inside sticker
+                // Price section — compact, sitting safely 2.8mm above the bottom edge
                 if (priceStr.isNotEmpty)
                   pw.Container(
                     alignment: pw.Alignment.bottomRight,
@@ -401,7 +407,7 @@ class QrPdfGenerator {
                           child: pw.Text(
                             '$currencySymbol$priceStr',
                             style: pw.TextStyle(
-                              fontSize: 9.5,
+                              fontSize: 9.0,
                               fontWeight: pw.FontWeight.bold,
                               color: PdfColors.black,
                             ),
