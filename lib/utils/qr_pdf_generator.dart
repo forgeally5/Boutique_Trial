@@ -116,10 +116,12 @@ class QrPdfGenerator {
           (config.columns - 1) * config.hGapMm) *
       _mm;
 
-  // The PDF page height must match the printable sticker height (25 mm).
-  // The thermal printer's gap sensor advances over the 3 mm gap automatically.
-  // Adding vGapMm here made the PDF 28 mm tall, causing it to print past the sticker and collide with the next row.
-  static double get _rowH => config.labelHeightMm * _mm;
+  // Safe printable row height (23.5 mm).
+  // Thermal drivers have ~0.5-1.0mm hardware unprintable margins on 25mm labels.
+  // If the PDF page is full 25.0 mm, Windows Print Spooler detects an overflow of ~0.5mm
+  // and emits a second, blank page (Form Feed) after every row, skipping a row.
+  // Setting this to 23.5 mm prevents Windows Spooler from inserting empty rows.
+  static double get _rowH => (config.labelHeightMm - 1.5) * _mm;
 
   /// Size of the PDF page sent to the printer.
   /// Fixed strictly to the roll width (108 mm) and row height (24 mm).
@@ -255,7 +257,7 @@ class QrPdfGenerator {
   static pw.Widget _buildRow(List<pw.Widget?> cells) {
     final c = config;
     final cellW = c.labelWidthMm * _mm;
-    final cellH = c.labelHeightMm * _mm;
+    final cellH = _rowH;
     final children = <pw.Widget>[];
 
     for (int i = 0; i < c.columns && i < cells.length; i++) {
@@ -289,7 +291,7 @@ class QrPdfGenerator {
   static pw.Widget buildTagWidget(Product product, String currencySymbol) {
     final c = config;
     final w = c.labelWidthMm * _mm;
-    final h = c.labelHeightMm * _mm;
+    final h = _rowH;
 
     // Compact QR code (10.0 mm) for perfect fit and fast, sharp scan
     final qrSize = 10.0 * _mm;
@@ -312,8 +314,7 @@ class QrPdfGenerator {
     return pw.Container(
       width: w,
       height: h,
-      // 2.8 mm top/bottom padding keeps text safely away from sticker edges and gap
-      padding: const pw.EdgeInsets.symmetric(horizontal: 2.0 * _mm, vertical: 2.8 * _mm),
+      padding: const pw.EdgeInsets.symmetric(horizontal: 2.0 * _mm, vertical: 2.0 * _mm),
       child: pw.Row(
         crossAxisAlignment: pw.CrossAxisAlignment.stretch,
         children: [
