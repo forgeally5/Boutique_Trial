@@ -281,16 +281,18 @@ class QrPdfGenerator {
     );
   }
 
-  // ─────────────────────────── TAG DESIGN (34 x 21 mm) ───────────────────────────
-  // Left : QR code, Tag ID below it.
-  // Right: Item name (max 3 lines), weight (if weight-based), price at bottom.
+  // ─────────────────────────── TAG DESIGN (Compact, Clean Fit) ───────────────────────────
+  // Left : Reduced QR code (~11mm), Tag ID below it.
+  // Right: Item name (max 2 lines), weight (if any), price (compact, well within bounds).
+  // Total usable sticker: 34 x 25 mm with rounded corners.
 
   static pw.Widget buildTagWidget(Product product, String currencySymbol) {
     final c = config;
     final w = c.labelWidthMm * _mm;
     final h = c.labelHeightMm * _mm;
-    final pad = 1.0 * _mm;
-    final qrSize = math.min(h * 0.66, w * 0.43);
+
+    // Reduced QR code size as requested (10.5 mm) for clean fit and sharp scan
+    final qrSize = 10.5 * _mm;
     final leftW = qrSize + 1.0 * _mm;
 
     final priceStr = _formatPrice(product);
@@ -305,11 +307,12 @@ class QrPdfGenerator {
     return pw.Container(
       width: w,
       height: h,
-      padding: pw.EdgeInsets.all(pad),
+      // Safe padding so nothing touches the rounded sticker edges or spills into gaps
+      padding: const pw.EdgeInsets.symmetric(horizontal: 2.0 * _mm, vertical: 2.2 * _mm),
       child: pw.Row(
-        crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+        crossAxisAlignment: pw.CrossAxisAlignment.center,
         children: [
-          // LEFT: QR + Tag ID
+          // LEFT: Compact QR + Tag ID
           pw.Container(
             width: leftW,
             child: pw.Column(
@@ -326,7 +329,7 @@ class QrPdfGenerator {
                 pw.Text(
                   product.tagId,
                   style: pw.TextStyle(
-                    fontSize: 6.0,
+                    fontSize: 5.5,
                     fontWeight: pw.FontWeight.bold,
                     color: PdfColors.black,
                   ),
@@ -337,9 +340,9 @@ class QrPdfGenerator {
             ),
           ),
 
-          pw.SizedBox(width: 1.5 * _mm),
+          pw.SizedBox(width: 2.0 * _mm),
 
-          // RIGHT: name, weight, price
+          // RIGHT: Name, Weight, Price (Safely fits vertically without touching edges)
           pw.Expanded(
             child: pw.Column(
               crossAxisAlignment: pw.CrossAxisAlignment.start,
@@ -351,20 +354,20 @@ class QrPdfGenerator {
                     pw.Text(
                       product.name.trim().toUpperCase(),
                       style: pw.TextStyle(
-                        fontSize: 7.0,
+                        fontSize: 6.5,
                         fontWeight: pw.FontWeight.bold,
                         color: PdfColors.black,
-                        lineSpacing: 0.5,
+                        lineSpacing: 0.4,
                       ),
-                      maxLines: 3,
+                      maxLines: 2,
                       overflow: pw.TextOverflow.clip,
                     ),
                     if (weightStr.isNotEmpty) ...[
-                      pw.SizedBox(height: 1.0),
+                      pw.SizedBox(height: 0.8),
                       pw.Text(
                         weightStr,
                         style: pw.TextStyle(
-                          fontSize: 5.5,
+                          fontSize: 5.0,
                           fontWeight: pw.FontWeight.bold,
                           color: PdfColors.grey800,
                         ),
@@ -373,7 +376,7 @@ class QrPdfGenerator {
                     ],
                   ],
                 ),
-                // Price section — strikethrough old + bold new when discounted
+                // Price section — bold, compact, safely inside sticker
                 if (priceStr.isNotEmpty)
                   pw.Container(
                     alignment: pw.Alignment.bottomRight,
@@ -381,26 +384,24 @@ class QrPdfGenerator {
                       crossAxisAlignment: pw.CrossAxisAlignment.end,
                       mainAxisSize: pw.MainAxisSize.min,
                       children: [
-                        // Old price with strikethrough (only if discounted)
                         if (hasDiscount)
                           pw.Text(
                             '$currencySymbol$oldPriceStr',
                             style: pw.TextStyle(
-                              fontSize: 7.0,
+                              fontSize: 6.0,
                               color: PdfColors.grey600,
                               decoration: pw.TextDecoration.lineThrough,
                               decorationColor: PdfColors.red,
-                              decorationThickness: 1.5,
+                              decorationThickness: 1.2,
                             ),
                           ),
-                        // Final / selling price (prominent)
                         pw.FittedBox(
                           fit: pw.BoxFit.scaleDown,
                           alignment: pw.Alignment.bottomRight,
                           child: pw.Text(
                             '$currencySymbol$priceStr',
                             style: pw.TextStyle(
-                              fontSize: 12.0,
+                              fontSize: 9.5,
                               fontWeight: pw.FontWeight.bold,
                               color: PdfColors.black,
                             ),
