@@ -347,75 +347,67 @@ class QrPdfGenerator {
 
           pw.SizedBox(width: 2.0 * _mm),
 
-          // RIGHT: Name, Weight, Price (Fits comfortably within 2.8 mm safe margins)
+          // RIGHT: Name, Weight & Price placed directly near QR, with reduced vertical spacing
           pw.Expanded(
             child: pw.Column(
               crossAxisAlignment: pw.CrossAxisAlignment.start,
-              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+              mainAxisAlignment: pw.MainAxisAlignment.center,
               children: [
-                pw.Column(
-                  crossAxisAlignment: pw.CrossAxisAlignment.start,
-                  mainAxisSize: pw.MainAxisSize.min,
-                  children: [
-                    pw.Text(
-                      nameStr,
-                      style: pw.TextStyle(
-                        fontSize: 6.5,
-                        fontWeight: pw.FontWeight.bold,
-                        color: PdfColors.black,
-                        lineSpacing: 0.4,
-                      ),
-                      maxLines: 2,
-                      overflow: pw.TextOverflow.clip,
+                // Item Name (guaranteed non-empty)
+                pw.Text(
+                  nameStr,
+                  style: pw.TextStyle(
+                    fontSize: 7.0,
+                    fontWeight: pw.FontWeight.bold,
+                    color: PdfColors.black,
+                    lineSpacing: 0.3,
+                  ),
+                  maxLines: 2,
+                  overflow: pw.TextOverflow.clip,
+                ),
+                if (weightStr.isNotEmpty) ...[
+                  pw.SizedBox(height: 0.6),
+                  pw.Text(
+                    weightStr,
+                    style: pw.TextStyle(
+                      fontSize: 5.0,
+                      fontWeight: pw.FontWeight.bold,
+                      color: PdfColors.grey800,
                     ),
-                    if (weightStr.isNotEmpty) ...[
-                      pw.SizedBox(height: 0.8),
+                    maxLines: 1,
+                  ),
+                ],
+                // Reduced spacing between Name and Price
+                pw.SizedBox(height: 1.8 * _mm),
+                // Price placed directly under the name, left-aligned close to QR
+                if (priceStr.isNotEmpty)
+                  pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    mainAxisSize: pw.MainAxisSize.min,
+                    children: [
+                      if (hasDiscount) ...[
+                        pw.Text(
+                          '$currencySymbol$oldPriceStr',
+                          style: pw.TextStyle(
+                            fontSize: 5.5,
+                            color: PdfColors.grey600,
+                            decoration: pw.TextDecoration.lineThrough,
+                            decorationColor: PdfColors.red,
+                            decorationThickness: 1.0,
+                          ),
+                        ),
+                        pw.SizedBox(height: 0.5),
+                      ],
                       pw.Text(
-                        weightStr,
+                        '$currencySymbol$priceStr',
                         style: pw.TextStyle(
-                          fontSize: 5.0,
+                          fontSize: 10.0,
                           fontWeight: pw.FontWeight.bold,
-                          color: PdfColors.grey800,
+                          color: PdfColors.black,
                         ),
                         maxLines: 1,
                       ),
                     ],
-                  ],
-                ),
-                // Price section — compact, sitting safely 2.8mm above the bottom edge
-                if (priceStr.isNotEmpty)
-                  pw.Container(
-                    alignment: pw.Alignment.bottomRight,
-                    child: pw.Column(
-                      crossAxisAlignment: pw.CrossAxisAlignment.end,
-                      mainAxisSize: pw.MainAxisSize.min,
-                      children: [
-                        if (hasDiscount)
-                          pw.Text(
-                            '$currencySymbol$oldPriceStr',
-                            style: pw.TextStyle(
-                              fontSize: 6.0,
-                              color: PdfColors.grey600,
-                              decoration: pw.TextDecoration.lineThrough,
-                              decorationColor: PdfColors.red,
-                              decorationThickness: 1.2,
-                            ),
-                          ),
-                        pw.FittedBox(
-                          fit: pw.BoxFit.scaleDown,
-                          alignment: pw.Alignment.bottomRight,
-                          child: pw.Text(
-                            '$currencySymbol$priceStr',
-                            style: pw.TextStyle(
-                              fontSize: 9.0,
-                              fontWeight: pw.FontWeight.bold,
-                              color: PdfColors.black,
-                            ),
-                            maxLines: 1,
-                          ),
-                        ),
-                      ],
-                    ),
                   ),
               ],
             ),
