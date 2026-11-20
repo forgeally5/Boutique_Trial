@@ -314,43 +314,45 @@ class QrPdfGenerator {
     return pw.Container(
       width: w,
       height: h,
-      padding: const pw.EdgeInsets.symmetric(horizontal: 2.0 * _mm, vertical: 2.0 * _mm),
+      alignment: pw.Alignment.center, // Centers entire tag content horizontally and vertically
       child: pw.Row(
-        crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+        mainAxisSize: pw.MainAxisSize.min, // Hugs content so Alignment.center balances left and right margins
+        mainAxisAlignment: pw.MainAxisAlignment.center,
+        crossAxisAlignment: pw.CrossAxisAlignment.center,
         children: [
-          // LEFT: Compact QR + Tag ID (vertically centered in safe area)
-          pw.Container(
-            width: leftW,
-            child: pw.Column(
-              mainAxisAlignment: pw.MainAxisAlignment.center,
-              crossAxisAlignment: pw.CrossAxisAlignment.center,
-              children: [
-                pw.BarcodeWidget(
-                  data: product.tagId,
-                  barcode: pw.Barcode.qrCode(),
-                  width: qrSize,
-                  height: qrSize,
+          // LEFT: Compact QR + Tag ID
+          pw.Column(
+            mainAxisSize: pw.MainAxisSize.min,
+            mainAxisAlignment: pw.MainAxisAlignment.center,
+            crossAxisAlignment: pw.CrossAxisAlignment.center,
+            children: [
+              pw.BarcodeWidget(
+                data: product.tagId,
+                barcode: pw.Barcode.qrCode(),
+                width: qrSize,
+                height: qrSize,
+              ),
+              pw.SizedBox(height: 1.0),
+              pw.Text(
+                product.tagId,
+                style: pw.TextStyle(
+                  fontSize: 5.5,
+                  fontWeight: pw.FontWeight.bold,
+                  color: PdfColors.black,
                 ),
-                pw.SizedBox(height: 1.0),
-                pw.Text(
-                  product.tagId,
-                  style: pw.TextStyle(
-                    fontSize: 5.5,
-                    fontWeight: pw.FontWeight.bold,
-                    color: PdfColors.black,
-                  ),
-                  textAlign: pw.TextAlign.center,
-                  maxLines: 1,
-                ),
-              ],
-            ),
+                textAlign: pw.TextAlign.center,
+                maxLines: 1,
+              ),
+            ],
           ),
 
-          pw.SizedBox(width: 2.0 * _mm),
+          pw.SizedBox(width: 3.0 * _mm),
 
-          // RIGHT: Name, Weight & Price placed directly near QR, with reduced vertical spacing
-          pw.Expanded(
+          // RIGHT: Name, Weight & Price placed directly next to QR
+          pw.ConstrainedBox(
+            constraints: pw.BoxConstraints(maxWidth: w - qrSize - 6.0 * _mm),
             child: pw.Column(
+              mainAxisSize: pw.MainAxisSize.min,
               crossAxisAlignment: pw.CrossAxisAlignment.start,
               mainAxisAlignment: pw.MainAxisAlignment.center,
               children: [
@@ -379,7 +381,7 @@ class QrPdfGenerator {
                   ),
                 ],
                 // Reduced spacing between Name and Price
-                pw.SizedBox(height: 1.8 * _mm),
+                pw.SizedBox(height: 1.6 * _mm),
                 // Price placed directly under the name, left-aligned close to QR
                 if (priceStr.isNotEmpty)
                   pw.Column(
