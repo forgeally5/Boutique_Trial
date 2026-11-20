@@ -141,36 +141,6 @@ class _VendorIssueTabState extends State<VendorIssueTab> {
     }
   }
 
-  Future<void> _updateAction(String issueId, String tagId, String currentAction) async {
-    String? selectedAction = currentAction;
-    final newAction = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Update Action Taken'),
-        content: DropdownButtonFormField<String>(
-          initialValue: selectedAction,
-          items: _actions.where((a) => a != 'All').map((a) => DropdownMenuItem(value: a, child: Text(a))).toList(),
-          onChanged: (v) => selectedAction = v,
-          decoration: BoutiqueInputDecoration.field(labelText: 'Action', hintText: ''),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(ctx, selectedAction);
-            },
-            child: const Text('Update'),
-          )
-        ],
-      )
-    );
-    if (newAction != null && newAction != currentAction && mounted) {
-      final state = context.read<AdminState>();
-      await state.updateVendorIssueAction(issueId, tagId, newAction);
-      _load();
-    }
-  }
-
   int get _totalIssues => _filtered.length;
   int get _totalQty => _filtered.fold(0, (s, r) => s + ((r['quantity'] as num?)?.toInt() ?? 0));
   double get _totalRefund => _filtered.fold(0.0, (s, r) => s + ((r['refundAmount'] as num?)?.toDouble() ?? 0));
@@ -437,13 +407,6 @@ class _VendorIssueTabState extends State<VendorIssueTab> {
                         _load();
                       }
                     },
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.rule_folder_outlined, size: 16, color: BoutiqueColors.textSecondary),
-                    tooltip: 'Update Status Action',
-                    padding: const EdgeInsets.all(4),
-                    constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-                    onPressed: () => _updateAction(r['id'], r['tagId'], action),
                   ),
                 ],
               ),
