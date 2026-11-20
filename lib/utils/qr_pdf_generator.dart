@@ -27,12 +27,12 @@ class LabelRollConfig {
   LabelPrintMode mode;
 
   LabelRollConfig({
-    this.labelWidthMm = 35.0, // TVS LP-46 3-up sticker width
-    this.labelHeightMm = 25.0, // TVS LP-46 3-up sticker height
+    this.labelWidthMm = 34.0, // Standard 3-up sticker width (34mm fits comfortably within printhead)
+    this.labelHeightMm = 25.0, // Standard 3-up sticker height (25mm printable height)
     this.columns = 3, // 3 stickers across the roll
-    this.hGapMm = 1.0, // 1 mm gap between stickers
-    this.vGapMm = 3.0, // 3 mm gap between rows
-    this.sideMarginMm = 0.5, // Total width fits strictly within 108 mm printhead
+    this.hGapMm = 1.5, // Gap between stickers horizontally
+    this.vGapMm = 3.0, // Gap between rows (detected by printer sensor)
+    this.sideMarginMm = 2.0, // Left/Right liner margin to prevent left-edge clipping
     this.rotationQuarterTurns = 0, // Always 0° (horizontal landscape sticker)
     this.offsetXmm = 0,
     this.offsetYmm = 0,
@@ -116,7 +116,10 @@ class QrPdfGenerator {
           (config.columns - 1) * config.hGapMm) *
       _mm;
 
-  static double get _rowH => (config.labelHeightMm + config.vGapMm) * _mm;
+  // The PDF page height must match the printable sticker height (25 mm).
+  // The thermal printer's gap sensor advances over the 3 mm gap automatically.
+  // Adding vGapMm here made the PDF 28 mm tall, causing it to print past the sticker and collide with the next row.
+  static double get _rowH => config.labelHeightMm * _mm;
 
   /// Size of the PDF page sent to the printer.
   /// Fixed strictly to the roll width (108 mm) and row height (24 mm).
