@@ -116,12 +116,13 @@ class QrPdfGenerator {
           (config.columns - 1) * config.hGapMm) *
       _mm;
 
-  // Safe printable row height (23.5 mm).
-  // Thermal drivers have ~0.5-1.0mm hardware unprintable margins on 25mm labels.
-  // If the PDF page is full 25.0 mm, Windows Print Spooler detects an overflow of ~0.5mm
-  // and emits a second, blank page (Form Feed) after every row, skipping a row.
-  // Setting this to 23.5 mm prevents Windows Spooler from inserting empty rows.
-  static double get _rowH => (config.labelHeightMm - 1.5) * _mm;
+  // PDF page height = sticker height + gap, minus a 0.5 mm safety margin.
+  // Including vGapMm tells the printer driver the exact physical pitch (label + gap)
+  // so Windows Print Spooler does NOT insert a blank Form-Feed between pages.
+  // Without vGapMm the spooler accumulates ~3mm of drift and skips a row every 3-4 stickers.
+  // The 0.5 mm safety trim prevents an edge-overflow that would trigger an extra blank page.
+  static double get _rowH =>
+      (config.labelHeightMm + config.vGapMm - 0.5) * _mm;
 
   /// Size of the PDF page sent to the printer.
   /// Fixed strictly to the roll width (108 mm) and row height (24 mm).
@@ -257,7 +258,9 @@ class QrPdfGenerator {
   static pw.Widget _buildRow(List<pw.Widget?> cells) {
     final c = config;
     final cellW = c.labelWidthMm * _mm;
-    final cellH = _rowH;
+    // Cell height = sticker height only; content is vertically centred within
+    // the sticker area, leaving the vGap region below as blank feed space.
+    final cellH = c.labelHeightMm * _mm;
     final children = <pw.Widget>[];
 
     for (int i = 0; i < c.columns && i < cells.length; i++) {
@@ -291,7 +294,9 @@ class QrPdfGenerator {
   static pw.Widget buildTagWidget(Product product, String currencySymbol) {
     final c = config;
     final w = c.labelWidthMm * _mm;
-    final h = _rowH;
+    // Use only the sticker height (not the gap) so content is centered within
+    // the physical sticker, not across the full page (sticker + gap).
+    final h = c.labelHeightMm * _mm;
 
     // Compact QR code (10.0 mm) for perfect fit and fast, sharp scan
     final qrSize = 10.0 * _mm;
