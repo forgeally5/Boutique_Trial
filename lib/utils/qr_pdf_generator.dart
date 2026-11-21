@@ -116,13 +116,12 @@ class QrPdfGenerator {
           (config.columns - 1) * config.hGapMm) *
       _mm;
 
-  // PDF page height = sticker height + gap, minus a 0.5 mm safety margin.
-  // Including vGapMm tells the printer driver the exact physical pitch (label + gap)
-  // so Windows Print Spooler does NOT insert a blank Form-Feed between pages.
-  // Without vGapMm the spooler accumulates ~3mm of drift and skips a row every 3-4 stickers.
-  // The 0.5 mm safety trim prevents an edge-overflow that would trigger an extra blank page.
-  static double get _rowH =>
-      (config.labelHeightMm + config.vGapMm - 0.5) * _mm;
+  // PDF page height = sticker height ONLY (not including gap).
+  // The physical 3mm gap between stickers is detected by the printer's gap sensor hardware —
+  // the printer auto-advances over it. The PDF page must match the driver's configured
+  // label height (25mm) exactly. Sending a larger page (e.g. 27.5mm) causes a size
+  // mismatch with the driver, making Windows Spooler insert a blank Form-Feed between pages.
+  static double get _rowH => config.labelHeightMm * _mm;
 
   /// Size of the PDF page sent to the printer.
   /// Fixed strictly to the roll width (108 mm) and row height (24 mm).
@@ -316,17 +315,22 @@ class QrPdfGenerator {
         product.finalPrice < product.sellingPrice;
     final oldPriceStr = hasDiscount ? _numStr(product.sellingPrice) : '';
 
-    // pw.Container alignment is unreliable in the pdf package — use pw.Center explicitly.
-    // pw.Center fills the full SizedBox (w × h) and then centers the content Row within it.
+    // pw.Column(mainAxisSize: max) fills the tight 25mm constraint from SizedBox,
+    // then mainAxisAlignment.center mathematically centers the Row vertically.
+    // pw.Center does NOT work reliably in the pdf package (unconstrained height issue).
     return pw.SizedBox(
       width: w,
       height: h,
-      child: pw.Center(
-        child: pw.Row(
-        mainAxisSize: pw.MainAxisSize.min,
+      child: pw.Column(
+        mainAxisSize: pw.MainAxisSize.max,
         mainAxisAlignment: pw.MainAxisAlignment.center,
         crossAxisAlignment: pw.CrossAxisAlignment.center,
         children: [
+          pw.Row(
+          mainAxisSize: pw.MainAxisSize.min,
+          mainAxisAlignment: pw.MainAxisAlignment.center,
+          crossAxisAlignment: pw.CrossAxisAlignment.center,
+          children: [
           // LEFT: Compact QR + Tag ID
           pw.Column(
             mainAxisSize: pw.MainAxisSize.min,
@@ -422,8 +426,9 @@ class QrPdfGenerator {
               ],
             ),
           ),
+          ],
+        ),
         ],
-      ),
       ),
     );
   }
@@ -451,8 +456,9 @@ class QrPdfGenerator {
             '${config.labelWidthMm.toStringAsFixed(0)} x ${config.labelHeightMm.toStringAsFixed(0)} mm',
             style: const pw.TextStyle(fontSize: 5),
           ),
+          ],
+        ),
         ],
-      ),
       ),
     );
   }
