@@ -316,12 +316,14 @@ class QrPdfGenerator {
         product.finalPrice < product.sellingPrice;
     final oldPriceStr = hasDiscount ? _numStr(product.sellingPrice) : '';
 
-    return pw.Container(
+    // pw.Container alignment is unreliable in the pdf package — use pw.Center explicitly.
+    // pw.Center fills the full SizedBox (w × h) and then centers the content Row within it.
+    return pw.SizedBox(
       width: w,
       height: h,
-      alignment: pw.Alignment.center, // Centers entire tag content horizontally and vertically
-      child: pw.Row(
-        mainAxisSize: pw.MainAxisSize.min, // Hugs content so Alignment.center balances left and right margins
+      child: pw.Center(
+        child: pw.Row(
+        mainAxisSize: pw.MainAxisSize.min,
         mainAxisAlignment: pw.MainAxisAlignment.center,
         crossAxisAlignment: pw.CrossAxisAlignment.center,
         children: [
@@ -422,6 +424,7 @@ class QrPdfGenerator {
           ),
         ],
       ),
+      ),
     );
   }
 
@@ -449,6 +452,7 @@ class QrPdfGenerator {
             style: const pw.TextStyle(fontSize: 5),
           ),
         ],
+      ),
       ),
     );
   }
